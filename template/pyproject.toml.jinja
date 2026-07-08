@@ -1,0 +1,10 @@
+[project]
+name = "{{ project_name }}"
+version = "{{ odoo_version }}.0"
+description = "Odoo {{ odoo_version }} Development Environment"
+readme = "README.md"
+requires-python = ">={{ python_version }},<3.{{ (python_version.split('.')[1] | int) + 1 }}"
+dependencies = [
+    # Populated from src/odoo/requirements.txt by `nix run .#bootstrap-deps`
+    # (run `nix run .#update-repos` first to clone src/odoo).
+]

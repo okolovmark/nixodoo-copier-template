@@ -1,0 +1,22 @@
+# shellcheck shell=bash
+# Full development setup: prod + local postgres + test{% if prod_ssh_host %} + ssh{% endif %} + editor settings.
+# The called scripts are on PATH (injected by flake.nix).
+set -e
+echo "=== Running setup of production server  ==="
+setup-prod
+echo
+echo "=== Running setup-postgres ==="
+setup-postgres
+echo
+echo "=== Running setup of test server  ==="
+setup-test
+{% if prod_ssh_host %}
+echo
+echo "=== Running setup-ssh-access ==="
+setup-ssh-access
+{% endif %}
+echo
+echo "=== Running create-vscode-settings ==="
+create-vscode-settings
+echo
+echo "=== Development setup complete! ==="

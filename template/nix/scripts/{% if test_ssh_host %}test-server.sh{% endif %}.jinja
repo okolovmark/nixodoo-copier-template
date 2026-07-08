@@ -1,0 +1,8 @@
+# shellcheck shell=bash
+# SSH into the test server using the project-local SSH config.
+if [ -z "${{ project_dir_var }}" ]; then {{ project_dir_var }}="$(pwd)"; fi
+echo "Connecting to test server..."
+{% if test_web_url %}
+echo "URL: {{ test_web_url }}"
+{% endif %}
+ssh -F "${{ project_dir_var }}/.ssh/config" test

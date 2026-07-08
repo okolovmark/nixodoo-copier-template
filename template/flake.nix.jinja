@@ -1,0 +1,323 @@
+{
+    description = "Odoo {{ odoo_version }} Development Environment for {{ project_name }}";
+
+    inputs = {
+        nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+        flake-utils.url = "github:numtide/flake-utils";
+
+        # Core pyproject-nix ecosystem tools
+        pyproject-nix.url = "github:pyproject-nix/pyproject.nix";
+        uv2nix.url = "github:pyproject-nix/uv2nix";
+        pyproject-build-systems.url = "github:pyproject-nix/build-system-pkgs";
+
+        # Ensure consistent dependencies between these tools
+        pyproject-nix.inputs.nixpkgs.follows = "nixpkgs";
+        uv2nix.inputs.nixpkgs.follows = "nixpkgs";
+        pyproject-build-systems.inputs.nixpkgs.follows = "nixpkgs";
+        uv2nix.inputs.pyproject-nix.follows = "pyproject-nix";
+        pyproject-build-systems.inputs.pyproject-nix.follows = "pyproject-nix";
+    };
+
+    outputs = { self, nixpkgs, flake-utils, uv2nix, pyproject-nix, pyproject-build-systems, ... }:
+        flake-utils.lib.eachDefaultSystem (system:
+            let
+            # ===      common dependencies      ===
+                pkgs = import nixpkgs { inherit system; };
+                lib = nixpkgs.lib;
+                python = pkgs.python{{ python_version | replace('.', '') }};
+                postgresql = pkgs.postgresql_{{ postgres_version }};
+
+                # Load the workspace and create uv2nix overlay
+                workspace = uv2nix.lib.workspace.loadWorkspace {
+                    workspaceRoot = ./.;
+                };
+                uvLockedOverlay = workspace.mkPyprojectOverlay {
+                    sourcePreference = "wheel";
+                };
+
+                # Overlay to add native build dependencies for Python packages
+                #
+                # Overlay args (final: prev:):
+                #     final - final set of packages with all overlays applied
+                #     prev  - set of packages before this overlay
+                #
+                # overrideAttrs arg (old:):
+                #     old - original attributes of the derivation being overridden
+                #
+                nativeDepsOverlay = final: prev:
+                    let
+                        # Helper to add setuptools as build dependency for legacy sdist-only packages
+                        addSetuptoolsBuildDep = pkg: pkg.overrideAttrs (old: {
+                            nativeBuildInputs = (old.nativeBuildInputs or []) ++ [ final.setuptools final.wheel ];
+                        });
+                    in {
+                        # Legacy python packages that only have sdist and need setuptools to build
+                        # (evaluated lazily — harmless when a package is absent from uv.lock)
+                        ofxparse = addSetuptoolsBuildDep prev.ofxparse;
+                        vobject = addSetuptoolsBuildDep prev.vobject;
+                        olefile = addSetuptoolsBuildDep prev.olefile;
+
+                        # python-ldap needs native LDAP libraries
+                        python-ldap = prev.python-ldap.overrideAttrs (old: {
+                            # build time dependencies
+                            nativeBuildInputs = (old.nativeBuildInputs or []) ++ [
+                                pkgs.pkg-config
+                                final.setuptools
+                                final.wheel
+                            ];
+                            # run time dependencies
+                            buildInputs = (old.buildInputs or []) ++ [
+                                pkgs.openldap
+                                pkgs.openldap.dev
+                                pkgs.cyrus_sasl
+                                pkgs.cyrus_sasl.dev
+                            ];
+                            env = (old.env or {}) // {
+                                CFLAGS = "-I${pkgs.openldap.dev}/include -I${pkgs.cyrus_sasl.dev}/include";
+                                LDFLAGS = "-L${pkgs.openldap.out}/lib -L${pkgs.cyrus_sasl.out}/lib";
+                                CPPFLAGS = "-I${pkgs.openldap.dev}/include -I${pkgs.cyrus_sasl.dev}/include";
+                            };
+                        });
+                    };
+
+                # Build the Python environment for the project
+                #
+                # Overlay application order:
+                #     1. pyproject-build-systems.overlays.default (base build systems)
+                #     2. uvLockedOverlay (adds packages from uv.lock)
+                #     3. nativeDepsOverlay (patches packages that need native deps)
+                pythonSet =
+                    (pkgs.callPackage pyproject-nix.build.packages { inherit python; })
+                    .overrideScope (nixpkgs.lib.composeManyExtensions [
+                        pyproject-build-systems.overlays.default
+                        uvLockedOverlay
+                        nativeDepsOverlay
+                    ]);
+
+                projectNameInToml = "{{ project_name }}";
+                thisProjectAsNixPkg = pythonSet.${projectNameInToml};
+                appPythonEnv = pythonSet.mkVirtualEnv (thisProjectAsNixPkg.pname + "-env") workspace.deps.default;
+
+            # ===      shell scripts      ===
+
+                # All shell code lives in nix/scripts/*.sh. mkScript wraps
+                # nix/scripts/<name>.sh into a runnable binary:
+                #     deps - packages prepended to PATH
+                #     vars - values exported as environment variables
+                mkScript = name: { deps ? [ ], vars ? { } }:
+                    pkgs.writeShellScriptBin name (
+                        lib.optionalString (deps != [ ]) ''
+                            export PATH="${lib.makeBinPath deps}:$PATH"
+                        ''
+                        + lib.concatStrings (lib.mapAttrsToList
+                            (varName: value: "export ${varName}=${lib.escapeShellArg (toString value)}\n")
+                            vars)
+                        + builtins.readFile (./nix/scripts + "/${name}.sh")
+                    );
+
+                scripts = rec {
+                    # production, test and development
+                    create-env = mkScript "create-env" { };
+                    update-repos = mkScript "update-repos" { deps = [ pkgs.git pkgs.yq-go ]; };
+                    bootstrap-deps = mkScript "bootstrap-deps" { deps = [ pkgs.uv python pkgs.git ]; };
+                    create-odoo-config = mkScript "create-odoo-config" { };
+                    create-nginx-config = mkScript "create-nginx-config" { };
+                    create-systemd-service = mkScript "create-systemd-service" {
+                        vars = {
+                            NGINX_BIN = "${pkgs.nginx}/bin/nginx";
+                            LOGROTATE_BIN = "${pkgs.logrotate}/sbin/logrotate";
+                        };
+                    };
+                    setup-prod = mkScript "setup-prod" {
+                        deps = [
+                            create-env
+                            update-repos
+                            create-odoo-config
+                            create-nginx-config
+                            create-systemd-service
+                        ];
+                    };
+
+                    # test and development
+{% if backup_s3_bucket %}
+                    create-aws-config = mkScript "create-aws-config" { };
+                    download-backup = mkScript "download-backup" {
+                        deps = [ postgresql pkgs.awscli2 odooWrapper ];
+                        vars.DEV_FIXUP_SQL = "${./nix/scripts/dev-fixup.sql}";
+                    };
+                    setup-test = mkScript "setup-test" { deps = [ setup-prod create-aws-config ]; };
+{% else %}
+                    setup-test = mkScript "setup-test" { deps = [ setup-prod ]; };
+{% endif %}
+
+                    # development
+                    setup-postgres = mkScript "setup-postgres" {
+                        deps = [ postgresql ];
+                        vars.POSTGRES_BIN = "${postgresql}/bin/postgres";
+                    };
+{% if prod_ssh_host %}
+                    setup-ssh-access = mkScript "setup-ssh-access" { };
+{% endif %}
+                    create-vscode-settings = mkScript "create-vscode-settings" { };
+                    setup-dev = mkScript "setup-dev" {
+                        deps = [
+                            setup-prod
+                            setup-postgres
+                            setup-test
+{% if prod_ssh_host %}
+                            setup-ssh-access
+{% endif %}
+                            create-vscode-settings
+                        ];
+                    };
+                };
+
+            # ===      production, test and development      ===
+
+                # Runtime tools needed in production
+                productionTools = [
+                    appPythonEnv
+                    pkgs.wkhtmltopdf
+                    postgresql
+                    pkgs.awscli2
+                    pkgs.sassc
+                    pkgs.nginx
+                    pkgs.yq-go
+                ];
+
+                # Odoo binary (supports subcommands: server, shell, scaffold, etc.)
+                mkOdooWrapper = devFlags: mkScript "odoo" {
+                    deps = productionTools;
+                    vars = {
+                        ODOO_PYTHON = "${appPythonEnv}/bin/python";
+                        ODOO_DEV_FLAGS = devFlags;
+                    };
+                };
+                odooWrapper = mkOdooWrapper "";
+                odooDevWrapper = mkOdooWrapper "--dev=reload,qweb,werkzeug,xml";
+
+                # The servers are the same package modulo tools, odoo wrapper and extras
+                mkServer = { suffix, tools, odoo, extraInstall ? "" }:
+                    pkgs.stdenv.mkDerivation {
+                        pname = "${thisProjectAsNixPkg.pname}-${suffix}";
+                        version = thisProjectAsNixPkg.version;
+                        src = ./.;
+
+                        nativeBuildInputs = [ pkgs.makeWrapper ];
+                        buildInputs = tools;
+
+                        installPhase = ''
+                            mkdir -p $out/bin
+
+                            # Python with all dependencies
+                            makeWrapper ${appPythonEnv}/bin/python $out/bin/python \
+                                --prefix PATH : ${lib.makeBinPath tools}
+                            makeWrapper ${appPythonEnv}/bin/python3 $out/bin/python3 \
+                                --prefix PATH : ${lib.makeBinPath tools}
+
+                            makeWrapper ${pkgs.awscli2}/bin/aws $out/bin/aws
+
+                            ln -s ${odoo}/bin/odoo $out/bin/odoo
+                        '' + extraInstall;
+                    };
+
+            # ===      development      ===
+
+                # Additional tools for local development only
+                devTools = [
+                    pkgs.ruff
+                    pkgs.uv
+                    pkgs.git
+                    pkgs.ccze
+                ];
+
+{% if prod_ssh_host %}
+                # SSH connection helpers
+                prodServerHelper = mkScript "prod-server" { };
+{% if test_ssh_host %}
+                testServerHelper = mkScript "test-server" { };
+{% endif %}
+{% endif %}
+                welcomeMessage = mkScript "welcome-message" {
+                    vars = {
+                        POSTGRESQL_VERSION = postgresql.version;
+                        PYTHON_VERSION = python.version;
+                        WKHTMLTOPDF_VERSION = pkgs.wkhtmltopdf.version;
+                        NGINX_VERSION = pkgs.nginx.version;
+                    };
+                };
+
+                devServerExtras = ''
+
+                    # ccze for colorized logs
+                    makeWrapper ${pkgs.ccze}/bin/ccze $out/bin/ccze
+
+                    # Dev tools
+                    makeWrapper ${pkgs.ruff}/bin/ruff $out/bin/ruff
+                    makeWrapper ${pkgs.uv}/bin/uv $out/bin/uv
+                    makeWrapper ${pkgs.git}/bin/git $out/bin/git
+
+                    # PostgreSQL client tools bound to the project-local cluster
+                    for tool in psql pg_dump pg_restore createdb dropdb; do
+                        makeWrapper ${postgresql}/bin/$tool $out/bin/$tool \
+                            --run 'if [ -z "${{ project_dir_var }}" ]; then {{ project_dir_var }}="$(pwd)"; fi' \
+                            --run 'if [ -f "${{ project_dir_var }}/.env" ]; then set -a; source "${{ project_dir_var }}/.env"; set +a; fi' \
+                            --run 'export PGDATA="${{ project_dir_var }}/.postgres"' \
+                            --run 'export PGHOST="${{ project_dir_var }}/.postgres"'
+                    done
+
+                    # Welcome message{% if prod_ssh_host %} + SSH connection helpers{% endif %}
+                    ln -s ${welcomeMessage}/bin/welcome-message $out/bin/welcome-message
+{% if prod_ssh_host %}
+                    ln -s ${prodServerHelper}/bin/prod-server $out/bin/prod-server
+{% if test_ssh_host %}
+                    ln -s ${testServerHelper}/bin/test-server $out/bin/test-server
+{% endif %}
+{% endif %}
+                '';
+            in
+            {
+                # nix flake check — shellcheck over all project shell scripts
+                checks.shellcheck = pkgs.runCommand "shellcheck-scripts" { } ''
+                    export LC_ALL=C.UTF-8
+                    ${pkgs.shellcheck}/bin/shellcheck --severity=warning -e SC1090,SC1091 \
+                        ${./nix/scripts}/*.sh
+                    touch $out
+                '';
+
+                # nix run .#<name> for every script in nix/scripts/
+                apps = builtins.mapAttrs
+                    (name: script: {
+                        type = "app";
+                        program = "${script}/bin/${name}";
+                        meta.description = "see nix/scripts/${name}.sh";
+                    })
+                    scripts;
+
+                # Scripts are also buildable directly: nix build .#<name>
+                packages = scripts // {
+                    # nix profile add .#prod-server / nix profile remove prod-server
+                    prod-server = mkServer {
+                        suffix = "prod-server";
+                        tools = productionTools;
+                        odoo = odooWrapper;
+                    };
+
+                    # nix profile add .#test-server / nix profile remove test-server
+                    test-server = mkServer {
+                        suffix = "test-server";
+                        tools = productionTools;
+                        odoo = odooWrapper;
+                    };
+
+                    # nix profile add .#dev-server / nix profile remove dev-server
+                    dev-server = mkServer {
+                        suffix = "dev-server";
+                        tools = productionTools ++ devTools;
+                        odoo = odooDevWrapper;
+                        extraInstall = devServerExtras;
+                    };
+                };
+            }
+        );
+}

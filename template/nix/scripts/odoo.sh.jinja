@@ -1,0 +1,7 @@
+# shellcheck shell=bash
+# Odoo launcher (supports subcommands: server, shell, scaffold, etc.).
+# Requires: ODOO_PYTHON - python of the app env; ODOO_DEV_FLAGS - optional
+# --dev flags (both injected by flake.nix); runtime tools are already on PATH.
+if [ -z "${{ project_dir_var }}" ]; then {{ project_dir_var }}="$(pwd)"; fi
+# shellcheck disable=SC2086
+exec "$ODOO_PYTHON" "${{ project_dir_var }}/src/odoo/odoo-bin" "$@" $ODOO_DEV_FLAGS

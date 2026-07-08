@@ -1,0 +1,13 @@
+# shellcheck shell=bash
+# Full test-server setup: prod setup{% if backup_s3_bucket %} + AWS credentials{% endif %}.
+# The called scripts are on PATH (injected by flake.nix).
+set -e
+echo "=== Running setup of production server  ==="
+setup-prod
+{% if backup_s3_bucket %}
+echo
+echo "=== Running create-aws-config ==="
+create-aws-config
+{% endif %}
+echo
+echo "=== Test setup complete! ==="

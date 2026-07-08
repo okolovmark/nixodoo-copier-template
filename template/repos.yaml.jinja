@@ -1,0 +1,6 @@
+# Base repos cloned by `nix run .#update-repos` (Part 1).
+# Add `revision: <full sha>` to pin a repo to an exact commit.
+./src/odoo:
+  remotes:
+    github: https://github.com/odoo/odoo.git
+  target: github {{ odoo_version }}

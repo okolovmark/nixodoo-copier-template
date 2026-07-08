@@ -1,0 +1,22 @@
+# Addon repos cloned + symlinked by `nix run .#update-repos` (Part 2).
+#
+# Two entry formats:
+#   repo-key:              # tracks branch ENV.ODOO_VERSION
+#     - "module_a"         # symlink only these modules ('*' = all)
+#   repo-key:              # pinned to an exact commit
+#     revision: <full 40-char sha>
+#     modules:
+#       - "module_a"
+#
+# Repo URL = ENV.DEFAULT_REPO_PATTERN with '{}' replaced by the repo key.
+# A matching SSH deploy key at ~/.ssh/<repo-key> is used automatically.
+ENV:
+  DEFAULT_REPO_PATTERN: "{{ default_repo_pattern }}"
+  ODOO_VERSION: "{{ odoo_version }}"
+{% if use_queue_job %}
+
+queue:
+  - "queue_job"
+{% endif %}
+# web:
+#   - "web_responsive"

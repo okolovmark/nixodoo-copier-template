@@ -1,0 +1,57 @@
+# shellcheck shell=bash
+# Interactive .env generator (no-op if .env already exists).
+set -e
+umask 077    # .env holds credentials: file 600
+if [ ! -f .env ]; then
+    echo ".env file not found. Let's create one!"
+    echo
+
+    read -r -p "PostgreSQL host (default: localhost): " pghost
+    pghost=${pghost:-localhost}
+
+    read -r -p "PostgreSQL port (default: {{ postgres_port }}): " pgport
+    pgport=${pgport:-{{ postgres_port }}}
+
+    read -r -p "PostgreSQL user (default: {{ db_user }}): " pguser
+    pguser=${pguser:-{{ db_user }}}
+
+    read -r -s -p "PostgreSQL password (default: {{ db_password }}): " pgpassword
+    pgpassword=${pgpassword:-{{ db_password }}}
+    echo
+
+    read -r -p "PostgreSQL database name (default: {{ db_name }}): " pgdatabase
+    pgdatabase=${pgdatabase:-{{ db_name }}}
+
+    read -r -p "Odoo http port (default: {{ odoo_http_port }}): " http_port
+    http_port=${http_port:-{{ odoo_http_port }}}
+
+    read -r -p "Odoo {% if odoo_major | int >= 17 %}gevent{% else %}longpolling{% endif %} port (default: {{ odoo_gevent_port }}): " gevent_port
+    gevent_port=${gevent_port:-{{ odoo_gevent_port }}}
+
+    read -r -p "Nginx port (default: {{ nginx_port }}): " nginx_port
+    nginx_port=${nginx_port:-{{ nginx_port }}}
+
+    read -r -p "Preferred editor (default: nano): " editor
+    editor=${editor:-nano}
+
+    {
+        printf "{{ project_dir_var }}=%s\n" "$PWD"
+        printf "PGHOST=%s\n" "$pghost"
+        printf "PGPORT=%s\n" "$pgport"
+        printf "PGUSER=%s\n" "$pguser"
+        printf "PGPASSWORD=%s\n" "$pgpassword"
+        printf "PGDATABASE=%s\n" "$pgdatabase"
+        printf "ODOO_HTTP_PORT=%s\n" "$http_port"
+        printf "ODOO_GEVENT_PORT=%s\n" "$gevent_port"
+        printf "ODOO_NGINX_PORT=%s\n" "$nginx_port"
+        printf "DATABASE_URI=%s\n" "postgresql://$pguser:$pgpassword@localhost:$pgport/$pgdatabase"
+        printf "EDITOR=%s\n" "$editor"
+        printf "ODOO_URL=%s\n" "http://localhost:$nginx_port"
+        printf "ODOO_DATABASE=%s\n" "$pgdatabase"
+        printf "ODOO_USERNAME=%s\n" "admin"
+        printf "ODOO_PASSWORD=%s\n" "admin"
+        printf "ODOO_TIMEOUT=%s\n" "30"
+    } > .env
+    echo
+    echo ".env file created successfully!"
+fi

@@ -1,0 +1,142 @@
+# shellcheck shell=bash
+# Clone/update base repos (repos.yaml) and addon repos (addons.yaml),
+# then regenerate the addon symlink farm.
+# Requires on PATH: git, yq (injected by flake.nix).
+set -e
+SRC_DIR="src"
+ADDONS_DIR=".local/share/Odoo/addons/{{ odoo_version }}"
+
+create_symlink() {
+    local source="$1" target="$2"
+    if [ -e "$target" ] || [ -L "$target" ]; then
+        rm -f "$target"
+    fi
+    ln -s "$(realpath "$source")" "$target"
+}
+
+get_git_env() {
+    local repo_name="$1"
+    local deploy_key="$HOME/.ssh/$repo_name"
+    if [ -f "$deploy_key" ]; then
+        export GIT_SSH_COMMAND="ssh -i $deploy_key"
+    else
+        unset GIT_SSH_COMMAND
+    fi
+}
+
+# === Part 1: repos.yaml (clone/pull base repos like odoo) ===
+echo "Processing repos.yaml..."
+for repo_path in $(yq 'keys | .[]' repos.yaml); do
+    remote_name=$(yq ".[\"$repo_path\"].target | split(\" \") | .[0]" repos.yaml)
+    branch=$(yq ".[\"$repo_path\"].target | split(\" \") | .[1]" repos.yaml)
+    repo_url=$(yq ".[\"$repo_path\"].remotes.$remote_name" repos.yaml)
+    revision=$(yq ".[\"$repo_path\"].revision // \"\"" repos.yaml)
+
+    if [ -d "$repo_path" ]; then
+        echo "Updating $repo_path..."
+        if [ -n "$revision" ]; then
+            git -C "$repo_path" fetch --depth 1 origin "$revision"
+            git -C "$repo_path" checkout FETCH_HEAD
+        else
+            git -C "$repo_path" pull \
+                || echo "WARNING: git pull failed for $repo_path — still on the old revision" >&2
+        fi
+    else
+        mkdir -p "$(dirname "$repo_path")"
+        if [ -n "$revision" ]; then
+            echo "Fetching $repo_url to $repo_path (revision: $revision)..."
+            mkdir -p "$repo_path"
+            git -C "$repo_path" init
+            git -C "$repo_path" remote add origin "$repo_url"
+            git -C "$repo_path" fetch --depth 1 origin "$revision"
+            git -C "$repo_path" reset --hard FETCH_HEAD
+        else
+            echo "Cloning $repo_url to $repo_path (branch: $branch)..."
+            git clone -b "$branch" "$repo_url" "$repo_path"
+        fi
+    fi
+done
+
+echo ""
+
+# === Part 2: addons.yaml (clone/pull addon repos + create symlinks) ===
+echo "Processing addons.yaml..."
+mkdir -p "$SRC_DIR" "$ADDONS_DIR"
+
+# Clear addons dir
+echo "Clearing $ADDONS_DIR..."
+rm -rf "$ADDONS_DIR"
+mkdir -p "$ADDONS_DIR"
+
+# Get number of YAML documents
+doc_count=$(yq 'document_index' addons.yaml | tail -1)
+
+for doc_idx in $(seq 0 "$doc_count"); do
+    # Check if this document has an ENV key
+    has_env=$(yq "select(document_index == $doc_idx) | has(\"ENV\")" addons.yaml)
+    [ "$has_env" = "true" ] || continue
+
+    repo_pattern=$(yq "select(document_index == $doc_idx) | .ENV.DEFAULT_REPO_PATTERN" addons.yaml)
+    branch=$(yq "select(document_index == $doc_idx) | .ENV.ODOO_VERSION" addons.yaml)
+
+    # Iterate over repo keys (skip ENV)
+    for repo_key in $(yq "select(document_index == $doc_idx) | keys | .[] | select(. != \"ENV\")" addons.yaml); do
+        repo_url="${repo_pattern//\{\}/$repo_key}"
+        repo_dir="$SRC_DIR/$repo_key"
+
+        get_git_env "$repo_key"
+
+        # Detect format: object (with revision/modules) or plain list
+        repo_type=$(yq "select(document_index == $doc_idx) | .[\"$repo_key\"] | type" addons.yaml)
+        if [ "$repo_type" = "!!map" ]; then
+            revision=$(yq "select(document_index == $doc_idx) | .[\"$repo_key\"].revision // \"\"" addons.yaml)
+            modules=$(yq "select(document_index == $doc_idx) | .[\"$repo_key\"].modules | .[]" addons.yaml)
+        else
+            revision=""
+            modules=$(yq "select(document_index == $doc_idx) | .[\"$repo_key\"] | .[]" addons.yaml)
+        fi
+
+        if [ -d "$repo_dir" ]; then
+            echo "Updating $repo_key..."
+            if [ -n "$revision" ]; then
+                git -C "$repo_dir" fetch --depth 1 origin "$revision"
+                git -C "$repo_dir" checkout FETCH_HEAD
+            else
+                git -C "$repo_dir" pull \
+                    || echo "WARNING: git pull failed for $repo_key — still on the old revision" >&2
+            fi
+        else
+            if [ -n "$revision" ]; then
+                echo "Fetching $repo_key from $repo_url (revision: $revision)..."
+                mkdir -p "$repo_dir"
+                git -C "$repo_dir" init
+                git -C "$repo_dir" remote add origin "$repo_url"
+                git -C "$repo_dir" fetch --depth 1 origin "$revision"
+                git -C "$repo_dir" reset --hard FETCH_HEAD
+            else
+                echo "Cloning $repo_key from $repo_url (branch: $branch)..."
+                git clone -b "$branch" "$repo_url" "$repo_dir"
+            fi
+        fi
+
+        # Symlink modules
+        if echo "$modules" | grep -qx '\*'; then
+            # Wildcard: symlink all directories
+            for item_path in "$repo_dir"/*/; do
+                [ -d "$item_path" ] || continue
+                item=$(basename "$item_path")
+                [[ "$item" != .* ]] && create_symlink "$item_path" "$ADDONS_DIR/$item"
+            done
+        else
+            # Symlink specified modules
+            for module in $modules; do
+                module_path="$repo_dir/$module"
+                if [ -d "$module_path" ]; then
+                    create_symlink "$module_path" "$ADDONS_DIR/$module"
+                fi
+            done
+        fi
+    done
+done
+
+echo "Repos updated and third-party addons aggregated successfully."

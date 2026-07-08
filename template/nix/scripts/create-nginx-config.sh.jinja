@@ -1,0 +1,101 @@
+# shellcheck shell=bash
+# Generate .nginx/nginx.conf from .env values (no-op if it already exists).
+set -e
+if [ -f .env ]; then
+    set -a
+    # shellcheck disable=SC1091
+    source .env
+    set +a
+fi
+
+NGINX_DIR=".nginx"
+NGINX_LOG_DIR="$NGINX_DIR/logs"
+CONF_PATH="$NGINX_DIR/nginx.conf"
+
+mkdir -p "$NGINX_DIR" "$NGINX_LOG_DIR"
+
+if [ -f "$CONF_PATH" ]; then
+    echo "nginx.conf already exists at $CONF_PATH"
+    exit 0
+fi
+
+HTTP_PORT="${ODOO_HTTP_PORT}"
+LP_PORT="${ODOO_GEVENT_PORT}"
+NGX_PORT="${ODOO_NGINX_PORT}"
+
+cat > "$CONF_PATH" << NGINX_EOF
+error_log logs/error.log;
+pid logs/nginx.pid;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    upstream odoo-backend {
+        server 127.0.0.1:$HTTP_PORT;
+    }
+
+    upstream odoo-gevent {
+        server 127.0.0.1:$LP_PORT;
+    }
+
+    server {
+        listen $NGX_PORT so_keepalive=on;
+        server_name localhost;
+        # Log files
+        access_log logs/odoo-access.log;
+        error_log logs/odoo-error.log;
+
+        # Max upload size (for file attachments)
+        client_max_body_size 50m;
+
+        # Increase proxy buffer size
+        proxy_buffers 16 64k;
+        proxy_buffer_size 128k;
+        # Force timeouts if the backend dies
+        proxy_next_upstream error timeout invalid_header http_500 http_502 http_503;
+        # Enable data compression
+        gzip on;
+        gzip_min_length 1100;
+        gzip_buffers 4 32k;
+        gzip_types text/plain text/xml text/css text/less application/x-javascript application/xml application/json application/javascript;
+        gzip_vary on;
+
+        # Proxy header and settings
+        proxy_set_header Host \$http_host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+
+        location /websocket {
+            proxy_pass http://odoo-gevent;
+            proxy_set_header Upgrade \$http_upgrade;
+            proxy_set_header Connection "upgrade";
+        }
+
+        # Cache static data
+        location ~* /web/static/ {
+            proxy_cache_valid 200 60m;
+            proxy_buffering on;
+            expires 864000;
+            proxy_pass http://odoo-backend;
+        }
+
+        location / {
+            proxy_pass http://odoo-backend;
+            # The following makes the timeout broader
+            proxy_read_timeout 30000;
+            proxy_redirect off;
+        }
+{% if odoo_major | int < 17 %}
+
+        location /longpolling {
+            proxy_pass http://odoo-gevent;
+        }
+{% endif %}
+    }
+}
+NGINX_EOF
+
+echo "Generated nginx.conf with ports: Odoo HTTP=$HTTP_PORT, Odoo gevent/longpolling=$LP_PORT, Nginx=$NGX_PORT"

@@ -1,0 +1,8 @@
+# shellcheck shell=bash
+# SSH into the production server using the project-local SSH config.
+if [ -z "${{ project_dir_var }}" ]; then {{ project_dir_var }}="$(pwd)"; fi
+echo "Connecting to production server..."
+{% if prod_web_url %}
+echo "URL: {{ prod_web_url }}"
+{% endif %}
+ssh -F "${{ project_dir_var }}/.ssh/config" prod

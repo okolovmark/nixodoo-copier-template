@@ -1,0 +1,133 @@
+# shellcheck shell=bash
+# Generate systemd user services for Odoo and Nginx + a daily log-rotation
+# timer for odoo.log.
+# Requires: NGINX_BIN, LOGROTATE_BIN - absolute binary paths (injected by
+# flake.nix).
+set -e
+SYSTEMD_DIR="$HOME/.config/systemd/user"
+PROJECT_DIR="$PWD"
+
+echo "Creating systemd user services..."
+echo "Project directory: $PROJECT_DIR"
+mkdir -p "$SYSTEMD_DIR"
+
+# Add or update {{ project_dir_var }} in ~/.bashrc if it exists
+if [ -f "$HOME/.bashrc" ]; then
+    if grep -q "export {{ project_dir_var }}=" "$HOME/.bashrc"; then
+        echo "Updating {{ project_dir_var }} in ~/.bashrc..."
+        sed -i "s|export {{ project_dir_var }}=.*|export {{ project_dir_var }}=$PROJECT_DIR|g" "$HOME/.bashrc"
+        echo "  Updated {{ project_dir_var }} in ~/.bashrc"
+    else
+        echo "Adding {{ project_dir_var }} to ~/.bashrc..."
+        {
+            echo ""
+            echo "# Odoo project directory"
+            echo "export {{ project_dir_var }}=$PROJECT_DIR"
+            echo ""
+        } >> "$HOME/.bashrc"
+        echo "  Added {{ project_dir_var }} to ~/.bashrc"
+    fi
+fi
+
+# Create Odoo service
+ODOO_SERVICE_FILE="$SYSTEMD_DIR/odoo.service"
+echo "Creating Odoo service..."
+cat > "$ODOO_SERVICE_FILE" << EOF
+[Unit]
+Description=Odoo
+After=network.target
+
+[Service]
+Type=simple
+Environment="PATH=%h/.nix-profile/bin:\$PATH"
+Environment={{ project_dir_var }}=$PROJECT_DIR
+ExecStart=%h/.nix-profile/bin/odoo -c $PROJECT_DIR/odoo.conf
+Restart=always
+RestartSec=10
+StandardOutput=journal+console
+
+[Install]
+WantedBy=default.target
+
+EOF
+echo "  Created $ODOO_SERVICE_FILE"
+
+# Create Nginx service
+NGINX_SERVICE_FILE="$SYSTEMD_DIR/nginx.service"
+echo "Creating Nginx service..."
+cat > "$NGINX_SERVICE_FILE" << EOF
+[Unit]
+Description=Nginx for Odoo
+After=network.target
+
+[Service]
+Type=forking
+Environment="PATH=%h/.nix-profile/bin:\$PATH"
+Environment={{ project_dir_var }}=$PROJECT_DIR
+ExecStartPre=$NGINX_BIN -c $PROJECT_DIR/.nginx/nginx.conf -p $PROJECT_DIR/.nginx -e $PROJECT_DIR/.nginx/logs/error.log -t
+ExecStart=$NGINX_BIN -c $PROJECT_DIR/.nginx/nginx.conf -p $PROJECT_DIR/.nginx -e $PROJECT_DIR/.nginx/logs/error.log
+ExecReload=$NGINX_BIN -c $PROJECT_DIR/.nginx/nginx.conf -p $PROJECT_DIR/.nginx -e $PROJECT_DIR/.nginx/logs/error.log -s reload
+ExecStop=$NGINX_BIN -c $PROJECT_DIR/.nginx/nginx.conf -p $PROJECT_DIR/.nginx -e $PROJECT_DIR/.nginx/logs/error.log -s stop
+Restart=always
+RestartSec=10
+StandardOutput=journal+console
+
+[Install]
+WantedBy=default.target
+
+EOF
+echo "  Created $NGINX_SERVICE_FILE"
+
+# Log rotation for odoo.log (copytruncate — safe with multi-worker Odoo)
+LOGROTATE_CONF="$PROJECT_DIR/.logrotate.conf"
+echo "Creating log rotation config + timer..."
+cat > "$LOGROTATE_CONF" << EOF
+$PROJECT_DIR/odoo.log {
+    daily
+    maxsize 100M
+    rotate 7
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+}
+EOF
+echo "  Created $LOGROTATE_CONF"
+
+LOGROTATE_SERVICE_FILE="$SYSTEMD_DIR/odoo-logrotate.service"
+cat > "$LOGROTATE_SERVICE_FILE" << EOF
+[Unit]
+Description=Rotate Odoo logs
+
+[Service]
+Type=oneshot
+ExecStart=$LOGROTATE_BIN --state $PROJECT_DIR/.logrotate.state $LOGROTATE_CONF
+EOF
+echo "  Created $LOGROTATE_SERVICE_FILE"
+
+LOGROTATE_TIMER_FILE="$SYSTEMD_DIR/odoo-logrotate.timer"
+cat > "$LOGROTATE_TIMER_FILE" << EOF
+[Unit]
+Description=Daily Odoo log rotation
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
+echo "  Created $LOGROTATE_TIMER_FILE"
+
+echo
+echo "Reloading systemd daemon..."
+systemctl --user daemon-reload
+echo
+echo "To enable and start the services, run:"
+echo "  systemctl --user enable odoo.service nginx.service odoo-logrotate.timer"
+echo "  systemctl --user start odoo.service nginx.service odoo-logrotate.timer"
+echo "  systemctl --user status odoo.service nginx.service"
+echo
+echo "(Optional) To run services even when not logged in:"
+echo "  sudo loginctl enable-linger \$USER"

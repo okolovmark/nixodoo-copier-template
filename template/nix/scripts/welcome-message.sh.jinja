@@ -1,0 +1,46 @@
+# shellcheck shell=bash
+# Print the dev environment banner with versions and useful commands.
+# Requires: POSTGRESQL_VERSION, PYTHON_VERSION, WKHTMLTOPDF_VERSION,
+# NGINX_VERSION (injected by flake.nix).
+if [ -z "${{ project_dir_var }}" ]; then {{ project_dir_var }}="$(pwd)"; fi
+if [ -f "${{ project_dir_var }}/.env" ]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "${{ project_dir_var }}/.env"
+    set +a
+fi
+
+echo "╔═══════════════════════════════════════════════════════════════╗"
+printf "║  %-61s║\n" "{{ project_name }} — Odoo {{ odoo_version }} Dev Environment"
+echo "╚═══════════════════════════════════════════════════════════════╝"
+echo ""
+echo "Project: ${{ project_dir_var }}"
+echo "Odoo URL: http://localhost:$ODOO_NGINX_PORT"
+echo ""
+echo "Versions:"
+echo "  PostgreSQL:    $POSTGRESQL_VERSION"
+echo "  Python:        $PYTHON_VERSION"
+echo "  wkhtmltopdf:   $WKHTMLTOPDF_VERSION"
+echo "  Nginx:         $NGINX_VERSION"
+echo ""
+echo "Services:"
+echo "  systemctl --user enable odoo.service postgres.service nginx.service odoo-logrotate.timer"
+echo "  systemctl --user start odoo.service postgres.service nginx.service odoo-logrotate.timer"
+echo "  systemctl --user restart odoo.service postgres.service nginx.service"
+echo "  systemctl --user stop odoo.service postgres.service nginx.service"
+echo "  systemctl --user status odoo.service postgres.service nginx.service"
+echo ""
+echo "Useful Commands:"
+echo "  update module:    odoo -c \${{ project_dir_var }}/odoo.conf -u module_name --workers 0 --stop-after-init --logfile=/dev/stdout"
+echo "  run shell:        odoo shell -c \${{ project_dir_var }}/odoo.conf --workers 0 --stop-after-init"
+echo "  odoo logs:        journalctl --user -u odoo.service -f | ccze -A"
+echo "  postgres logs:    tail -f \".postgres/log/postgresql.log\" | ccze -A"
+{% if prod_ssh_host %}
+echo ""
+echo "Remote Servers:"
+echo "  prod-server  - Connect to production{% if prod_web_url %} ({{ prod_web_url }}){% endif %}"
+{% if test_ssh_host %}
+echo "  test-server  - Connect to test{% if test_web_url %} ({{ test_web_url }}){% endif %}"
+{% endif %}
+{% endif %}
+echo ""

@@ -1,0 +1,137 @@
+# shellcheck shell=bash
+# Download the latest prod backup from S3 and restore it into a local database,
+# then neutralize it (native `odoo neutralize` — runs every installed module's
+# data/neutralize.sql) and apply dev fixups (admin/admin, requeue stuck jobs).
+# Requires on PATH: aws, psql, pg_ctl, pg_restore, odoo; DEV_FIXUP_SQL - path
+# to dev-fixup.sql (all injected by flake.nix).
+set -e
+
+# Parse arguments
+SKIP_DOWNLOAD=false
+DATABASE_NAME=""
+
+usage() {
+    echo "Usage: nix run .#download-backup -- [database_name] [--skip-download]"
+    echo ""
+    echo "Arguments:"
+    echo "  database_name    Name of the database to create/restore (default: db_name from odoo.conf)"
+    echo "  --skip-download  Skip downloading backup from S3 (use existing backup folder)"
+    exit 1
+}
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --skip-download)
+            SKIP_DOWNLOAD=true
+            shift
+            ;;
+        -h|--help)
+            usage
+            ;;
+        -*)
+            echo "Unknown option: $1"
+            usage
+            ;;
+        *)
+            if [ -z "$DATABASE_NAME" ]; then
+                DATABASE_NAME="$1"
+            else
+                echo "Unexpected argument: $1"
+                usage
+            fi
+            shift
+            ;;
+    esac
+done
+
+# Read database configuration from odoo.conf
+ODOO_CONF="$PWD/odoo.conf"
+if [ ! -f "$ODOO_CONF" ]; then
+    echo "Error: odoo.conf not found at $ODOO_CONF"
+    exit 1
+fi
+
+get_conf_value() {
+    grep "^$1 = " "$ODOO_CONF" | sed "s/^$1 = //"
+}
+
+PGHOST=$(get_conf_value "db_host")
+PGPORT=$(get_conf_value "db_port")
+PGUSER=$(get_conf_value "db_user")
+PGPASSWORD=$(get_conf_value "db_password")
+PGDATABASE=$(get_conf_value "db_name")
+
+export PGHOST_SOCKET=$PWD/.postgres
+
+# Override PGDATABASE with provided database name if set
+if [ -n "$DATABASE_NAME" ]; then
+    PGDATABASE="$DATABASE_NAME"
+fi
+
+if [ -z "$PGDATABASE" ]; then
+    echo "Error: database_name is required (either as argument or db_name in odoo.conf)"
+    usage
+fi
+
+echo "Using database configuration:"
+echo "  Host: $PGHOST"
+echo "  Port: $PGPORT"
+echo "  User: $PGUSER"
+echo "  Database: $PGDATABASE"
+
+if [ "$SKIP_DOWNLOAD" = false ]; then
+    echo "Downloading latest backup from AWS S3..."
+    mkdir -p "$PWD/backup"
+    if [ "$(ls -A backup)" ]; then
+        rm backup/*
+    fi
+    AWS_SHARED_CREDENTIALS_FILE=.aws/credentials aws s3 cp "s3://{{ backup_s3_bucket }}/$(AWS_SHARED_CREDENTIALS_FILE=.aws/credentials aws s3 ls s3://{{ backup_s3_bucket }}/ | tail -1 | awk '{print $NF}')" backup
+    echo "Backup downloaded successfully to $PWD/backup"
+else
+    echo "Skipping download, using existing backup folder..."
+fi
+
+STARTED_CLUSTER=false
+if [ "$(ls -A backup)" ]; then
+    # Determine connection host: use socket for localhost, TCP for remote
+    if [ "$PGHOST" = "localhost" ] || [ "$PGHOST" = "127.0.0.1" ]; then
+        export PGDATA=$PWD/.postgres
+        PG_CONN_HOST="$PGHOST_SOCKET"
+        # Start the local cluster only if it isn't already running
+        # (postgres.service may hold it — restoring in place is fine and
+        # doesn't disturb other databases / worktree sessions)
+        if ! pg_isready -q -h "$PGHOST_SOCKET" -p "$PGPORT"; then
+            pg_ctl start -o "-k $PGHOST_SOCKET -p $PGPORT"
+            STARTED_CLUSTER=true
+        fi
+        # Create odoo user as postgres superuser (only for localhost)
+        if ! env PGUSER="$USER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='$PGUSER'" | grep -q 1; then
+            env PGUSER="$USER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d postgres -c "CREATE USER $PGUSER WITH SUPERUSER PASSWORD '$PGPASSWORD';"
+            echo "Created PostgreSQL user '$PGUSER'"
+        fi
+    else
+        PG_CONN_HOST="$PGHOST"
+        export PGPASSWORD="$PGPASSWORD"
+    fi
+    echo "Restoring backup to database '$PGDATABASE'... (errors: $PWD/backup/pg_restore.log)"
+    env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='$PGDATABASE' AND pid<>pg_backend_pid();" >/dev/null 2>&1 || true
+    env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d postgres -c "DROP DATABASE IF EXISTS $PGDATABASE;"
+    env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d postgres -c "CREATE DATABASE $PGDATABASE OWNER $PGUSER;"
+    pg_restore --clean --no-acl --no-owner -h "$PG_CONN_HOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" backup/*.dump 2>"$PWD/backup/pg_restore.log" || true
+    if ! [ "$(env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d "$PGDATABASE" -tAc "SELECT count(*) FROM res_users" 2>/dev/null)" -gt 0 ] 2>/dev/null; then
+        echo "ERROR: restore incomplete (res_users empty) — see $PWD/backup/pg_restore.log" >&2
+        exit 1
+    fi
+    echo "Backup restored successfully to database '$PGDATABASE'"
+    echo "Neutralizing database '$PGDATABASE' (odoo neutralize)..."
+    odoo neutralize -c "$ODOO_CONF" -d "$PGDATABASE"
+    echo "Applying dev fixups..."
+    env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d "$PGDATABASE" -f "$DEV_FIXUP_SQL" || true
+    # Stop the local cluster only if this script started it
+    if [ "$STARTED_CLUSTER" = true ]; then
+        pg_ctl stop
+    fi
+    echo "Database cleanup complete"
+else
+    echo "No backup found to restore."
+fi

@@ -1,0 +1,81 @@
+# {{ project_name }}
+
+Odoo {{ odoo_version }} development environment powered by Nix flakes
+(Python {{ python_version }}, PostgreSQL {{ postgres_version }}).
+Generated from [nixodoo-copier-template](https://github.com/okolovmark/nixodoo-copier-template).
+
+## Quick start
+
+```bash
+# 1. Generate .env (ports, DB credentials — defaults are fine)
+nix run .#create-env
+
+# 2. Clone Odoo {{ odoo_version }} + addon repos, build the addons symlink farm
+nix run .#update-repos
+
+# 3. Import Odoo's python requirements into pyproject.toml and lock them
+nix run .#bootstrap-deps
+
+# 4. Install the dev toolchain (odoo, psql, ruff, uv, ...) into your profile
+nix profile add .#dev-server
+
+# 5. Local postgres cluster + odoo.conf + nginx.conf + systemd user services
+nix run .#setup-dev
+
+# 6. Start everything
+systemctl --user enable --now postgres.service odoo.service nginx.service odoo-logrotate.timer
+
+# Odoo is now at http://localhost:{{ nginx_port }}
+```
+
+`welcome-message` prints ports, versions and useful commands at any time.
+
+## Commands
+
+| Command | Purpose |
+|---|---|
+| `nix run .#create-env` | interactive `.env` generator |
+| `nix run .#update-repos` | clone/update `repos.yaml` + `addons.yaml`, rebuild the addons farm |
+| `nix run .#bootstrap-deps` | import `src/odoo/requirements.txt` into `pyproject.toml` + `uv lock` |
+| `nix run .#create-odoo-config` | generate `odoo.conf` (random `admin_passwd`) |
+| `nix run .#create-nginx-config` | generate `.nginx/nginx.conf` |
+| `nix run .#create-systemd-service` | systemd user units (odoo, nginx, log rotation) |
+| `nix run .#setup-postgres` | init the project-local PostgreSQL cluster + unit |
+{% if backup_s3_bucket %}
+| `nix run .#download-backup` | fetch the latest prod dump from S3, restore + neutralize |
+| `nix run .#create-aws-config` | interactive `.aws/credentials` generator |
+{% endif %}
+{% if prod_ssh_host %}
+| `nix run .#setup-ssh-access` | one-time SSH key + config for the remote servers |
+{% endif %}
+| `nix run .#setup-dev` | everything above in one go |
+| `nix flake check` | shellcheck over all project scripts |
+
+## Daily use
+
+```bash
+# Update/install a module (stop odoo.service first)
+odoo -c ${{ project_dir_var }}/odoo.conf -u module_name --workers 0 --stop-after-init --logfile=/dev/stdout
+
+# Interactive shell
+odoo shell -c ${{ project_dir_var }}/odoo.conf --workers 0 --stop-after-init
+
+# Logs
+journalctl --user -u odoo.service -f | ccze -A
+```
+
+{% if backup_s3_bucket %}
+## Production backups
+
+`nix run .#download-backup` restores the latest dump from `s3://{{ backup_s3_bucket }}`
+into `$PGDATABASE` (or a name passed as the first argument), then sanitizes it:
+Odoo's native neutralization (`odoo neutralize` — every installed module's
+`data/neutralize.sql`) plus `nix/scripts/dev-fixup.sql` (local `admin`/`admin`
+login, requeue stuck queue jobs). Restore errors land in `backup/pg_restore.log`.
+
+{% endif %}
+## Updating from the template
+
+```bash
+uvx copier update --trust
+```

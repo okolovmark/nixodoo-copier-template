@@ -1,0 +1,31 @@
+# shellcheck shell=bash
+# One-time SSH key + config for the remote servers (no-op if .ssh exists).
+set -e
+if [ ! -d "$PWD/.ssh" ]; then
+    echo "Configuring ssh access for servers..."
+    mkdir .ssh
+    ssh-keygen -t ed25519 -f "$PWD/.ssh/odoo{{ odoo_major }}"
+    echo "Ask your admin to add this public key to the servers:"
+    cat "$PWD/.ssh/odoo{{ odoo_major }}.pub"
+    echo
+    cat > "$PWD/.ssh/config" << EOF
+Host prod
+  HostName {{ prod_ssh_host }}
+  User {{ prod_ssh_user }}
+  IdentityFile $PWD/.ssh/odoo{{ odoo_major }}
+  ServerAliveInterval 60
+  ServerAliveCountMax 3
+{% if test_ssh_host %}
+Host test
+  HostName {{ test_ssh_host }}
+  User {{ test_ssh_user }}
+  Port {{ test_ssh_port }}
+{% if test_local_forward %}
+  LocalForward {{ test_local_forward }}
+{% endif %}
+  IdentityFile $PWD/.ssh/odoo{{ odoo_major }}
+  ServerAliveInterval 60
+  ServerAliveCountMax 3
+{% endif %}
+EOF
+fi

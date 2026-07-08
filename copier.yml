@@ -1,0 +1,167 @@
+# nixodoo-copier-template — Nix-flake Odoo development environment generator.
+# Usage: copier copy --trust gh:okolovmark/nixodoo-copier-template <dst>
+
+_subdirectory: template
+_templates_suffix: .jinja
+_min_copier_version: "9.0.0"
+
+_envops:
+  trim_blocks: true
+  lstrip_blocks: true
+
+_tasks:
+  - "[ -d .git ] || git init -q"
+  # Empty-but-valid uv.lock so the flake evaluates before bootstrap-deps runs
+  - "uv lock 2>/dev/null || echo 'NOTE: uv not found — nix run .#bootstrap-deps will create uv.lock'"
+
+# === questions ===
+
+project_name:
+  type: str
+  help: Technical project name (kebab-case; used in pyproject, flake, banners)
+  default: odoo-dev-env
+  validator: "{% if not (project_name | regex_search('^[a-z][a-z0-9-]+$')) %}Use lowercase kebab-case (letters, digits, dashes){% endif %}"
+
+odoo_version:
+  type: str
+  help: Odoo Community version (branch of odoo/odoo)
+  default: "19.0"
+  choices:
+    - "16.0"
+    - "17.0"
+    - "18.0"
+    - "19.0"
+
+python_version:
+  type: str
+  help: Python for the Odoo env (16 needs 3.10; 17 runs on 3.10/3.11; 18/19 are happiest on 3.12)
+  default: "{% if odoo_version == '16.0' %}3.10{% elif odoo_version == '17.0' %}3.11{% else %}3.12{% endif %}"
+  choices:
+    - "3.10"
+    - "3.11"
+    - "3.12"
+    - "3.13"
+
+postgres_version:
+  type: int
+  help: PostgreSQL major version (project-local cluster)
+  default: "{% if odoo_version in ['16.0', '17.0'] %}15{% else %}17{% endif %}"
+  choices:
+    - 13
+    - 14
+    - 15
+    - 16
+    - 17
+
+# --- ports / database (defaults derived from the Odoo major version) ---
+
+odoo_http_port:
+  type: int
+  help: Odoo HTTP port
+  default: "{{ (odoo_version | replace('.0', '') | int) * 100 + 69 }}"
+
+odoo_gevent_port:
+  type: int
+  help: Longpolling (16) / gevent websocket (17+) port
+  default: "{{ (odoo_version | replace('.0', '') | int) * 100 + 72 }}"
+
+nginx_port:
+  type: int
+  help: Nginx reverse-proxy port
+  default: "{{ (odoo_version | replace('.0', '') | int) * 1000 + 69 }}"
+
+postgres_port:
+  type: int
+  help: PostgreSQL port
+  default: "{{ (odoo_version | replace('.0', '') | int) * 1000 + 432 }}"
+
+db_name:
+  type: str
+  help: Development database name
+  default: develop
+
+db_user:
+  type: str
+  help: PostgreSQL role for Odoo
+  default: odoo
+
+db_password:
+  type: str
+  help: PostgreSQL password for the Odoo role (local dev cluster)
+  default: odoo
+
+# --- optional integrations ---
+
+use_queue_job:
+  type: bool
+  help: Wire OCA queue_job in (addons.yaml entry, server_wide_modules, [queue_job] channels)?
+  default: false
+
+default_repo_pattern:
+  type: str
+  help: Git URL pattern for addon repos in addons.yaml ('{}' is replaced by the repo key)
+  default: "https://github.com/OCA/{}.git"
+
+backup_s3_bucket:
+  type: str
+  help: S3 bucket with production pg_dump backups (empty = no download-backup/aws tooling)
+  default: ""
+
+prod_ssh_host:
+  type: str
+  help: Production server SSH host/IP (empty = no SSH helper tooling)
+  default: ""
+
+prod_ssh_user:
+  type: str
+  help: Production server SSH user
+  default: ubuntu
+  when: "{{ prod_ssh_host != '' }}"
+
+prod_web_url:
+  type: str
+  help: Production web URL (shown by the prod-server helper)
+  default: ""
+  when: "{{ prod_ssh_host != '' }}"
+
+test_ssh_host:
+  type: str
+  help: Test server SSH host/IP (empty = no test-server helper)
+  default: ""
+  when: "{{ prod_ssh_host != '' }}"
+
+test_ssh_user:
+  type: str
+  help: Test server SSH user
+  default: ubuntu
+  when: "{{ test_ssh_host != '' }}"
+
+test_ssh_port:
+  type: int
+  help: Test server SSH port
+  default: 22
+  when: "{{ test_ssh_host != '' }}"
+
+test_local_forward:
+  type: str
+  help: "Optional LocalForward for the test host (e.g. '1680 localhost:16069'; empty = none)"
+  default: ""
+  when: "{{ test_ssh_host != '' }}"
+
+test_web_url:
+  type: str
+  help: Test web URL (shown by the test-server helper)
+  default: ""
+  when: "{{ test_ssh_host != '' }}"
+
+# === computed (hidden) ===
+
+odoo_major:
+  type: str
+  when: false
+  default: "{{ odoo_version | replace('.0', '') }}"
+
+project_dir_var:
+  type: str
+  when: false
+  default: "ODOO{{ odoo_version | replace('.0', '') }}_PROJECT_DIR"
