@@ -266,7 +266,7 @@
                             --run 'export PGHOST="${{ project_dir_var }}/.postgres"'
                     done
 
-                    # Welcome message{% if prod_ssh_host %} + SSH connection helpers{% endif %}
+                    # Welcome message{% if prod_ssh_host %} + SSH connection helpers{% endif +%}
                     ln -s ${welcomeMessage}/bin/welcome-message $out/bin/welcome-message
 {% if prod_ssh_host %}
                     ln -s ${prodServerHelper}/bin/prod-server $out/bin/prod-server

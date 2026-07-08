@@ -46,13 +46,14 @@ limit_request = 10000
 limit_time_cpu = 1200
 limit_time_real = 2400
 limit_time_real_cron = -1
-{% if odoo_major | int >= 17 %}gevent_port = $LP_PORT{% else %}longpolling_port = $LP_PORT{% endif %}
+{% if odoo_major | int >= 17 %}gevent_port = $LP_PORT{% else %}longpolling_port = $LP_PORT{% endif +%}
 max_cron_threads = 1
 proxy_mode = True
 report_url = $REPORT_URL
-server_wide_modules = base,web{% if use_queue_job %},queue_job{% endif %}
+server_wide_modules = base,web{% if use_queue_job %},queue_job{% endif +%}
 workers = 4
 {% if use_queue_job %}
+
 [queue_job]
 channels = root:3
 {% endif %}
