@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Show all active session envs (handy when several run in parallel).
+# Usage: wt-list.sh
+set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/wt-common.sh"
+
+printf "%-30s %-5s %-24s %-9s %s\n" SLUG PORT DB SERVICE WORKTREE
+[ -d "$WT_ENVROOT" ] || exit 0
+for env_dir in "$WT_ENVROOT"/*/; do
+    [ -d "$env_dir" ] || continue
+    slug="$(basename "$env_dir")"
+    port="$(cat "$env_dir/port" 2>/dev/null || echo '?')"
+    svc="$(systemctl --user is-active "odoo-wt@$slug.service" 2>/dev/null || echo inactive)"
+    wt="$WT_ROOT/$slug"
+    if [ -d "$wt" ]; then
+        [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ] && state=dirty || state=clean
+    else
+        state=none
+    fi
+    printf "%-30s %-5s %-24s %-9s %s\n" "$slug" "$port" "$(db_name_for "$slug")" "$svc" "$state"
+done

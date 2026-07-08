@@ -15,9 +15,13 @@ locked with uv/uv2nix.
 - Generated configs: `.env`, `odoo.conf` (random master password), nginx reverse proxy,
   systemd user units incl. daily log rotation
 - Python deps imported straight from Odoo's own `requirements.txt` and locked with `uv`
-- Optional (asked during generation): S3 production-backup restore with **native Odoo
-  neutralization** (`odoo neutralize` + dev fixups), SSH helpers for prod/test servers,
-  OCA `queue_job` wiring
+- **Claude Code integration** (optional): `CLAUDE.md`, guard hooks (read-only OCA/core,
+  dangerous-command blocker, ruff auto-format), Odoo dev skills (code patterns, style,
+  testing, commit conventions, pre-PR checklist, model inspector, pdb debugging,
+  isolated worktree envs), `dev`/`review` agents, MCP servers config
+- Optional (asked during generation): custom addons repo wiring, S3 production-backup
+  restore with **native Odoo neutralization** (`odoo neutralize` + dev fixups),
+  SSH helpers for prod/test servers, OCA `queue_job` wiring
 - `nix flake check` shellchecks every project script
 
 ## Requirements
@@ -59,6 +63,9 @@ uvx copier update --trust
 | `project_dir_var` (project-root env var; make unique to run two projects on one Odoo version) | `ODOO<major>_PROJECT_DIR` |
 | `use_queue_job` | `false` |
 | `default_repo_pattern` | `https://github.com/OCA/{}.git` |
+| `custom_repo_pattern` / `custom_repo_name` | empty → no custom addons repo |
+| `use_claude_code` | `true` — CLAUDE.md, hooks, skills, agents, MCP config |
+| `module_prefix` / `ticket_prefix` | first word of project name / `TASK` |
 | `backup_s3_bucket` | empty → no backup tooling |
 | `prod_ssh_host` (+user/url), `test_ssh_host` (+user/port/forward/url) | empty → no SSH helpers |
 

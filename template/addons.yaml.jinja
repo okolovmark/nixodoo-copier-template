@@ -20,3 +20,13 @@ queue:
 {% endif %}
 # web:
 #   - "web_responsive"
+{% if custom_repo_name %}
+
+---
+ENV:
+  DEFAULT_REPO_PATTERN: "{{ custom_repo_pattern }}"
+  ODOO_VERSION: "{{ odoo_version }}"
+
+{{ custom_repo_name }}:
+  - "*"
+{% endif %}

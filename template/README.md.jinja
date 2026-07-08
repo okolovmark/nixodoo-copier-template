@@ -18,6 +18,18 @@ Generated from [nixodoo-copier-template](https://github.com/okolovmark/nixodoo-c
 
 [Debugger](https://marketplace.visualstudio.com/items?itemName=ms-python.debugpy)
 
+{% if use_claude_code %}
+### Claude Code CLI installation
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+The project ships Claude Code integration: `CLAUDE.md` (project facts), `.claude/`
+(guard hooks, Odoo dev skills, `dev`/`review` agents) and `.mcp.json`
+(odoo / postgres / pdb MCP servers driven by `.env`).
+
+{% endif %}
 ### UV and UVX Installation
 
 [How UV works](https://docs.astral.sh/uv/getting-started/)

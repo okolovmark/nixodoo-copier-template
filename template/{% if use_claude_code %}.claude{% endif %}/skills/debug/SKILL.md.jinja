@@ -1,0 +1,121 @@
+---
+name: debug
+description: "Interactively debug the running Odoo {{ odoo_version }} server with mcp-pdb — breakpoints, stepping, runtime ORM state inspection. Use when a bug isn't obvious from reading the code and you need live state. Requires the mcp-pdb tools."
+---
+
+# Debug Odoo {{ odoo_version }} with mcp-pdb
+
+Interactively debug the Odoo server process via **mcp-pdb**: breakpoints, stepping,
+variable/ORM inspection at runtime. Requires the `mcp-pdb` tools. Use Glob/Grep to
+explore module dependencies.
+
+## Phase 0: Stop the running Odoo service
+
+**CRITICAL**: before a debug session you MUST stop the running Odoo service.
+
+```bash
+systemctl --user stop odoo.service
+systemctl --user status odoo.service
+```
+
+## Phase 1: Problem assessment
+
+1. Read error messages, stack traces, log entries (`odoo.log`)
+2. Query data state via Odoo MCP tools (`search_read`, `read`) if needed
+3. Identify the relevant module(s) and model(s)
+4. Search for the code path using Grep/Glob
+
+## Phase 2: Start debug session
+
+`mcp-pdb` `start_debug`:
+
+```
+file_path: ${{ project_dir_var }}/src/odoo/odoo-bin
+args: --config=${{ project_dir_var }}/odoo.conf --dev=reload,qweb,werkzeug,xml --workers=0
+```
+
+- `--workers=0` — **mandatory** for debugging (single-process, no forking)
+- `--dev=reload,qweb,werkzeug,xml` — auto-reload, better tracebacks
+- **NEVER** use `--logfile` — it conflicts with PDB's stdin/stdout
+
+For module update debugging, add `-u` flag:
+```
+args: --config=${{ project_dir_var }}/odoo.conf -u {{ module_prefix }}_sale --workers=0 --stop-after-init
+```
+
+## Phase 3: Enable multi-thread tracing (CRITICAL)
+
+MUST enable PDB tracing on all threads BEFORE the first `c` (continue) — Odoo handles HTTP requests in worker threads, so breakpoints won't fire without this:
+
+```
+send_pdb_command("!import sys, threading; threading.settrace(sys.gettrace())")
+```
+
+## Phase 4: Set breakpoints
+
+**CRITICAL**: use the **symlink path**, not the source path:
+
+```
+# CORRECT — symlink path:
+set_breakpoint("${{ project_dir_var }}/.local/share/Odoo/addons/{{ odoo_version }}/{{ module_prefix }}_sale/models/sale_order.py", 42)
+
+# WRONG — source path won't match:
+set_breakpoint("${{ project_dir_var }}/src/{{ custom_repo_name }}/{{ module_prefix }}_sale/models/sale_order.py", 42)
+```
+
+For **Odoo core** use their actual paths under `src/`.
+
+## Phase 5: Continue and trigger
+
+```
+send_pdb_command("c")
+```
+
+- Trigger the bug via Odoo MCP `execute` tool RPC calls.
+- The RPC call will **timeout** while PDB is paused — expected.
+
+## Phase 6: Interactive debugging
+
+| Command | Purpose |
+|---------|---------|
+| `n` | Next line (step over) |
+| `s` | Step into function call |
+| `c` | Continue to next breakpoint |
+| `r` | Run until current function returns |
+| `l` / `ll` | List source code |
+| `a` | Print current function arguments |
+| `w` | Print stack trace |
+| `u` / `d` | Move up/down in stack |
+| `p expr` | Print expression |
+| `pp expr` | Pretty-print expression |
+
+**Inspecting Odoo state:**
+```
+p self.name
+p self.state
+pp self.read(['name', 'state', 'partner_id'])
+p self.env.user.name
+p self.env.context
+p self.env.company.name
+```
+
+## Phase 7: Fix & verify
+
+1. `end_debug()` before making code changes
+2. Implement the fix
+3. Verify with module update or new debug session
+4. Restart Odoo service: `systemctl --user start odoo.service`
+
+## Common scenarios
+
+- **Model method**: stop service -> start_debug -> enable thread tracing -> breakpoint on symlink path -> continue -> trigger via RPC or browser -> step, examine `self`.
+- **Computed field**: breakpoint on `_compute_*`, trigger by changing a dependency field, check `@api.depends` includes all necessary fields.
+- **Module install/update**: `--stop-after-init` in args, breakpoints in hooks.py or migration scripts. Main thread only — no `threading.settrace` needed.
+
+## Tips
+
+- **RPC timeouts are expected** when breakpoint fires during an RPC call
+- Use `!` prefix to execute Python statements: `!x = 42`
+- Use `interact` to drop into a full Python REPL
+- Use conditional breakpoints: `send_pdb_command("b file:line, condition")`
+- Python executable: `$HOME/.nix-profile/bin/python3`

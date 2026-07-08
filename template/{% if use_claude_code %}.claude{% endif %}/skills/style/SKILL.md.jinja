@@ -1,0 +1,180 @@
+---
+name: style
+description: "Odoo {{ odoo_version }} code style and conventions for {{ project_name }} project. Use when writing, reviewing, or linting Odoo code — naming conventions, class attribute order, anti-patterns, manifest structure."
+---
+
+# Odoo {{ odoo_version }} Code Style & Conventions
+
+## General
+
+- Custom addons live under `src/{{ custom_repo_name }}/` with standard Odoo structure
+- All custom modules prefixed `{{ module_prefix }}_*` (except `connector_odoo2odoo` and `account_move_name_sequence`)
+- Formatting/linting: RUFF (line length 100)
+- PEP8 exceptions (per Odoo convention): E501, E301, E302
+- **ASCII hyphen, not em-dash**: use `-` (U+002D), never `—` (U+2014) in comments,
+  docstrings, user-facing strings, view decoration expressions, test assertions.
+  Em-dashes compare unequal byte-for-byte; silent decoration/test mismatches.
+
+## Python Conventions
+
+- **Loop variable**: `for record in self:` (singular) / `records` (plural). Never `rec` or `slf`.
+  Matches Odoo core (`odoo/models.py`); mixing forms breaks greps.
+- **Import order** (alphabetically within each group, blank line between groups):
+  1. Python stdlib
+  2. Odoo core (`from odoo import Command, _, api, fields, models`)
+  3. Odoo addons (`from odoo.addons.web.controllers...`)
+  4. Other {{ project_name }} modules (`from odoo.addons.{{ module_prefix }}_<module>...`)
+- **`cls` is reserved for `@classmethod` first arg only**. For locals holding a model's
+  Python class (e.g. `self.env.registry["res.partner"]`), name it `model_cls`.
+  Within a file `cls` should mean exactly one thing.
+- **Variable names need a noun**. Bare adjectives / past-participles are too thin.
+  Bad: `raw = get_param(...)`, `parsed = safe_literal(...)`,
+  `valid = self.filtered(...)`. Good: `raw_retention_days`, `parsed_domain`,
+  `valid_records`, `clean_text`. Exception: bool flags use predicates (`is_X`,
+  `has_X`, `should_X`); short loop names (`i`, `key`, `value`) are fine in tight scopes.
+- **Tuple > frozenset for small const collections**. Module-level constants of
+  ~5-10 items used for `in` checks: use `tuple`. Reach for `frozenset` only at
+  ~100+ items or genuine set algebra in production code.
+- **No f-strings in `cr.execute(...)` SQL**. Use `%` Python formatting for
+  identifiers (table names from `self._table`, dynamic clause fragments) and
+  `%s` psycopg2 placeholders for data values. f-strings blur trusted-identifier
+  vs user-data interpolation and some Ruff/security linters flag them. Example:
+  `cr.execute("SELECT id FROM %s WHERE %s" % (self._table, clauses), params)`.
+- **`Command` API for x2many writes**, never the legacy numeric tuples.
+  `from odoo import Command` then `Command.set([...])`, `Command.link(id)`,
+  `Command.create(vals)`, `Command.unlink(id)`, `Command.clear()`. Works in XML
+  data files inside the `eval=` attribute too.
+  Mapping: `(0,0,vals)`→`create`, `(1,id,vals)`→`update`, `(2,id)`→`delete`,
+  `(3,id)`→`unlink`, `(4,id)`→`link`, `(5,0,0)`→`clear`, `(6,0,ids)`→`set`.
+- **Empty-recordset attribute access never raises**. `empty_set.field` returns
+  the field's falsy default (`False` for Char/Boolean/Date, `0` for Integer/Float,
+  empty recordset for relational) and chains keep evaluating:
+  `partner.country_id.code` on a no-country partner is `False`, not
+  `AttributeError`. Drop defensive `if obj else ""` /
+  `if obj and obj.rel else ""` guards in field expressions; use
+  `obj.field or ""` and `obj.rel.field or ""`. Caveat: multi-record recordsets
+  still raise `ValueError: Expected singleton` — call `.ensure_one()` /
+  `.mapped("field")` / iterate. Rule applies to empty (0-record) only.
+- **Many-branch validation / dispatch → dict over chain**. When a chain of
+  `if condition_i: action(label_i)` or `if x == k_i: return v_i` varies only
+  in `(condition, label)` or `(key, value)`, collapse to a dict + single
+  loop / `.get()`. Threshold: ~4+ branches with uniform action shape. Below
+  that, the if-chain is clearer. Two common shapes:
+  ```python
+  # Validation gather (collect all missing, raise once)
+  required = {"recipient.name": partner_id, "recipient.address.countryCode": country_id, ...}
+  missing = [col for col, value in required.items() if not value]
+  if missing:
+      raise UserError(_("...missing %s") % ", ".join(missing))
+
+  # Dispatch by key (replaces if/elif/elif/else returns)
+  return {"EUR": "SEPA", "GBP": "FASTER-PAYMENTS"}.get(currency.name, "SWIFT")
+  ```
+  Caveats: dict values are eagerly evaluated (fine for recordset field
+  access — see above rule; skip refactor if predicates have side effects or
+  are expensive). Dict insertion order = iteration order in Py3.7+, so
+  fail/dispatch order is preserved.
+
+## Docstrings & Comments
+
+- **Comments answer *why*, code answers *what*.** Write a comment only to
+  explain why the code is this way and not the obvious alternative — a
+  non-obvious constraint, gotcha, or deliberate trade-off. The code itself must
+  say *what* it does through naming and structure; if a comment only restates
+  the line below it, delete the comment and fix the names instead.
+- **No narration, no dead comments**: don't label what the next line plainly
+  does (`# loop over orders`, `# set flag to True`, `# return result`), and
+  don't leave commented-out code in the diff.
+- Terse, **non-obvious only**. Cut numbered "Owns N responsibilities" lists,
+  ALL-CAPS rules ("NEVER", "MUST"), RST double-backticks, narrative chains
+  explaining trivial behavior.
+- Keep: hidden constraints, invariants, why-this-not-the-obvious-rewrite.
+- 2-3 lines max. If the gotcha doesn't fit in 3 lines, it's probably padded.
+- Single backticks or no formatting in prose. No ALL-CAPS for emphasis.
+- When in doubt, delete the docstring. Project favors no module docstring +
+  brief inline comments at non-obvious points only.
+
+## Model Class Attribute Order
+
+**No section-divider comment blocks** — the ordering itself is the convention;
+don't scaffold empty `# ----` headers.
+
+1. Private attrs (`_name`, `_description`, `_inherit`, `_order`)
+2. Default methods (`default_get`, `_default_<field>`)
+3. Field declarations
+4. Selection methods (callables passed as `selection=`)
+5. Compute / search / inverse methods (same order as the fields)
+6. Constraints and onchanges (`@api.constrains` / `@api.onchange`)
+7. CRUD overrides (`create`, `write`, `unlink`, `copy`, `name_get`, `name_search`)
+8. Action methods (`action_<verb>`)
+9. Business methods (`_<verb>`)
+
+Imports: see Import order under Python Conventions.
+
+## Naming Conventions
+
+- Models: singular form (`sale.order`), CamelCase Python class (`SaleOrder`)
+- Fields: `snake_case`, relational end with `_id`/`_ids`, booleans start with `is_`
+- Compute: `_compute_<field_name>`
+- Onchange: `_onchange_<field_name>`
+- Constraints: `_check_<description>`
+- Actions: `action_<verb>`
+
+## XML ID Naming
+
+- Views: `<model_name>_view_<type>` (form/tree/kanban/search)
+- Actions: `<model_name>_action`
+- Inherited views: `<original_view_id>_inherit_{{ module_prefix }}` or descriptive
+- Inherited view name field: `model.view.form.inherit.{{ module_prefix }}_module`
+
+## Manifest Data File Order
+
+```python
+'data': [
+    'security/res_groups.xml',        # 1. Security groups
+    'security/ir.model.access.csv',   # 2. Access rights
+    'data/data.xml',                  # 3. Master data
+    'views/model_name_views.xml',     # 4. Views
+    'views/menu.xml',                 # 5. Menus last
+],
+```
+
+## Redundant Declarations to Skip
+
+Don't write attributes or field arguments whose value equals Odoo's framework
+default — code review treats them as boilerplate. Check: "would removing this
+line change behavior?" If no, drop it.
+
+| Declaration | Default | Verdict |
+|---|---|---|
+| `_order = "id"` (or `"id asc"`) | `BaseModel._order = "id"` | drop |
+| `_auto = True`, `_register = True` | default | drop |
+| `fields.Char(required=False, readonly=False, index=False)` | defaults | drop |
+| `fields.Boolean(default=False)` | Boolean defaults to False | drop |
+| `fields.Many2one(ondelete="set null")` | m2o default | drop |
+
+**Worth declaring** (overrides default, semantic): `default=True` on Boolean,
+`required=True`, `ondelete="cascade"`/`"restrict"`, `_order = "create_date desc"`,
+`_auto = False`.
+
+## Anti-Patterns
+
+| Anti-Pattern | Fix |
+|---|---|
+| `search()` in loop | Domain with `IN`: `[('id', 'in', ids)]` |
+| `create()` in loop | Batch: `create([{...}, {...}])` |
+| `write()`/`unlink()` in loop | `records.write({...})` / `records.unlink()` |
+| `Float` for money | `Monetary` + `currency_field` |
+| Missing `ondelete` on `Many2one` | Add `ondelete='restrict'` or `'cascade'` |
+| Generic `Exception` | `UserError` / `ValidationError` |
+| f-string in `cr.execute()` | `%` for identifiers, `%s` for data (see Python Conventions) |
+| Numeric tuple `(6, 0, [...])` in x2many writes | `Command.set([...])` (see Python Conventions) |
+| Em-dash `—` in code/strings/labels | ASCII `-` (see General) |
+| Redundant default declaration | Drop (see Redundant Declarations) |
+| `self._cr.commit()` | Remove — let framework handle |
+| `rec`/`slf` loop var | `for record in self:` |
+| `@api.constrains('a.b')` | Unsupported — use `@api.constrains('a')` |
+| `@api.depends('a')` + access `a.b` | Use `@api.depends('a.b')` |
+| `obj.field if obj else ""` (recordset) | `obj.field or ""` — empty-recordset access is safe |
+| 4+ `if cond_i: action(label_i)` chain with uniform action | Dict `{label_i: cond_i, ...}` + single loop / `.get()` (see Python Conventions) |
+| Comment restating what the code does (`# loop over orders`) | Delete it; comment the *why*, let names carry the *what* (see Docstrings & Comments) |

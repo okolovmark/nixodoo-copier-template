@@ -1,0 +1,18 @@
+#!/bin/bash
+# PostToolUse hook: auto-format edited Python files with ruff
+set -euo pipefail
+
+INPUT=$(cat)
+FILE_PATH=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_input',{}).get('file_path',''))")
+
+# Only .py files
+[[ "$FILE_PATH" != *.py ]] && exit 0
+
+# Only our custom modules
+[[ "$FILE_PATH" != *src/{{ custom_repo_name }}/* ]] && exit 0
+
+# Only if file exists (Write might create new files that fail)
+[[ ! -f "$FILE_PATH" ]] && exit 0
+
+ruff check --fix --quiet --ignore F401 "$FILE_PATH" 2>/dev/null || true
+ruff format --quiet "$FILE_PATH" 2>/dev/null || true

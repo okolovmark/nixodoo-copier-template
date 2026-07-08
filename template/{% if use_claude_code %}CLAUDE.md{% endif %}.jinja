@@ -1,0 +1,50 @@
+# CLAUDE.md
+
+## Project Overview
+
+{{ project_name }} — Odoo {{ odoo_version }} development environment powered by Nix flakes.
+
+## Environment
+
+- **Python**: {{ python_version }} (managed by Nix, no virtualenv/pip — use `uv` for dependency management)
+- **Database**: PostgreSQL {{ postgres_version }} — `{{ db_name }}` on `localhost:{{ postgres_port }}`, user/pass `{{ db_user }}/{{ db_password }}`
+- **Odoo HTTP**: `localhost:{{ odoo_http_port }}`, {% if odoo_major | int >= 17 %}gevent{% else %}longpolling{% endif %} `localhost:{{ odoo_gevent_port }}`, nginx proxy `localhost:{{ nginx_port }}`
+- **Odoo credentials**: `admin` / `admin`
+- **Config**: `odoo.conf` (generated) | **Logs**: `odoo.log` (rotated daily)
+
+## Key Commands
+
+```bash
+# Services
+systemctl --user {start|stop|restart|status} odoo.service postgres.service nginx.service
+
+# Update/install module (stop running odoo first)
+odoo -c ${{ project_dir_var }}/odoo.conf -u module_name --workers 0 --stop-after-init --logfile=/dev/stdout
+
+# Interactive shell
+odoo shell -c ${{ project_dir_var }}/odoo.conf --workers 0 --stop-after-init
+
+# Run a specific test class/method
+odoo -c ${{ project_dir_var }}/odoo.conf -u module_name --workers 0 --test-enable --test-tags module_name.test_file_name --stop-after-init --logfile=/dev/stdout
+
+# Clone/update repos and regenerate addon symlinks
+nix run .#update-repos
+```
+
+## Architecture
+
+```
+src/
+├── odoo/                  # Odoo {{ odoo_version }} CE source (read-only, branch {{ odoo_version }})
+{% if custom_repo_name %}
+├── {{ custom_repo_name }}/   # Custom modules — this is where we develop
+{% endif %}
+└── ...                    # Third-party repos from addons.yaml (read-only)
+```
+
+{% if custom_repo_name %}
+- **Custom modules** live in `src/{{ custom_repo_name }}/` (prefix `{{ module_prefix }}_*`)
+{% endif %}
+- **Third-party repos** are pinned in `addons.yaml`
+- **Addon symlinks** are managed at `.local/share/Odoo/addons/{{ odoo_version }}/` by `nix run .#update-repos`
+- Never edit OCA/core code under `src/` (enforced by the guard-readonly hook){% if custom_repo_name %} — extend via a `{{ module_prefix }}_*` module{% endif %}

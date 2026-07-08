@@ -1,0 +1,24 @@
+"""
+Configuration for Odoo Model Inspector
+
+Customize these paths for your project structure.
+"""
+
+from pathlib import Path
+
+# Project root (4 levels up from this file: .claude/skills/inspect-model/config.py)
+PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+
+# Odoo addon directories (relative to PROJECT_ROOT)
+# Add an entry for every repo key from addons.yaml you want inspected
+ADDON_DIRECTORIES = [
+    'src/odoo/addons',
+    'src/odoo/odoo/addons',
+{% if custom_repo_name %}
+    'src/{{ custom_repo_name }}',
+{% endif %}
+]
+
+# Output directory for Markdown analysis files
+# Relative to PROJECT_ROOT or absolute path
+OUTPUT_DIRECTORY = '.odoo_inspect'

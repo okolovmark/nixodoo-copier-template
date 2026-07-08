@@ -1,0 +1,108 @@
+---
+name: commit
+description: "Create git commits following Odoo git guidelines. Use when committing changes to ensure proper tag, module name, and message format."
+argument-hint: "[optional commit message override]"
+---
+
+# Odoo Git Commit Guidelines
+
+Follow the official Odoo git commit message format.
+
+## Commit Message Structure
+
+```
+[TAG] module_name: short description (< 50 chars ideal)
+
+Long description explaining WHY the change is being done, not WHAT.
+WHAT is visible in the diff. Explain technical decisions if any.
+
+References:
+{{ ticket_prefix }}-123
+Fixes #123
+```
+
+## Tags
+
+Use exactly one of these tags as prefix:
+
+| Tag | When to use |
+|-----|-------------|
+| `[FIX]` | Bug fixes. Mostly stable versions, also valid for recent bugs in dev. |
+| `[IMP]` | Improvements. Most dev changes are incremental improvements. |
+| `[ADD]` | Adding new modules or major new features. |
+| `[REM]` | Removing resources: dead code, views, modules. |
+| `[REF]` | Refactoring. Feature heavily rewritten, no functional change. |
+| `[MOV]` | Moving files (`git mv`). Don't change content of moved files. |
+| `[REV]` | Reverting commits that caused issues. |
+| `[REL]` | Release commits: new major/minor stable versions. |
+| `[MERGE]` | Merge commits, forward ports. |
+| `[CLA]` | Signing contributor license. |
+| `[I18N]` | Translation file changes. |
+| `[PERF]` | Performance patches. |
+| `[CLN]` | Code cleanup. |
+| `[LINT]` | Linting passes. |
+
+## Module Name
+
+- Use the **technical** module name (not functional), e.g. `{{ module_prefix }}_project_software`
+- If several modules modified: list them or use `various`
+- Avoid cross-module changes in one commit when possible
+
+## Header Rules
+
+- **Max ~50 chars** (hard limit ~72).
+- Must make a valid sentence after "if applied, this commit will…":
+  - Good: `[IMP] {{ module_prefix }}_sale: add discount field to order line`
+  - Bad: `[IMP] {{ module_prefix }}_sale: bugfix` or `[IMP] {{ module_prefix }}_sale: improvements`
+- Imperative mood: "add", "fix", "remove", "prevent" — not "added", "fixing".
+- No single words like "bugfix" / "improvements".
+- No ticket numbers in the header — put them in the body.
+
+## Body Rules
+
+- Explain **WHY**, not WHAT (the diff shows WHAT); explain technical decisions.
+- End with references (task IDs, PR numbers) on separate lines.
+- Separate header from body with a blank line.
+
+## How to Apply
+
+When the user asks to commit (or the pipeline creates commits):
+
+1. Run `git diff --cached --stat` to see what changed
+2. Determine the correct tag based on the nature of changes
+3. Identify the module name from the changed file paths
+4. Write a concise header in imperative mood
+5. Write a body explaining WHY if the change is non-trivial
+6. Add task references if known from context
+
+## Examples
+
+```
+[FIX] {{ module_prefix }}_project_software: prevent stage change by unauthorized users
+
+Only assignees, task assignors, and the project manager can now change
+task stages. Previously any project user could move tasks between stages.
+
+{{ ticket_prefix }}-797
+```
+
+```
+[IMP] {{ module_prefix }}_project_software: add Excel export for gantt chart
+
+New "Export Excel" button in the gantt toolbar downloads an .xlsx file
+with color-coded task bars per day, frozen panes, and progress %.
+Replaces the previous Mermaid-based export.
+
+{{ ticket_prefix }}-797
+Closes #626
+```
+
+```
+[ADD] {{ module_prefix }}_warehouse: new module for warehouse management
+
+Adds picking wave planning, zone-based storage allocation, and
+barcode scanning integration for the warehouse team.
+
+{{ ticket_prefix }}-850
+
+```

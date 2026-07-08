@@ -1,0 +1,321 @@
+---
+name: code-patterns
+description: "Odoo {{ odoo_version }} code templates and ORM patterns. Use when creating models, views, security, wizards, controllers, reports, crons, or server actions for {{ project_name }} modules."
+---
+
+# Odoo {{ odoo_version }} Code Patterns & Templates
+
+## Manifest Template
+
+See `style` skill for data file order convention.
+
+```python
+{
+    'name': '{{ project_name }} Feature Name',
+    'version': '{{ odoo_version }}.1.0.0',
+    'category': 'Category',
+    'summary': 'Short description',
+    'author': '{{ project_name }}',
+    'website': 'https://example.com',
+    'license': 'LGPL-3',
+    'depends': ['base'],
+    'data': [],
+    'demo': [],
+    'installable': True,
+    'application': False,
+    'auto_install': False,
+}
+```
+
+## Model Template
+
+```python
+from odoo import Command, _, api, fields, models
+from odoo.exceptions import UserError, ValidationError
+
+class {{ project_name }}Model(models.Model):
+    _name = '{{ module_prefix }}.model'
+    _description = '{{ project_name }} Model'
+    _inherit = ['mail.thread', 'mail.activity.mixin']
+    _order = 'create_date desc'
+
+    def _default_company_id(self):
+        return self.env.company
+
+    name = fields.Char(required=True, index=True, tracking=True)
+    active = fields.Boolean(default=True)
+    company_id = fields.Many2one('res.company', default=_default_company_id, required=True)
+    partner_id = fields.Many2one('res.partner', string='Customer', ondelete='restrict', required=True)
+    line_ids = fields.One2many('{{ module_prefix }}.model.line', 'parent_id', string='Lines')
+    state = fields.Selection([
+        ('draft', 'Draft'), ('confirmed', 'Confirmed'),
+        ('done', 'Done'), ('cancelled', 'Cancelled'),
+    ], default='draft', tracking=True)
+    total_amount = fields.Monetary(compute='_compute_total_amount', store=True, currency_field='currency_id')
+    currency_id = fields.Many2one('res.currency', related='company_id.currency_id', store=True)
+
+    @api.depends('line_ids.amount')
+    def _compute_total_amount(self):
+        for record in self:
+            record.total_amount = sum(record.line_ids.mapped('amount'))
+
+    @api.constrains('total_amount')
+    def _check_total_amount(self):
+        for record in self:
+            if record.total_amount < 0:
+                raise ValidationError(_("Total amount cannot be negative."))
+
+    @api.model
+    def create(self, vals):
+        if not vals.get('name'):
+            vals['name'] = self.env['ir.sequence'].next_by_code('{{ module_prefix }}.model')
+        return super().create(vals)
+
+    def action_confirm(self):
+        self.ensure_one()
+        self.write({'state': 'confirmed'})
+        self.message_post(body=_("Record confirmed."))
+```
+
+## XML Form View
+
+```xml
+<record id="{{ module_prefix }}_model_view_form" model="ir.ui.view">
+    <field name="name">{{ module_prefix }}.model.view.form</field>
+    <field name="model">{{ module_prefix }}.model</field>
+    <field name="arch" type="xml">
+        <form>
+            <header>
+                <button name="action_confirm" string="Confirm" type="object"
+                        class="oe_highlight" attrs="{'invisible': [('state', '!=', 'draft')]}"/>
+                <field name="state" widget="statusbar" statusbar_visible="draft,confirmed,done"/>
+            </header>
+            <sheet>
+                <div class="oe_button_box" name="button_box"/>
+                <group>
+                    <group><field name="name"/><field name="partner_id"/></group>
+                    <group><field name="company_id" groups="base.group_multi_company"/><field name="total_amount"/></group>
+                </group>
+                <notebook>
+                    <page string="Lines">
+                        <field name="line_ids"><tree editable="bottom">
+                            <field name="product_id"/><field name="quantity"/><field name="price_unit"/><field name="amount"/>
+                        </tree></field>
+                    </page>
+                </notebook>
+            </sheet>
+            <div class="oe_chatter">
+                <field name="message_follower_ids"/><field name="activity_ids"/><field name="message_ids"/>
+            </div>
+        </form>
+    </field>
+</record>
+```
+
+## XML Tree View
+
+```xml
+<record id="{{ module_prefix }}_model_view_tree" model="ir.ui.view">
+    <field name="name">{{ module_prefix }}.model.view.tree</field>
+    <field name="model">{{ module_prefix }}.model</field>
+    <field name="arch" type="xml">
+        <tree decoration-info="state == 'draft'" decoration-success="state == 'done'">
+            <field name="name"/><field name="partner_id"/><field name="total_amount" sum="Total"/><field name="state"/>
+        </tree>
+    </field>
+</record>
+```
+
+## XML Search View
+
+```xml
+<record id="{{ module_prefix }}_model_view_search" model="ir.ui.view">
+    <field name="name">{{ module_prefix }}.model.view.search</field>
+    <field name="model">{{ module_prefix }}.model</field>
+    <field name="arch" type="xml">
+        <search>
+            <field name="name" filter_domain="[('name', 'ilike', self)]"/>
+            <field name="partner_id"/>
+            <filter string="Draft" name="draft" domain="[('state', '=', 'draft')]"/>
+            <filter string="Group by Partner" name="group_partner" context="{'group_by': 'partner_id'}"/>
+        </search>
+    </field>
+</record>
+```
+
+## View Inheritance
+
+```xml
+<record id="sale_order_view_form_inherit_{{ module_prefix }}" model="ir.ui.view">
+    <field name="name">sale.order.view.form.inherit.{{ module_prefix }}_module</field>
+    <field name="model">sale.order</field>
+    <field name="inherit_id" ref="sale.view_order_form"/>
+    <field name="arch" type="xml">
+        <xpath expr="//field[@name='partner_id']" position="after">
+            <field name="custom_field"/>
+        </xpath>
+    </field>
+</record>
+```
+
+## Actions & Menus
+
+```xml
+<record id="{{ module_prefix }}_model_action" model="ir.actions.act_window">
+    <field name="name">{{ project_name }} Models</field>
+    <field name="res_model">{{ module_prefix }}.model</field>
+    <field name="view_mode">tree,form,kanban</field>
+    <field name="help" type="html"><p class="o_view_nocontent_smiling_face">Create your first record</p></field>
+</record>
+<menuitem id="{{ module_prefix }}_model_menu_root" name="{{ project_name }}" sequence="10" web_icon="{{ module_prefix }}_module,static/description/icon.png"/>
+<menuitem id="{{ module_prefix }}_model_menu_action" name="Models" parent="{{ module_prefix }}_model_menu_root" action="{{ module_prefix }}_model_action" sequence="10"/>
+```
+
+## Security — ACL (ir.model.access.csv)
+
+```csv
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_{{ module_prefix }}_model_user,{{ module_prefix }}.model.user,model_{{ module_prefix }}_model,base.group_user,1,1,1,0
+access_{{ module_prefix }}_model_manager,{{ module_prefix }}.model.manager,model_{{ module_prefix }}_model,base.group_system,1,1,1,1
+```
+
+## Security — Record Rules
+
+```xml
+<record id="{{ module_prefix }}_model_rule_company" model="ir.rule">
+    <field name="name">{{ project_name }} Model: multi-company</field>
+    <field name="model_id" ref="model_{{ module_prefix }}_model"/>
+    <field name="domain_force">['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+</record>
+```
+
+## ORM Patterns
+
+```python
+# Search with domain
+records = self.env['sale.order'].search([('state', '=', 'sale')], limit=10, order='date_order desc')
+
+# Search count (faster than search + len)
+count = self.env['product.product'].search_count([('active', '=', True)])
+
+# Recordset operations
+active = partners.filtered(lambda p: p.active and p.email)
+emails = partners.mapped('child_ids.email')
+sorted_orders = orders.sorted(key=lambda o: o.amount_total, reverse=True)
+
+# Aggregation (use read_group instead of Python-side sums)
+grouped = self.env['sale.order.line'].read_group(
+    [('order_id.state', '=', 'sale')], ['product_id', 'price_subtotal:sum'], ['product_id'])
+
+# Batch create (NOT in a loop)
+self.env['{{ module_prefix }}.model'].create([{'name': f'Record {i}'} for i in range(10)])
+# Batch write
+records.write({'state': 'confirmed'})
+```
+
+## Inheritance Patterns
+
+```python
+# Extension (adds fields/methods)
+class SaleOrder(models.Model):
+    _inherit = 'sale.order'
+    custom_field = fields.Char()
+
+# Delegation (composition via FK)
+class ResUsers(models.Model):
+    _name = 'res.users'
+    _inherits = {'res.partner': 'partner_id'}
+```
+
+## Wizard Template
+
+```python
+class {{ project_name }}Wizard(models.TransientModel):
+    _name = '{{ module_prefix }}.wizard'
+    _description = '{{ project_name }} Wizard'
+
+    date_from = fields.Date(required=True)
+    date_to = fields.Date(required=True)
+
+    def action_process(self):
+        self.ensure_one()
+        active_ids = self.env.context.get('active_ids', [])
+        records = self.env['{{ module_prefix }}.model'].browse(active_ids)
+        records.filtered(lambda r: r.state == 'draft').write({'state': 'confirmed'})
+        return {'type': 'ir.actions.act_window_close'}
+```
+
+## Cron Template
+
+```xml
+<record id="ir_cron_cleanup" model="ir.cron">
+    <field name="name">{{ project_name }}: Cleanup old records</field>
+    <field name="model_id" ref="model_{{ module_prefix }}_model"/>
+    <field name="state">code</field>
+    <field name="code">model._cron_cleanup()</field>
+    <field name="interval_number">1</field>
+    <field name="interval_type">days</field>
+    <field name="numbercall">-1</field>
+</record>
+```
+
+## Report Template (QWeb)
+
+```xml
+<template id="report_{{ module_prefix }}_document">
+    <t t-call="web.html_container">
+        <t t-foreach="docs" t-as="o">
+            <t t-call="web.external_layout">
+                <div class="page">
+                    <h2><span t-field="o.name"/></h2>
+                    <table class="table table-sm">
+                        <thead><tr><th>Product</th><th class="text-end">Qty</th><th class="text-end">Price</th></tr></thead>
+                        <tbody>
+                            <tr t-foreach="o.line_ids" t-as="line">
+                                <td><span t-field="line.product_id.name"/></td>
+                                <td class="text-end"><span t-field="line.quantity"/></td>
+                                <td class="text-end"><span t-field="line.price_unit"
+                                    t-options='{"widget": "monetary", "display_currency": o.currency_id}'/></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </t>
+        </t>
+    </t>
+</template>
+```
+
+## Server Action Template
+
+```xml
+<record id="action_auto_confirm" model="ir.actions.server">
+    <field name="name">Auto Confirm</field>
+    <field name="model_id" ref="model_{{ module_prefix }}_model"/>
+    <field name="state">code</field>
+    <field name="code">
+        for record in records:
+            if record.state == 'draft':
+                record.action_confirm()
+    </field>
+    <field name="binding_model_id" ref="model_{{ module_prefix }}_model"/>
+    <field name="binding_view_types">list,form</field>
+</record>
+```
+
+## Controller Template
+
+```python
+from odoo import http
+from odoo.http import request
+
+class {{ project_name }}Controller(http.Controller):
+    @http.route('/{{ module_prefix }}/data', type='json', auth='user', methods=['POST'])
+    def get_data(self, **kwargs):
+        return request.env['{{ module_prefix }}.model'].search_read(
+            [('state', '=', 'confirmed')], ['name', 'total_amount'], limit=50)
+
+    @http.route('/{{ module_prefix }}/public', type='http', auth='public', website=True)
+    def public_page(self, **kwargs):
+        return request.render('{{ module_prefix }}_module.public_template', {})
+```

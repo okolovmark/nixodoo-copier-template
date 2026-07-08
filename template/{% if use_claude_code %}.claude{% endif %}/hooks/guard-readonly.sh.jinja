@@ -1,0 +1,20 @@
+#!/bin/bash
+# PreToolUse hook: block edits to read-only directories (Odoo core, OCA repos)
+set -euo pipefail
+
+INPUT=$(cat)
+FILE_PATH=$(echo "$INPUT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('tool_input',{}).get('file_path',''))")
+
+[[ -z "$FILE_PATH" ]] && exit 0
+
+PROJECT_DIR="${{ "{" }}{{ project_dir_var }}:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+SRC_DIR="$PROJECT_DIR/src/"
+CUSTOM_DIR="$PROJECT_DIR/src/{{ custom_repo_name }}/"
+
+# In src/ but NOT in our custom modules → read-only
+if [[ "$FILE_PATH" == "$SRC_DIR"* ]] && [[ "$FILE_PATH" != "$CUSTOM_DIR"* ]]; then
+    echo "Blocked: $FILE_PATH is read-only (OCA/core). Only edit files in src/{{ custom_repo_name }}/." >&2
+    exit 2
+fi
+
+exit 0

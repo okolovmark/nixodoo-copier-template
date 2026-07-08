@@ -102,6 +102,34 @@ default_repo_pattern:
   help: Git URL pattern for addon repos in addons.yaml ('{}' is replaced by the repo key)
   default: "https://github.com/OCA/{}.git"
 
+custom_repo_pattern:
+  type: str
+  help: "Git URL pattern for YOUR addons repos, '{}' replaced by the repo key (e.g. git@github.com:my-org/{}.git; empty = no custom addons repo)"
+  default: ""
+
+custom_repo_name:
+  type: str
+  help: Repo key of your custom addons repo (cloned to src/<name>, all its modules symlinked)
+  default: "{% if custom_repo_pattern %}{{ project_name }}-addons{% endif %}"
+  when: "{{ custom_repo_pattern != '' }}"
+
+use_claude_code:
+  type: bool
+  help: Include Claude Code integration (CLAUDE.md, guard hooks, Odoo dev skills, agents, MCP config)?
+  default: true
+
+module_prefix:
+  type: str
+  help: Technical prefix of your custom modules (used across the Claude skills and examples)
+  default: "{{ project_name.split('-')[0] }}"
+  when: "{{ use_claude_code }}"
+
+ticket_prefix:
+  type: str
+  help: Ticket key prefix used in commit/PR conventions (e.g. PROJ for PROJ-123)
+  default: "TASK"
+  when: "{{ use_claude_code }}"
+
 backup_s3_bucket:
   type: str
   help: S3 bucket with production pg_dump backups (empty = no download-backup/aws tooling)

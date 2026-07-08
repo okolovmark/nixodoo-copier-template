@@ -1,0 +1,29 @@
+{
+  "mcpServers": {
+    "odoo": {
+      "type": "stdio",
+      "command": "bash",
+      "args": [
+        "-c",
+        "source .env && uvx --from 'git+https://github.com/okolovmark/odoo-fast-mcp' odoo-fast-mcp"
+      ]
+    },
+    "postgres-mcp": {
+      "type": "stdio",
+      "command": "bash",
+      "args": [
+        "-c",
+        "source .env && uvx postgres-mcp --access-mode=unrestricted $DATABASE_URI"
+      ]
+    },
+    "mcp-pdb": {
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "--from",
+        "mcp-pdb==0.4.0",
+        "mcp-pdb"
+      ]
+    }
+  }
+}

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Build a session's addons farm: OCA/CE modules mirror the main farm (shared,
+# pinned sources), custom modules point at this session's worktree. Idempotent.
+#
+# Usage: wt-link.sh <source_tree> <dest_farm>
+set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/wt-common.sh"
+
+SRC_TREE="${1:?usage: wt-link.sh <source_tree> <dest_farm>}"
+FARM="${2:?usage: wt-link.sh <source_tree> <dest_farm>}"
+[ -d "$SRC_TREE" ] || { echo "ERROR: source tree not found: $SRC_TREE" >&2; exit 1; }
+
+mkdir -p "$FARM"
+find "$FARM" -maxdepth 1 -type l -delete    # drop links only; never real dirs
+
+# OCA/CE: copy every main-farm link whose target is NOT in the addons repo.
+for link in "$MAIN_FARM"/*; do
+    [ -L "$link" ] || continue
+    target="$(readlink -f "$link")"
+    case "$target" in
+        "$SRC_REPO"/*) : ;;                                  # custom — from SRC_TREE below
+        *) ln -s "$target" "$FARM/$(basename "$link")" ;;    # OCA/CE — shared target
+    esac
+done
+
+# Custom: every module dir in the worktree (has a manifest).
+for d in "$SRC_TREE"/*/; do
+    { [ -f "${d}__manifest__.py" ] || [ -f "${d}__openerp__.py" ]; } || continue
+    ln -sfn "$(realpath "$d")" "$FARM/$(basename "$d")"
+done
+
+echo "STATUS: farm linked $SRC_TREE -> $FARM ($(find "$FARM" -maxdepth 1 -type l | wc -l) modules)"

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Tear down one session env. A CLEAN worktree (committed + pushed) → remove
+# worktree, drop the DB, delete the runtime dir; the branch stays on origin.
+# A DIRTY worktree → keep everything (worktree + env + DB) and report, so no
+# in-progress work is lost. Other sessions are unaffected.
+#
+# Usage: wt-stop.sh <slug>
+set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/wt-common.sh"
+# A cwd inside the worktree being removed breaks the later psql DB drop
+# (getcwd fails once the dir is gone) while still printing success.
+cd "$PROJ"
+
+SLUG="${1:?usage: wt-stop.sh <slug>}"
+DB="$(db_name_for "$SLUG")"
+WT_PATH="$WT_ROOT/$SLUG"
+ENV_DIR="$WT_ENVROOT/$SLUG"
+
+systemctl --user stop "odoo-wt@$SLUG.service" 2>/dev/null || true
+
+if [ -d "$WT_PATH" ] && [ -n "$(git -C "$WT_PATH" status --porcelain 2>/dev/null)" ]; then
+    echo "STATUS: DIRTY-kept ($WT_PATH) — uncommitted changes; env + DB $DB preserved"
+    exit 0
+fi
+
+[ -d "$WT_PATH" ] && git -C "$SRC_REPO" worktree remove "$WT_PATH" 2>/dev/null || true
+if db_exists "$DB"; then
+    $PSQL -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='$DB' AND pid<>pg_backend_pid();" >/dev/null 2>&1 || true
+    $PSQL -d postgres -c "DROP DATABASE IF EXISTS $DB;" >/dev/null 2>&1 || true
+fi
+rm -rf "$ENV_DIR"
+echo "STATUS: removed ($SLUG) — worktree + env + DB dropped; branch $SLUG kept"

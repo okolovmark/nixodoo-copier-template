@@ -1,0 +1,73 @@
+---
+name: inspect-model
+description: "Analyze Odoo model inheritance chains and fields using AST parsing (no server needed). Use when exploring model structure, checking field origins, or understanding inheritance hierarchy."
+argument-hint: "[model.name --context-module module_name]"
+---
+
+# Odoo Model Inspector
+
+AST-only inheritance/field inspection — never imports or runs Odoo. Shows the full hierarchy (fields + methods) across all modules.
+
+## Task
+
+$ARGUMENTS
+
+## When to Use
+
+- "What fields does sale.order have?" — ALL fields from all inheriting modules
+- "Where is field X defined?" — trace the inheritance chain
+- Before adding a field — check it doesn't already exist
+- Understand module dependencies through models
+
+## How to Run
+
+```bash
+# Basic usage
+python .claude/skills/inspect-model/inspect.py \
+  --model sale.order \
+  --context-module sale
+
+# With Markdown output
+python .claude/skills/inspect-model/inspect.py \
+  --model sale.order \
+  --context-module sale \
+  --output-markdown .odoo_inspect/sale_order_structure.md
+```
+
+The script:
+- Parses `__manifest__.py` files to get `depends` recursively
+- Finds base model definition (`_name = 'sale.order'`)
+- Finds ALL extensions (`_inherit = 'sale.order'`)
+- Parses Python AST to extract field names + types
+- Builds dependency graph
+- Returns JSON with complete structure
+
+## Output Format
+
+Present the inheritance chain like this:
+
+```
+Model: sale.order (38 fields total)
+
+Inheritance Chain:
+  sale (BASE) — 23 fields
+    └─> stock — +5 fields
+    └─> {{ module_prefix }}_sale — +10 fields
+
+Fields by module:
+
+sale (base):
+- partner_id: Many2one
+- amount_total: Monetary
+- state: Selection
+...
+
+{{ module_prefix }}_sale (extends sale.order):
+- custom_field: Char
+...
+```
+
+## Use Cases
+
+- **Adding a field**: run inspector → if field exists, show where it's defined; if not, proceed
+- **Debugging field errors**: run inspector → check which module adds the field and that it's in `depends`
