@@ -603,7 +603,7 @@ Spawn a **general-purpose** subagent:
 >
 > The addons live in a NESTED git repo and this run's code is in a WORKTREE of
 > it, already on the task branch. **Run everything from the worktree:** `cd <WT>`
-> — remote `{{ custom_repo_name }}`, base `16.0`, current branch `<slug>`
+> — the `{{ custom_repo_name }}` repo (origin), base `{{ odoo_version }}`, current branch `<slug>`
 > (created off `origin/{{ odoo_version }}`). All git/gh/commit commands run here, never in the
 > parent repo or the user's main checkout `src/{{ custom_repo_name }}`.
 >
@@ -623,7 +623,7 @@ Spawn a **general-purpose** subagent:
 > 4. Push: `git push -u origin <slug>`
 > 5. Create PR (title = the commit header, {{ ticket_prefix }} key in the body):
 >    ```
->    gh pr create -R {{ custom_repo_name }} --base 16.0 \
+>    gh pr create --base {{ odoo_version }} \
 >      --title "[TAG] module_name: short description" \
 >      --body "<What / Why / Test plan; {{ ticket_prefix }}-XXX>"
 >    ```

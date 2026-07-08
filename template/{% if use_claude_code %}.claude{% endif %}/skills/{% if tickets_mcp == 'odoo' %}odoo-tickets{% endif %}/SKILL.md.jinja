@@ -34,7 +34,7 @@ fields `["id", "name", "stage_id", "user_ids"]`. From a URL, take `id=<n>`.
 | Field | Convention |
 |---|---|
 | `name` | Imperative summary of the work. No {{ ticket_prefix }} prefix — `project_key` adds it. |
-| `project_id` | Default project from `user_identity` (see user_identity). |
+| `project_id` | Default project from `user_identity`. |
 | `stage_id` | Backlog (41) for queued work; Development (43) only if work starts immediately. Resolve by name if the board changed. |
 | `user_ids` | `[[6, 0, [<uid>]]]` — **always the human owner** (from `user_identity`), never the service account, never empty on purpose. |
 | `task_type` | Honest pick: `bug` (broken behavior) / `feature` (net-new) / `improvement` (enhance existing) / `investigation` / `technical_debt` / `support` / `milestone`. |

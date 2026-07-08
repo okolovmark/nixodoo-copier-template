@@ -65,7 +65,8 @@ Each answer becomes a node in `nodes/`:
 | Communication when wrong | `feedback_correction_handling.md` |
 | Time pressure | `feedback_urgency_signals.md` |
 | Scope discipline | `feedback_scope_discipline.md` |
-| Automation identity | `user_identity.md` (already exists — replace placeholders) |
+{% if status_mcp == 'teams' or tickets_mcp == 'odoo' %}| Automation identity | `user_identity.md` (already exists — replace placeholders) |
+{% endif %}
 
 Follow [[conventions_node_format]] for the body structure
 (`**Why:**` + `**How to apply:**` for feedback/project nodes).
