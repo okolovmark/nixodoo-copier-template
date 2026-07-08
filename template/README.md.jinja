@@ -1,80 +1,374 @@
-# {{ project_name }}
+# {{ project_name }} — Odoo {{ odoo_version }} Development Environment
 
-Odoo {{ odoo_version }} development environment powered by Nix flakes
+Odoo {{ odoo_version }} Development Environment powered by Nix flakes
 (Python {{ python_version }}, PostgreSQL {{ postgres_version }}).
 Generated from [nixodoo-copier-template](https://github.com/okolovmark/nixodoo-copier-template).
 
-## Quick start
+## Prerequisites
+
+### VScode Extensions
+
+[RUFF](https://marketplace.visualstudio.com/items?itemName=charliermarsh.ruff)
+
+[TY](https://marketplace.visualstudio.com/items?itemName=astral-sh.ty)
+
+[Odoo IDE](https://marketplace.visualstudio.com/items?itemName=trinhanhngoc.vscode-odoo)
+
+[Python](https://marketplace.visualstudio.com/items?itemName=ms-python.python)
+
+[Debugger](https://marketplace.visualstudio.com/items?itemName=ms-python.debugpy)
+
+### UV and UVX Installation
+
+[How UV works](https://docs.astral.sh/uv/getting-started/)
 
 ```bash
-# 1. Generate .env (ports, DB credentials — defaults are fine)
-nix run .#create-env
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
-# 2. Clone Odoo {{ odoo_version }} + addon repos, build the addons symlink farm
+### NIX Installation
+
+[How NIX works](https://nixos.org/guides/how-nix-works/)
+
+```bash
+sh <(curl --proto '=https' --tlsv1.2 -L https://nixos.org/nix/install) --daemon
+```
+
+Enable Nix Flakes
+
+Add the following line to `~/.config/nix/nix.conf` (create the file if it doesn't exist):
+
+```ini
+experimental-features = nix-command flakes
+```
+
+Restart Nix Daemon
+
+```bash
+sudo systemctl restart nix-daemon
+```
+
+## Project Structure
+
+```text
+{% if backup_s3_bucket %}
+├── .aws/               # AWS credentials (for backups)
+{% endif %}
+├── .local/             # Filestore, sessions, addons symlinks
+├── .nginx/             # Nginx configuration files
+├── .postgres/          # PostgreSQL data and logs
+{% if prod_ssh_host %}
+├── .ssh/               # SSH keys for server access
+{% endif %}
+├── .vscode/            # VSCode settings
+├── odoo.conf           # Odoo configuration file (generated)
+├── odoo.log            # Odoo logs (rotated daily)
+{% if backup_s3_bucket %}
+├── backup/             # Database backup
+{% endif %}
+├── src/                # Source code
+│   ├── odoo/           # Odoo community source code
+│   └── ...             # Addon repos from addons.yaml
+├── addons.yaml         # Addon repos configuration
+├── repos.yaml          # Repository sources
+├── flake.nix           # Nix flake configuration
+├── nix/scripts/        # All shell tooling behind `nix run .#...`
+└── pyproject.toml      # Python project configuration
+```
+
+### Default Environment Variables
+
+The `.env` file contains these default values:
+
+| Variable | Default | Description |
+| -------- | ------- | ----------- |
+| `{{ project_dir_var }}` | ~/{{ project_name }} | Project directory |
+| `PGHOST` | localhost | PostgreSQL host |
+| `PGPORT` | {{ postgres_port }} | PostgreSQL port |
+| `PGUSER` | {{ db_user }} | PostgreSQL user |
+| `PGPASSWORD` | {{ db_password }} | PostgreSQL password |
+| `PGDATABASE` | {{ db_name }} | Default database name |
+| `ODOO_HTTP_PORT` | {{ odoo_http_port }} | Odoo HTTP port |
+| `ODOO_GEVENT_PORT` | {{ odoo_gevent_port }} | Odoo {% if odoo_major | int >= 17 %}gevent websocket{% else %}longpolling{% endif %} port |
+| `ODOO_NGINX_PORT` | {{ nginx_port }} | Nginx proxy port |
+| `DATABASE_URI` | postgresql://{{ db_user }}:{{ db_password }}@localhost:{{ postgres_port }}/{{ db_name }} | Database URI |
+| `EDITOR` | nano | Preferred text editor |
+| `ODOO_URL` | `http://localhost:{{ nginx_port }}` | Odoo URL via Nginx (for external tools) |
+| `ODOO_DATABASE` | {{ db_name }} | Odoo database name (for external tools) |
+| `ODOO_USERNAME` | admin | Odoo admin username (for external tools) |
+| `ODOO_PASSWORD` | admin | Odoo admin password (for external tools) |
+| `ODOO_TIMEOUT` | 30 | Odoo connection timeout (for external tools) |
+
+### Configuration Files
+
+#### addons.yaml
+
+Defines which addon repos to include. Each repo can be either a simple list of modules or an object with `revision` and `modules` keys:
+
+```yaml
+ENV:
+  DEFAULT_REPO_PATTERN: "{{ default_repo_pattern }}"
+  ODOO_VERSION: "{{ odoo_version }}"
+
+# Simple format — tracks the branch from ENV.ODOO_VERSION:
+queue:
+  - "queue_job"
+  - "queue_job_cron"
+
+# Object format — pins to a specific commit (full 40-char SHA required):
+connector:
+  revision: abc123abc123abc123abc123abc123abc123abc1
+  modules:
+    - "component"
+    - "connector"
+# ...
+```
+
+When `revision` is specified, only that single commit is fetched (`git fetch --depth 1 origin <hash>`), keeping the checkout as lightweight as a shallow clone.
+
+#### repos.yaml
+
+Defines Odoo source repository. Supports an optional `revision` field to pin to a specific commit:
+
+```yaml
+./src/odoo:
+  remotes:
+    github: https://github.com/odoo/odoo.git
+  target: github {{ odoo_version }}
+  revision: fb06021aa0e3cf4b9d41e64f4b0874577f1b4ad8  # optional — full 40-char SHA required
+```
+
+When `revision` is specified, only that single commit is fetched (`git fetch --depth 1 origin <hash>`), keeping the checkout as lightweight as a shallow clone. **Must be a full 40-character commit SHA** — short hashes are not supported by `git fetch`.
+
+#### pyproject.toml / uv.lock
+
+Python dependencies are imported straight from Odoo's own `requirements.txt`:
+
+```bash
+nix run .#bootstrap-deps   # after update-repos; runs `uv add -r src/odoo/requirements.txt` + `uv lock`
+```
+
+### How To Update Server
+
+To update the server with the latest code and addons, run:
+
+```bash
+cd ${{ project_dir_var }}
+git pull
 nix run .#update-repos
+odoo -c ${{ project_dir_var }}/odoo.conf -u module_name --workers 0 --stop-after-init --logfile=/dev/stdout
+systemctl --user restart odoo.service
+```
 
-# 3. Import Odoo's python requirements into pyproject.toml and lock them
-nix run .#bootstrap-deps
+## Local Server
 
-# 4. Install the dev toolchain (odoo, psql, ruff, uv, ...) into your profile
-nix profile add .#dev-server
+### Quick Setup For Development
 
-# 5. Local postgres cluster + odoo.conf + nginx.conf + systemd user services
+This will:
+
+1. Create `.env` file with configuration
+1. Clone/update all repositories
+1. Generate Odoo configuration
+1. Initialize PostgreSQL database
+{% if prod_ssh_host %}
+1. Setup SSH access for servers
+{% endif %}
+{% if backup_s3_bucket %}
+1. Configure AWS credentials
+{% endif %}
+1. Create Nginx configuration
+1. Create VSCode settings
+
+```bash
+cd {{ project_name }}
+
+# Run full setup
 nix run .#setup-dev
 
-# 6. Start everything
-systemctl --user enable --now postgres.service odoo.service nginx.service odoo-logrotate.timer
+# Lock python dependencies from src/odoo/requirements.txt
+nix run .#bootstrap-deps
 
-# Odoo is now at http://localhost:{{ nginx_port }}
-```
+# INSTALL PERMANENTLY TO YOUR SYSTEM
+nix profile add .#dev-server
 
-`welcome-message` prints ports, versions and useful commands at any time.
+# Odoo, Postgres and Nginx services + log rotation
+systemctl --user enable odoo.service postgres.service nginx.service odoo-logrotate.timer
+systemctl --user start odoo.service postgres.service nginx.service odoo-logrotate.timer
+systemctl --user restart odoo.service postgres.service nginx.service
+systemctl --user stop odoo.service postgres.service nginx.service
+systemctl --user status odoo.service postgres.service nginx.service
 
-## Commands
+# Logs:
+tail -f ${{ project_dir_var }}/.postgres/log/postgresql.log | ccze -A
+journalctl --user -u odoo.service -f | ccze -A
+tail -f ${{ project_dir_var }}/odoo.log | ccze -A
+journalctl --user -u nginx.service -f | ccze -A
 
-| Command | Purpose |
-|---|---|
-| `nix run .#create-env` | interactive `.env` generator |
-| `nix run .#update-repos` | clone/update `repos.yaml` + `addons.yaml`, rebuild the addons farm |
-| `nix run .#bootstrap-deps` | import `src/odoo/requirements.txt` into `pyproject.toml` + `uv lock` |
-| `nix run .#create-odoo-config` | generate `odoo.conf` (random `admin_passwd`) |
-| `nix run .#create-nginx-config` | generate `.nginx/nginx.conf` |
-| `nix run .#create-systemd-service` | systemd user units (odoo, nginx, log rotation) |
-| `nix run .#setup-postgres` | init the project-local PostgreSQL cluster + unit |
-{% if backup_s3_bucket %}
-| `nix run .#download-backup` | fetch the latest prod dump from S3, restore + neutralize |
-| `nix run .#create-aws-config` | interactive `.aws/credentials` generator |
-{% endif %}
-{% if prod_ssh_host %}
-| `nix run .#setup-ssh-access` | one-time SSH key + config for the remote servers |
-{% endif %}
-| `nix run .#setup-dev` | everything above in one go |
-| `nix flake check` | shellcheck over all project scripts |
-
-## Daily use
-
-```bash
-# Update/install a module (stop odoo.service first)
+# Odoo update module:
 odoo -c ${{ project_dir_var }}/odoo.conf -u module_name --workers 0 --stop-after-init --logfile=/dev/stdout
 
-# Interactive shell
+# Odoo shell:
 odoo shell -c ${{ project_dir_var }}/odoo.conf --workers 0 --stop-after-init
+{% if prod_ssh_host %}
 
-# Logs
-journalctl --user -u odoo.service -f | ccze -A
+# Connect to remote servers:
+{% if test_ssh_host %}
+test-server
+{% endif %}
+prod-server
+{% endif %}
+{% if backup_s3_bucket %}
+
+# Download and restore production backup with name from .env file
+nix run .#download-backup
+# Or with custom database name:
+nix run .#download-backup -- dbname
+# Or skip download and use existing backup:
+nix run .#download-backup -- dbname --skip-download
+{% endif %}
+
+# help message with all commands and URLs:
+welcome-message
 ```
 
-{% if backup_s3_bucket %}
-## Production backups
+### Step-by-Step Setup For Development
 
-`nix run .#download-backup` restores the latest dump from `s3://{{ backup_s3_bucket }}`
-into `$PGDATABASE` (or a name passed as the first argument), then sanitizes it:
-Odoo's native neutralization (`odoo neutralize` — every installed module's
-`data/neutralize.sql`) plus `nix/scripts/dev-fixup.sql` (local `admin`/`admin`
-login, requeue stuck queue jobs). Restore errors land in `backup/pg_restore.log`.
+If you prefer manual control, run each step separately (useful if you want reinstall some part, for that you need just delete related folder, e.g. `.postgres` for database):
 
+{% set ns = namespace(step=0) %}
+```bash
+{% set ns.step = ns.step + 1 %}
+# {{ ns.step }}. Create .env file (interactive prompts for ports, credentials)
+nix run .#create-env
+
+{% set ns.step = ns.step + 1 %}
+# {{ ns.step }}. Clone/update all repositories, and relink addons to .local/share/Odoo/addons/{{ odoo_version }}
+nix run .#update-repos
+
+{% set ns.step = ns.step + 1 %}
+# {{ ns.step }}. Import Odoo python requirements and lock them (uv)
+nix run .#bootstrap-deps
+
+{% set ns.step = ns.step + 1 %}
+# {{ ns.step }}. Create Odoo configuration (odoo.conf)
+nix run .#create-odoo-config
+
+{% set ns.step = ns.step + 1 %}
+# {{ ns.step }}. Create PostgreSQL environment
+nix run .#setup-postgres
+{% if prod_ssh_host %}
+
+{% set ns.step = ns.step + 1 %}
+# {{ ns.step }}. Setup SSH keys for server access
+nix run .#setup-ssh-access
 {% endif %}
-## Updating from the template
+
+{% set ns.step = ns.step + 1 %}
+# {{ ns.step }}. Create Nginx configuration
+nix run .#create-nginx-config
+{% if backup_s3_bucket %}
+
+{% set ns.step = ns.step + 1 %}
+# {{ ns.step }}. Create AWS credentials (for backups)
+nix run .#create-aws-config
+{% endif %}
+
+{% set ns.step = ns.step + 1 %}
+# {{ ns.step }}. Create VSCode settings
+nix run .#create-vscode-settings
+```
+
+### Development URLs
+
+- **Odoo Direct:** <http://localhost:{{ odoo_http_port }}>
+- **Odoo via Nginx:** <http://localhost:{{ nginx_port }}>
+
+## Test Server
+
+For test server deployment with nginx and systemd service:
+
+### Quick Setup For Test
+
+```bash
+cd {{ project_name }}
+
+# Run full setup
+nix run .#setup-test
+
+# Lock python dependencies from src/odoo/requirements.txt
+nix run .#bootstrap-deps
+
+# Install test server profile (includes python, nginx, odoo)
+nix profile add .#test-server
+
+# Enable running when not logged in
+sudo loginctl enable-linger $USER
+
+# Odoo and Nginx services + log rotation
+systemctl --user enable odoo.service nginx.service odoo-logrotate.timer
+systemctl --user start odoo.service nginx.service odoo-logrotate.timer
+systemctl --user status odoo.service nginx.service
+
+# Odoo logs:
+journalctl --user -u odoo.service -f
+tail -f ${{ project_dir_var }}/odoo.log
+{% if backup_s3_bucket %}
+
+# Download and restore production backup with name from .env file
+nix run .#download-backup
+{% endif %}
+```
+
+### Tools Included For Test
+
+- Python {{ python_version }} with all Odoo dependencies
+- Odoo {{ odoo_version }} binary
+- wkhtmltopdf (PDF generation)
+- PostgreSQL {{ postgres_version }} client
+- AWS CLI 2
+- sassc (SCSS compilation)
+- nginx (Nginx web server)
+- systemd services for Odoo and Nginx + daily log rotation
+
+## Production Server
+
+### Quick Setup For Production
+
+```bash
+cd {{ project_name }}
+
+# Full production setup
+nix run .#setup-prod
+
+# Lock python dependencies from src/odoo/requirements.txt
+nix run .#bootstrap-deps
+
+# Install to user profile
+nix profile add .#prod-server
+
+# Enable running when not logged in
+sudo loginctl enable-linger $USER
+
+# Odoo and Nginx services + log rotation
+systemctl --user enable odoo.service nginx.service odoo-logrotate.timer
+systemctl --user start odoo.service nginx.service odoo-logrotate.timer
+systemctl --user status odoo.service nginx.service
+```
+
+### Tools Included For Production
+
+- Python {{ python_version }} with all Odoo dependencies
+- Odoo {{ odoo_version }} binary
+- wkhtmltopdf (PDF generation)
+- PostgreSQL {{ postgres_version }} client
+- AWS CLI 2
+- sassc (SCSS compilation)
+- nginx (Nginx web server)
+- systemd services for Odoo and Nginx + daily log rotation
+
+## Updating From The Template
+
+Pull template improvements into this project (re-asks changed questions, three-way merges):
 
 ```bash
 uvx copier update --trust

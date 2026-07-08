@@ -1,10 +1,9 @@
 # nixodoo-copier-template
 
 [Copier](https://copier.readthedocs.io) template that generates a complete,
-reproducible **Odoo development environment on Nix flakes** — like
-[doodba-copier-template](https://github.com/Tecnativa/doodba-copier-template),
-but with Nix instead of Docker: native processes, systemd user services, a
-project-local PostgreSQL cluster, and a python env locked with uv/uv2nix.
+reproducible **Odoo development environment on Nix flakes**: native processes,
+systemd user services, a project-local PostgreSQL cluster, and a python env
+locked with uv/uv2nix.
 
 ## What you get
 
