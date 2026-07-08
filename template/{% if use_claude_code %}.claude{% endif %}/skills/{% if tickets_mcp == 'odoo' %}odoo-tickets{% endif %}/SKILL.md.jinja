@@ -52,7 +52,7 @@ Tabs on the form map to: Description → `description`, Technical Solution →
 
 ## Technical Solution tab — `solution` + clarifying Q&A
 
-Three Html fields on `project.task` (defined in `kaertech_project_software`),
+Three custom Html fields on `project.task`,
 shown in this order on the **Technical Solution** tab:
 
 | Field | Holds |
@@ -259,7 +259,7 @@ write, the script goes on the task as a record of what was run.
   blocked by a prod automation. Before closing a task that ran prod shell /
   bulk-data scripts, confirm each is attached (see Attachments).
 - **Close as no longer relevant** → `{"stage_id": <Canceled>}` (no pr_uri).
-- Stage rights: assignors/PM/assignees only (`kaertech_project_software`);
+- Stage rights: assignors/PM/assignees only;
   the service account is a Task Assignor of project 8.
 
 ## Memory mirror linkage

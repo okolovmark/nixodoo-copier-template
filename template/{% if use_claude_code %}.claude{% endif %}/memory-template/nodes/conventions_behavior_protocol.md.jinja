@@ -373,13 +373,12 @@ the `ODOO_*_PROD` profile (`connect(env_profile="prod")` on the odoo MCP).
   journal/<date>`) on top. Simple HTML (`<p>`, `<code>`).
 
 **Service-account constraints** (verified on Kaertech prod 2026-06-10):
-- `kaertech_project_software` restricts `user_ids`/`stage_id` writes — the
+- Custom access rules restrict `user_ids`/`stage_id` writes — the
   service account must be in the project's **Task Assignors**
   (`task_assignor_ids`) to assign users and move stages of assigned tasks.
 - The service account has no sender email; core Odoo 16 sends the
   assignment notice unconditionally, which would block assignment — fixed
-  by `kaertech_project_software` PR 770 (deployed 2026-06-10):
-  `_task_message_auto_subscribe_notify` honours
+  by a customization: `_task_message_auto_subscribe_notify` honours
   `mail_auto_subscribe_no_notify`, so assignment works **when the flag is
   passed**.
 - Always `create`/`write` via `execute` (the plain tools can't pass
@@ -409,7 +408,7 @@ append `[odoo:pending]` instead and mirror at the next natural prod touch.
 ### On closing a state item with `[odoo:TASKID]`
 
 - Closed as **done** → move the task to the project's done stage (a stage
-  with `fold=True`, e.g. Delivered). Kaertech-convention gotcha: Delivered requires a
+  with `fold=True`, e.g. Delivered). Gotcha: Delivered requires a
   non-empty `pr_uri` — `write` it first (the PR URL if the work has one,
   else `memory://journal/<date>#<ID>`), then `write` the stage.
 - Closed as **no longer relevant** → the cancel stage (e.g. Canceled).
