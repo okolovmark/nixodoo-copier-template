@@ -24,6 +24,14 @@
         "mcp-pdb==0.4.0",
         "mcp-pdb"
       ]
-    }
+    }{% if status_mcp == 'teams' %},
+    "teams": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "git+https://github.com/okolovmark/teams-mcp.git#stable"
+      ]
+    }{% endif %}
   }
 }

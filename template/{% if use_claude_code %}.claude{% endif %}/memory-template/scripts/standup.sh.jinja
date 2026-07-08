@@ -1,0 +1,225 @@
+#!/usr/bin/env bash
+# Daily standup computation and journal-write for Claude memory system.
+#
+# Usage:
+#   bash standup.sh           — normal trigger: runs only if today's journal
+#                                has no `## Session ` block yet
+#   bash standup.sh --force   — always run (on-demand "show me the standup")
+#
+# Exit codes: always 0 on success. Caller reads stdout:
+#   "SKIP: <reason>"   — no standup to show (today already has a session block)
+#   "EMPTY: <reason>"  — state is empty and no orphans (nothing to report)
+#   otherwise          — rendered standup markdown; the script has already
+#                        written it (or refreshed a stale one) in today's journal
+#
+# Safe to re-run: if today's journal has a standup block but no session yet,
+# the stale block is stripped before the fresh one is appended.
+
+set -euo pipefail
+
+MEM="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+STATE="$MEM/state.md"
+JOURNAL="$MEM/journal"
+NODES="$MEM/nodes"
+INDEX="$MEM/MEMORY.md"
+TODAY=$(date +%Y-%m-%d)
+DAYFILE="$JOURNAL/$TODAY.md"
+FORCE=${1:-}
+
+# Portable epoch-from-date: GNU first, BSD fallback (macOS).
+to_epoch() {
+  date -d "$1" +%s 2>/dev/null || date -j -f "%Y-%m-%d" "$1" +%s 2>/dev/null || echo 0
+}
+
+# Trigger check: skip if today's journal already has a session block,
+# unless --force is given.
+if [ "$FORCE" != "--force" ]; then
+  if [ -f "$DAYFILE" ] && grep -q "^## Session " "$DAYFILE"; then
+    echo "SKIP: today's journal already has a session block"
+    exit 0
+  fi
+fi
+
+# Extract items from a state.md section by header name.
+extract_section() {
+  local header="$1"
+  awk -v hdr="## $header" '
+    $0 == hdr {in_sec = 1; next}
+    /^## / {in_sec = 0}
+    in_sec && /^- \[/ {print}
+  ' "$STATE"
+}
+
+today_epoch=$(to_epoch "$TODAY")
+
+# Annotate each state line with [stale: N days] if age >= 14.
+annotate_stale() {
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    item_date=$(echo "$line" | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | head -1)
+    if [ -n "$item_date" ]; then
+      item_epoch=$(to_epoch "$item_date")
+      if [ "$item_epoch" -gt 0 ]; then
+        age_days=$(( (today_epoch - item_epoch) / 86400 ))
+        if [ "$age_days" -ge 14 ]; then
+          line="$line [stale: $age_days days]"
+        fi
+      fi
+    fi
+    echo "$line"
+  done
+}
+
+render_section() {
+  local header="$1"
+  local content
+  content=$(extract_section "$header" | annotate_stale)
+  if [ -z "$content" ]; then
+    echo "_(empty)_"
+  else
+    echo "$content"
+  fi
+}
+
+# Orphan node check: files in nodes/ not referenced from MEMORY.md
+# (by markdown link `nodes/foo.md` or wikilink `[[foo]]`).
+orphans=""
+if [ -d "$NODES" ]; then
+  for f in "$NODES/"*.md; do
+    [ -f "$f" ] || continue
+    bn=$(basename "$f")
+    slug="${bn%.md}"
+    if ! grep -qF -e "nodes/$bn" -e "[[$slug]]" "$INDEX"; then
+      orphans="${orphans}- $bn"$'\n'
+    fi
+  done
+fi
+
+# Empty-state check
+any_item=0
+for section in "Ship blockers" "Blocked" "Ready for review" "WIP" "Open threads"; do
+  if [ -n "$(extract_section "$section")" ]; then
+    any_item=1
+    break
+  fi
+done
+
+if [ "$any_item" -eq 0 ] && [ -z "$orphans" ]; then
+  echo "EMPTY: state has no items and no orphan nodes"
+  exit 0
+fi
+
+# Build standup markdown
+standup="## Daily standup — $TODAY
+
+### Ship blockers
+$(render_section "Ship blockers")
+
+### Blocked
+$(render_section "Blocked")
+
+### Ready for review
+$(render_section "Ready for review")
+
+### WIP
+$(render_section "WIP")
+
+### Open threads
+$(render_section "Open threads")
+"
+
+if [ -n "$orphans" ]; then
+  standup="${standup}
+### Untracked nodes
+${orphans}"
+fi
+
+# Odoo (prod) section — best-effort enrichment; offline/missing config must
+# never break the standup. Identity comes from nodes/user_identity.md
+# (fill it on bootstrap), credentials from the project .env (ODOO_*_PROD).
+ENV_FILE="${{ "{" }}{{ project_dir_var }}:-$HOME/projects/{{ project_name }}}/.env"
+IDENTITY="$NODES/user_identity.md"
+odoo_section=""
+if [ -f "$ENV_FILE" ] && [ -f "$IDENTITY" ] && ! grep -q "<ODOO LOGIN>" "$IDENTITY"; then
+  odoo_section=$(ENV_FILE="$ENV_FILE" IDENTITY="$IDENTITY" python3 - <<'PY' 2>/dev/null || true
+import json, os, re, urllib.request
+
+env = {}
+with open(os.environ["ENV_FILE"]) as fh:
+    for ln in fh:
+        m = re.match(r"^([A-Z_]+)=['\"]?([^'\"\n]*)", ln.strip())
+        if m:
+            env[m.group(1)] = m.group(2)
+url, db, user, pwd = (env.get(k) for k in
+                      ("ODOO_URL_PROD", "ODOO_DATABASE_PROD",
+                       "ODOO_USERNAME_PROD", "ODOO_PASSWORD_PROD"))
+if not all((url, db, user, pwd)):
+    raise SystemExit(1)
+
+ident = open(os.environ["IDENTITY"]).read()
+login = re.search(r"\*\*Odoo login \(prod\):\*\*\s*(\S+)", ident).group(1)
+proj = int(re.search(r"project\.project id (\d+)", ident).group(1))
+stage = re.search(r'\*\*"Current ticket" stage:\*\*\s*(\S+)', ident).group(1)
+
+def rpc(service, method, args):
+    payload = {"jsonrpc": "2.0", "method": "call",
+               "params": {"service": service, "method": method, "args": args}, "id": 1}
+    req = urllib.request.Request(url.rstrip("/") + "/jsonrpc",
+                                 json.dumps(payload).encode(),
+                                 {"Content-Type": "application/json"})
+    r = json.load(urllib.request.urlopen(req, timeout=10))
+    if r.get("error"):
+        raise SystemExit(1)
+    return r["result"]
+
+uid = rpc("common", "login", [db, user, pwd])
+def kw(model, method, args, kwargs=None):
+    return rpc("object", "execute_kw", [db, uid, pwd, model, method, args, kwargs or {}])
+
+me = kw("res.users", "search_read", [[["login", "=", login]]], {"fields": ["id"], "limit": 1})
+if not me:
+    raise SystemExit(1)
+mid = me[0]["id"]
+cur = kw("project.task", "search_read",
+         [[["project_id", "=", proj], ["stage_id.name", "=", stage], ["user_ids", "in", [mid]]]],
+         {"fields": ["name"], "order": "write_date desc", "limit": 1})
+dom = [["user_ids", "in", [mid]], ["is_closed", "=", False]]
+if cur:
+    dom.append(["id", "!=", cur[0]["id"]])
+nxt = kw("project.task", "search_read", [dom],
+         {"fields": ["name", "stage_id"],
+          "order": "priority desc, date_deadline asc, id asc", "limit": 5})
+out = []
+out.append(f"- Current ({stage}): [{cur[0]['id']}] {cur[0]['name']}" if cur
+           else f"- Current ({stage}): none")
+out.extend(f"- Next: [{t['id']}] {t['name']} ({t['stage_id'][1]})" for t in nxt)
+print("\n".join(out))
+PY
+)
+fi
+if [ -n "$odoo_section" ]; then
+  standup="${standup}
+### Odoo (prod)
+${odoo_section}
+"
+fi
+
+standup="${standup}
+---
+"
+
+# Strip any stale standup block from today's journal before appending.
+# A block runs from "## Daily standup" to the next "---" line (inclusive).
+if [ -f "$DAYFILE" ] && ! grep -q "^## Session " "$DAYFILE"; then
+  awk '
+    /^## Daily standup/ {flag = 1; next}
+    flag && /^---$/ {flag = 0; next}
+    !flag
+  ' "$DAYFILE" > "$DAYFILE.tmp" && mv "$DAYFILE.tmp" "$DAYFILE"
+fi
+
+# Append (creates file if missing).
+printf '%s\n' "$standup" >> "$DAYFILE"
+
+# Print to stdout so the caller can show it to the user.
+printf '%s\n' "$standup"

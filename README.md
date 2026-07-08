@@ -18,7 +18,10 @@ locked with uv/uv2nix.
 - **Claude Code integration** (optional): `CLAUDE.md`, guard hooks (read-only OCA/core,
   dangerous-command blocker, ruff auto-format), Odoo dev skills (code patterns, style,
   testing, commit conventions, pre-PR checklist, model inspector, pdb debugging,
-  isolated worktree envs), `dev`/`review` agents, MCP servers config
+  isolated worktree envs), `dev`/`review` agents, MCP servers config, a persistent
+  **memory template** (journal / state / standup), and optional workflow skills:
+  the **pipeline** orchestrator (task → dev → QC gate → demo GIF → PR), **my-status**
+  (status posting, Teams) and **odoo-tickets** (ticket tracking in a prod Odoo)
 - Optional (asked during generation): custom addons repo wiring, S3 production-backup
   restore with **native Odoo neutralization** (`odoo neutralize` + dev fixups),
   SSH helpers for prod/test servers, OCA `queue_job` wiring
@@ -66,6 +69,10 @@ uvx copier update --trust
 | `custom_repo_pattern` / `custom_repo_name` | empty → no custom addons repo |
 | `use_claude_code` | `true` — CLAUDE.md, hooks, skills, agents, MCP config |
 | `module_prefix` / `ticket_prefix` | first word of project name / `TASK` |
+| `status_mcp` | `none` (or `teams` → my-status skill, Teams MCP + bootstrap questions) |
+| `tickets_mcp` | `none` (or `odoo` → odoo-tickets skill, ticket links, `ODOO_*_PROD` in `.env`) |
+| `odoo_prod_url` | asked when `tickets_mcp=odoo` |
+| `use_pipeline` | `true` (asked when custom repo + S3 bucket are set) |
 | `backup_s3_bucket` | empty → no backup tooling |
 | `prod_ssh_host` (+user/url), `test_ssh_host` (+user/port/forward/url) | empty → no SSH helpers |
 

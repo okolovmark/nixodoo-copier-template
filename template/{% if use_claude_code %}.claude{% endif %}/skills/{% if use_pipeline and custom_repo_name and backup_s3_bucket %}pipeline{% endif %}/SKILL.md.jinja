@@ -1,0 +1,789 @@
+---
+name: pipeline
+description: "Full Odoo development lifecycle orchestrator. Chains subagents: task reading -> dev -> QC gate (review + validation, loops back to dev) -> demo GIF -> PR. Two subagents: dev (writes code), review (read-only QC/review)."
+argument-hint: "[task URL or description]"
+---
+
+# Odoo Development Pipeline
+
+Pipeline orchestrator: manage the full dev lifecycle by spawning named subagents (defined in `.claude/agents/`), each specialized for a phase. Coordinate, pass context between phases, loop back on failure.
+
+## Task
+
+$ARGUMENTS
+
+---
+
+## Commit Message Format (MANDATORY)
+
+Every commit MUST follow the Odoo git guidelines — use the `commit` skill (`/commit`), or follow its format:
+
+```
+[TAG] module_name: short description (< 50 chars)
+
+WHY this change is needed (not WHAT — the diff shows WHAT).
+
+{{ ticket_prefix }}-XXX
+```
+
+Tags: `[FIX]`, `[IMP]`, `[ADD]`, `[REM]`, `[REF]`, `[PERF]`, `[CLN]`, etc.
+Module name = technical name (e.g. `kaertech_project_software`).
+Imperative mood. Task key in body. See `commit` skill for full reference.
+
+---
+
+## Available Subagents
+
+Defined in `.claude/agents/`:
+
+| Agent | Purpose | Tools | Preloaded Skills |
+|-------|---------|-------|-----------------|
+| `dev` | Development — writes code | All | style, code-patterns |
+| `review` | QC + code review — read-only analysis | Read, Grep, Glob, Bash | style, testing |
+
+Interactive Odoo debugging is the **`debug` skill** (mcp-pdb), run in-context — not a subagent.
+
+## Collecting subagent returns
+
+Every `dev` / `review` subagent returns a structured closing block:
+
+    FILES_CHANGED: <list>
+    OPEN_THREADS: <list, or "none">
+    DECISIONS: <scope expansions or design calls, or "none">
+
+Maintain running lists across ALL phases:
+
+- `ALL_FILES_CHANGED` — union of FILES_CHANGED from every `dev` spawn
+- `ALL_OPEN_THREADS` — every OPEN_THREAD returned, any phase
+- `ALL_DECISIONS` — every DECISION returned, any phase
+
+These feed Phase 6 (Memory Closure). If a subagent forgets the closing block, ask it again — do not guess.
+
+---
+
+{% if tickets_mcp == 'odoo' %}
+## Change Tracking (via Odoo Internal Notes + Checklist)
+
+Track all changes/progress in the Odoo production task — **over the odoo MCP, never claude-in-chrome**. All calls, field conventions, context flags and gotchas live in the **`odoo-tickets` skill** — read it once at pipeline start, follow it for every prod task op below. Connect with `env_profile: "prod"` for prod ops, and **immediately after every prod batch reconnect to local** so a connection left parked on prod can't silently run later checks against production. Phase-3 verification targets THIS session (not the main `develop`): point the MCP at it with explicit params — `connect host="localhost" port=<PORT> database=<DB> username="admin" password="admin"` — and confirm `get_connection_status` shows `<DB>` before trusting it.
+
+### Internal Notes
+On user feedback, a design decision, or an applied fix, post an **internal note** (`message_post` with `mail.mt_note`, explicit author/email_from per `odoo-tickets`) with:
+- Category prefix: `Requirement Change` / `Design Decision` / `Bug Fix` / `Review Fix` / `User Feedback` / `Progress`
+- What was changed and why
+- Affected files (if applicable)
+
+### Task Checklist
+The Checklist tab = `project.task.subtask` records (see `odoo-tickets`):
+1. At the start of Phase 1, read the existing checklist (`search_read` by `task_id`)
+2. **If empty**, populate with implementation steps derived from requirements (`create` with `task_id`, `name`, `user_id`)
+3. As each step completes, `write {"state": "done"}`
+4. Add new steps discovered during development
+
+### Sub-tasks & Blockers (task↔task links)
+
+Two task↔task link tabs the orchestrator maintains (fields + calls in
+`odoo-tickets` → "Sub-tasks & blockers"). Both stay attached to the current
+task — **distinct from OPEN_THREADS**, which are unrelated issues that become
+standalone Backlog tasks in Phase 6.
+
+- **Too big → Sub-task.** If you judge the task too large to ship as one clean
+  PR (several independent deliverables, spans unrelated concerns), surface the
+  proposed split to the **user first**, then create the agreed slices as child
+  tasks (new `project.task`, `parent_id` = current task) and narrow this run's
+  scope to one slice (or the parent's remaining work). Post a `Design Decision`
+  note recording the split.
+- **Blocker found → Blocked By.** If development or the QC gate hits a
+  dependency that must be resolved first (missing upstream change, external
+  fix, data migration), create a task for the blocker (full conventions) and
+  link it on the current task's `depend_on_ids`. Post a `Progress` note naming
+  the blocker, then take the **BLOCKED** close in Phase 6 — the current task
+  can't finish until the blocker does.
+
+{% else %}
+## Change Tracking
+
+No ticket tracker configured — record decisions and progress in the session
+report and the Phase-6 memory closure (journal + state.md).
+{% endif %}
+
+---
+
+## Isolated per-session environment
+
+Every run executes in its own isolated env — own worktree + port + DB + Odoo — so
+parallel pipeline sessions never collide and the user's main env
+(`src/{{ custom_repo_name }}` / `develop` / `odoo.service` / 1669) is untouched. **The model,
+scripts and gotchas live in the `worktree-env` skill — read it.** What the pipeline
+needs from it:
+
+- **Phase 1** runs `wt-start.sh <slug>` and captures its output as `<WT>` (worktree
+  path), `<CONF>` (session `odoo.conf`), `<URL>` (browser URL), `<DB>`, `<PORT>`.
+  Re-running `wt-start.sh <slug>` refreshes the env (idempotent).
+- **Phases 2–5** edit/test/PR using those: `git -C <WT> …`, `odoo -c <CONF> …`,
+  browser `<URL>`. All code/git happens in `<WT>`, never in `src/{{ custom_repo_name }}`.
+- **Phase 6** does NOT tear the env down on its own — the worktree is kept so
+  the task can continue. `wt-stop.sh <slug>` runs ONLY when the user says the
+  session is finished, and only after you ask (see Phase 6 Step 0 /
+  `feedback_never_auto_drop_worktree`).
+- The odoo MCP can verify a session too — `connect` to it explicitly (`host="localhost"`,
+  `port=<PORT>`, `database=<DB>`, `admin`/`admin`); the `default`/`prod` profiles are
+  `develop`/prod, so pass explicit params, not a profile. The connection is global per
+  MCP server — alternate deliberately with prod ticket ops (`odoo-tickets`) and check
+  `get_connection_status`.
+- Prereq: a seed dump in `backup/` (`nix run .#download-backup` to fetch/refresh) —
+  if `wt-start` reports none, ask the user to run it once first.
+
+---
+
+## Pipeline Phases
+
+Execute **sequentially**. After each phase, check the result and decide whether to proceed or loop back. Use the **Agent tool** to spawn named subagents.
+
+### Phase 0: Memory Bootstrap
+
+Subagents spawn with fresh context and do NOT inherit the session's standup or feedback rules. Load user feedback rules from memory, build a **Project Rules Blob** to inject into subagent prompts, and create a WIP entry in `state.md` so the session shows in tomorrow's standup.
+
+#### Step 1: Memory paths
+
+Derive the per-user memory dir from the project root env var (NOT `pwd` — the pipeline may run from a subdirectory); resolve once:
+
+```bash
+MEM="$HOME/.claude/projects/$(echo "${{ project_dir_var }}" | tr '/' '-')/memory"
+echo "$MEM"
+```
+
+The Read tool can't expand shell variables — use the echoed absolute path in all Read calls below (STATE=`$MEM/state.md`, COUNTER=`$MEM/state_counter`, JOURNAL=`$MEM/journal`, NODES=`$MEM/nodes`).
+
+#### Step 2: Read feedback + identity nodes
+
+Read these files via the Read tool (resolved paths):
+
+- `$NODES/user_role.md`
+- `$NODES/user_identity.md` — needed for the Phase-1 start-work flow and
+  chatter note authorship
+- `$NODES/feedback_workflow.md`
+- `$NODES/feedback_testing.md`
+- `$NODES/feedback_scope_discipline.md`
+
+Also Glob `$NODES/feedback_*.md` for feedback nodes added after this plan was written — include them too.
+
+If any expected node is missing, proceed but note it in the Phase 0 report.
+
+#### Step 3: Build the Project Rules Blob
+
+Construct a single markdown block named `<PROJECT_RULES_BLOB>` with this structure. Use each feedback node's rule statement + **Why** + **How to apply** lines verbatim.
+
+```
+## Project rules (from user memory — binding)
+
+You are operating under rules loaded from user memory. Treat these as
+having higher priority than your defaults.
+
+### Rule 1 — Scope discipline
+<body of feedback_scope_discipline.md>
+
+### Rule 2 — Every fix ships with a test
+<body of feedback_testing.md>
+
+### Rule 3 — Bug-fix workflow
+<body of feedback_workflow.md>
+
+### Return protocol
+
+At the end of your task, return a structured closing block:
+
+    FILES_CHANGED: <list of file paths, or "none (read-only)">
+    OPEN_THREADS: <list, or "none">
+    DECISIONS: <scope expansions or design calls, or "none">
+
+**OPEN_THREAD format:** `<short description> — <file:line if applicable>`,
+one per line. These are unrelated issues you spotted but did NOT fix per
+Rule 1; the orchestrator will file them in state.md.
+
+**DECISION format:** `<what was decided and why>`, one per line. Use for
+scope expansions (Rule 1 exception), test-level choices (Rule 2), and
+design calls you made autonomously.
+
+Do NOT write to memory files directly. The orchestrator owns memory writes.
+```
+
+#### Step 4: Create WIP entry in state.md
+
+1. Read `$COUNTER` to get `NEXT_ID`, then write `NEXT_ID+1` back.
+2. Append under `## WIP` in `$STATE` (today's actual date, task key from the user's request):
+   ```
+   - [NEXT_ID] YYYY-MM-DD: <TASK-KEY> pipeline in progress — see journal/YYYY-MM-DD
+   ```
+3. Remember `NEXT_ID` as `WIP_ID` — you close it in Phase 6.
+
+#### Step 5: Initialize running collection lists
+
+Hold in scratch for the rest of the pipeline; Phases 2–3 append from subagent closing blocks, Phase 6 flushes to memory:
+
+- `ALL_FILES_CHANGED = []`
+- `ALL_OPEN_THREADS = []`
+- `ALL_DECISIONS = []`
+
+#### Step 6: Report
+
+> Phase 0: Memory bootstrap complete — N feedback rules loaded, WIP entry [WIP_ID] created
+
+---
+
+### Phase 1: Task Reading & Context Gathering
+
+Before spawning any subagent:
+
+{% if tickets_mcp == 'odoo' %}
+0. **Resolve & read the task** (URL or {{ ticket_prefix }} key) — over the odoo MCP per
+   `odoo-tickets` (never Chrome):
+   - Resolve: id from the URL (`#id=<n>`), or
+     `search_read` `[["key", "=", "{{ ticket_prefix }}-xxxx"]]`
+   - Append ` [odoo:<task_id>]` to the Phase-0 WIP line in state.md — the
+     pipeline's ticket IS this state item's mirror; never create a second
+     ticket for it.
+   - Read the form content with explicit field lists (heavy Html fields for
+     this ONE task only):
+     - `read [id] ["name", "key", "stage_id", "user_ids", "task_type", "tshirt_estimate", "planned_hours", "effective_hours", "date_deadline", "child_ids", "depend_on_ids"]`
+       — note any existing **Sub-tasks** (`child_ids`) and **Blocked By**
+       (`depend_on_ids`); if `depend_on_ids` is non-empty the task may already
+       be blocked, flag it to the user before starting.
+     - **Description**: `read [id] ["description"]` — functional requirements
+     - **Technical Solution**: `read [id] ["solution"]` (+ `questions`/`answers` if used)
+     - **Test Cases**: `search_read` `project.task.testcase` by `task_id`,
+       fields `["name", "state", "passed", "steps_to_execute", "expected_results"]`
+     - **Checklist**: `search_read` `project.task.subtask` by `task_id`,
+       fields `["name", "state", "user_id"]`
+
+1. **Take the ticket into work** (start-work flow from `odoo-tickets`) —
+   after step 0, because the status ETA needs `planned_hours` /
+   `effective_hours` / `date_deadline`:
+   - move it to the **Development** stage (`write {"stage_id": …}` with
+     `tracking_disable` context); assign the owner if unassigned
+{% if status_mcp == 'teams' %}
+   - **Rebalance the user's other deadlines** — a new in-scope ticket pushes
+     existing work out, so run the `my-status` `rebalance` flow now (it
+     re-estimates and shifts the **Planned Dates** window
+     `planned_date_start`/`planned_date_end` — and `date_deadline` in sync — of
+     the user's other open assigned tasks to absorb this one). See `my-status`.
+   - **Send the Teams status — and treat it as a HARD GATE: do NOT start
+     Phase 2 until the status is actually sent.** Run the `my-status` `send`
+     flow (current ticket + ETA + next up, draft → explicit user go → IT team
+     chat). **If Teams is not authenticated** (`mcp__teams__auth_status` is not
+     the identity-node account, or the send errors on auth): **PAUSE the
+     pipeline here.** Show the user the ready-to-send draft and ask them to
+     authenticate Teams (their forked `teams-mcp`, never upstream `@latest` —
+     see `feedback_fork_third_party_tools`), then STOP and wait. When the user
+     says they have authenticated, re-check `auth_status`, send the status, and
+     only **after the send succeeds** proceed to Phase 2. The stage move + the
+     *sent* status are a mandatory pair — an unsent status blocks the run (see
+     `feedback_teams_status_hard_gate`).
+{% endif %}
+
+2. **Clarify ambiguities — and capture the Q&A**: if the Description (or the
+   codebase analysis in the next step) leaves real implementation ambiguities,
+   ask the user before writing code. **Persist every clarifying round to the
+   task's Technical Solution tab** per `odoo-tickets` (`questions` / `answers`
+   Html fields):
+   - `questions` ← the questions you asked, `answers` ← the user's answers, as
+     parallel numbered lists so Q1↔A1.
+   - Append to any existing content; never overwrite earlier rounds.
+   - This applies to **every** clarifying exchange about the task — here, and
+     anytime later in the pipeline (e.g. mid-development feedback), not just the
+     first round.
+   - When an answer changes scope or settles a design choice, also post the
+     matching internal note (`Requirement Change` / `Design Decision`).
+
+3. **Enrich Technical Solution** — when the `solution` tab is empty, under ~50 words, or lacks implementation specifics (just restates the description):
+   a. Analyze the Description tab content **and any answers captured in the previous step**
+   b. Spawn an **Explore** agent to research the affected modules:
+      > Explore the codebase for: <key models/features mentioned in description>.
+      > Find: existing models, fields, views, security rules, and patterns.
+      > Report: file paths, model names, existing field names, view IDs.
+   c. Produce a Technical Solution from description + codebase analysis using the template below
+   d. Write to the task: `execute write [id] {"solution": "<html>"}` (flags context per `odoo-tickets`)
+   e. Post an internal note: "Technical Solution auto-generated by pipeline based on task description and codebase analysis"
+
+   **Structured Template** (use as HTML for Odoo's rich text field):
+
+   ```
+   ## Affected Models
+   - `model.name` — what changes (new model / extend existing)
+     - New fields: `field_name` (type) — purpose
+     - Modified fields: `field_name` — what changes
+     - New methods: `method_name()` — purpose
+     - Modified methods: `method_name()` — what changes
+
+   ## Views
+   - `view_xml_id` — what changes (add field / new button / modify tree)
+   - New views: purpose and type (form/tree/search/kanban)
+
+   ## Security
+   - Access rights: which groups get CRUD on which models
+   - Record rules: any new domain-based restrictions
+
+   ## Business Logic
+   - Computed fields and their dependencies
+   - Constraints (SQL / Python)
+   - Onchange methods
+   - Workflow / state transitions
+   - Scheduled actions (crons)
+
+   ## Dependencies
+   - Module dependencies to add to `__manifest__.py`
+   - External libraries (if any)
+
+   ## Migration Notes
+   - Data migration considerations
+   - Backward compatibility concerns
+   - Impact on existing records
+   ```
+
+   **Important**: Adapt the template — skip/add sections as needed. Goal is actionable technical clarity, not filling every section.
+
+4. **Populate Test Cases** — when the Test Cases tab is empty or has fewer than 3 cases, create comprehensive `project.task.testcase` records over MCP:
+
+   a. Derive test cases from the Description + Technical Solution
+   b. Cover ALL of these categories:
+      - **Happy path**: Normal usage flow, expected inputs, correct results
+      - **Edge cases**: Empty values, boundary values, max limits, special characters
+      - **Negative cases**: Invalid inputs, unauthorized access, missing required data
+      - **Access control**: Different user roles (admin, manager, regular user, outsider)
+      - **Data integrity**: Computed fields update correctly, constraints fire, cascading effects
+      - **UI/UX**: Fields visible/hidden based on conditions, buttons enabled/disabled, correct labels
+      - **Regression**: Existing functionality still works after changes
+
+   c. Each test case MUST have:
+      - **Name**: Short, descriptive (e.g. "Verify stage change blocked for outsider")
+      - **Steps**: Numbered, specific actions (e.g. "1. Login as user without assignor role. 2. Open task {{ ticket_prefix }}-xxx. 3. Try to change stage to Development.")
+      - **Expected result**: Exact expected outcome (e.g. "Error message: 'You are not authorized to change the stage'. Stage remains unchanged.")
+
+   d. Write test cases as `project.task.testcase` records (per `odoo-tickets`):
+      `create {"task_id": <id>, "name": "<scenario>",
+      "steps_to_execute": "<ol>…</ol>", "expected_results": "<p>…</p>"}` —
+      one create per case, state defaults to `todo`
+
+   e. Post an internal note: "Test Cases auto-generated by pipeline — N test cases covering happy path, edge cases, access control, and regression."
+
+   **Aim for 8-15 test cases** depending on complexity — more for security/access-control features, fewer for simple UI tweaks.
+
+5. **Initialize the checklist**:
+   - If empty, populate with implementation steps derived from the (now-available) Technical Solution
+   - If it has items, read them as part of the requirements
+
+{% else %}
+0. **Read the task** — gather requirements from the user's description (and any
+   linked docs); ask clarifying questions in chat until the scope is clear.
+{% if status_mcp == 'teams' %}
+
+1. **Send the Teams status — HARD GATE: do NOT start Phase 2 until the status
+   is actually sent.** Run the `my-status` `send` flow (current task + ETA +
+   next up, draft → explicit user go → the identity node's status chat). If
+   Teams is not authenticated: PAUSE, show the draft, ask the user to
+   authenticate, wait, then send and only after that proceed.
+{% endif %}
+{% endif %}
+
+6. **Identify scope**: which modules will be affected.{% if tickets_mcp == 'odoo' %} If the task looks too
+   big to ship as one clean PR, propose a **sub-task** split now (see "Sub-tasks
+   & Blockers" above — user first, then link via `parent_id`).{% endif %}
+
+7. **Summarize** the task scope for subagents (include Technical Solution highlights)
+
+8. **Bring up this session's isolated env.** Derive a branch slug from the task —
+   `<{{ ticket_prefix.lower() }}-key-lower>-<short-kebab-desc>` (e.g. `{{ ticket_prefix.lower() }}-1234-cash-in-cogs`) — then:
+   ```bash
+   bash "${{ project_dir_var }}/.claude/skills/worktree-env/scripts/wt-start.sh" <slug>
+   ```
+   It adds a worktree off `origin/{{ odoo_version }}` as branch `<slug>`, allocates a free port,
+   builds the session farm, restores `wt_<slug>` from the prod seed dump, and starts
+   `odoo-wt@<slug>.service`. **Capture the printed `WORKTREE:`/`CONF:`/`URL:`/`DB:`/
+   `PORT:` as `<WT>`/`<CONF>`/`<URL>`/`<DB>`/`<PORT>`** — every later phase uses them.
+   All code/git for this run happens in `<WT>`; the user's `src/{{ custom_repo_name }}` and
+   `develop` are never touched. (Prereq: a seed dump in `backup/` — if `wt-start`
+   reports none, ask the user to run `nix run .#download-backup` once first.)
+
+Report: "Starting pipeline for: <TASK-KEY> — <task summary>".{% if tickets_mcp == 'odoo' %} If clarifying questions were asked, add "N clarifying Q&A captured to the Technical Solution tab." If Technical Solution was enriched, add "Technical Solution auto-generated and written to the task. Please review." If Test Cases were generated, add "N test cases written to Test Cases tab."{% endif %}
+
+---
+
+### Phase 2: Development
+
+Spawn the **`dev`** subagent:
+
+> <PROJECT_RULES_BLOB>
+>
+> Your task: <TASK DESCRIPTION>.
+> **Work in the worktree `<WT>`** — all file edits and any `git` commands run
+> there (module files are at `<WT>/<module>/…`). Do NOT touch
+> `${{ project_dir_var }}/src/{{ custom_repo_name }}` (the user's main checkout).
+> Write complete, production-ready code following the project rules above.
+> Write the tests ALONGSIDE the code (project Rule 2 — every change ships
+> with tests): `TransactionCase` tagged `('post_install', '-at_install')`,
+> in the module's `tests/` dir, `tests/__init__.py` updated.
+> When done, return the structured closing block (FILES_CHANGED / OPEN_THREADS / DECISIONS).
+
+The `dev` agent has style and code-patterns skills preloaded.
+
+Wait for completion. Run `git -C <WT> diff --name-only` to confirm what changed. If the dev phase ADDED a new module dir, re-run `wt-start.sh <slug>` so the session farm picks it up before any test run. Append `FILES_CHANGED` → `ALL_FILES_CHANGED`, `OPEN_THREADS` → `ALL_OPEN_THREADS`, `DECISIONS` → `ALL_DECISIONS`.
+Report: "Development complete. Files changed: <list>"
+
+---
+
+### Phase 3: QC Gate (review + validation, loops back to dev)
+
+The quality gate. Two checks run here; either one failing sends the code back to `dev`, then the gate re-runs. **Max 3 fix iterations.** This is the only quality gate — the code is reviewed here, before the PR, so the PR is clean and there is no post-PR review round.
+
+**Check 1 — code review.** Spawn the **`review`** subagent (local-diff mode):
+
+> <PROJECT_RULES_BLOB>
+>
+> Review ONLY these changed files (local diff, not a PR): <LIST OF CHANGED FILES>.
+> They live in the worktree `<WT>` — read them there and diff with
+> `git -C <WT> diff` (not the user's main checkout `src/{{ custom_repo_name }}`).
+> Your goal here is COVERAGE: report every issue you find — including low-severity
+> ones and ones you are unsure about — each tagged with a severity (CRITICAL /
+> MAJOR / MINOR) and a confidence (high / medium / low). Cover TEST COVERAGE too:
+> flag missing tests for computed fields, constraints, state transitions, access
+> rights, error branches, and the regression case (old behavior still works).
+> Do not self-filter; this orchestrator is the ranking/filter stage.
+> review is read-only; your FILES_CHANGED will be "none (read-only)".
+> Return OPEN_THREADS for anything worth filing separately, and DECISIONS for
+> any judgment calls on severity.
+
+The `review` agent has `style` + `testing` preloaded. It is read-only.
+
+**Check 2 — validation.** Run directly (NOT via subagent) — you need Chrome browser tools and this session's running Odoo. Everything here targets THIS session (`<CONF>` / `<DB>` / `<URL>`), never the main env or another session.
+
+0. Point the odoo MCP at THIS session for backend checks —
+   `connect host="localhost" port=<PORT> database="<DB>" username="admin" password="admin"`
+   (the `default`/`prod` profiles are `develop`/prod, not a session). Confirm
+   `get_connection_status` shows `<DB>` before trusting it. The connection is global,
+   so never run session checks while parked on prod, or prod ticket ops while on the
+   session.
+1. Refresh the env (picks up any module added during dev) and stop its Odoo:
+   ```bash
+   bash "${{ project_dir_var }}/.claude/skills/worktree-env/scripts/wt-start.sh" <slug>
+   systemctl --user stop odoo-wt@<slug>.service
+   ```
+   (only THIS session's Odoo stops; the user's `odoo.service` and other sessions
+   keep running)
+2. Update and run tests against this session:
+   ```bash
+   odoo -c <CONF> -u <MODULE_NAME> \
+       --workers 0 --test-enable --test-tags /<MODULE_NAME> \
+       --stop-after-init --logfile=/dev/stdout 2>&1
+   ```
+   The leading `/` in `--test-tags /<MODULE_NAME>` is mandatory — a bare
+   name selects a (nonexistent) TAG, runs 0 tests and goes false-green.
+   Confirm the log reports a **non-zero test count** (`odoo.tests.result:
+   … of N tests`).
+3. Check for ERROR, CRITICAL, test failures, tracebacks.
+4. Start this session's Odoo: `systemctl --user start odoo-wt@<slug>.service`
+5. **Browser UI testing**: navigate to `<URL>` (login `admin`/`admin`) → affected
+   module/menu → verify new fields visible, test buttons, check flows →
+   `read_console_messages` for JS errors.
+{% if tickets_mcp == 'odoo' %}
+6. **Test Case Verification (MANDATORY)** — verify EVERY test case from the
+   **Test Cases** tab populated in Phase 1. Do NOT skip; if one can't be
+   verified automatically (e.g. needs specific data setup), document what was
+   checked and any limitations.
+   - **Read over MCP** (prod batch — reconnect to the session before verifying
+     anything locally): `search_read` `project.task.testcase` by `task_id`,
+     fields `["id", "name", "state", "passed", "steps_to_execute", "expected_results"]`
+   - **Execute each**: backend via the odoo MCP connected to the session
+     (`connect host="localhost" port=<PORT> database="<DB>"`), the Odoo shell
+     (`odoo shell -c <CONF>`), or Python tests; UI via Chrome on `<URL>`; access
+     control via `with_user()` in shell or by switching users in browser.
+   - **Mark over MCP** (per `odoo-tickets`): passed → `write {"passed": true,
+     "state": "done"}`; failed → keep `todo`, add details to `comments`.
+   - **Post summary internal note**: "Test Case Verification: X/Y passed.
+     [Details of any failures and fixes]"
+{% else %}
+6. **Requirements verification** — walk every requirement gathered in Phase 1
+   and verify it against the running session (backend + UI); document what was
+   checked and any limitations.
+{% endif %}
+
+**Gate decision:**
+
+- **BLOCKING** — any CRITICAL review finding, OR a test/validation failure, OR a
+  failed test case: report to the user, spawn the `dev` agent to fix (inject
+  `<PROJECT_RULES_BLOB>` **and the "work in `<WT>`" instruction** at the start of
+  the fix prompt, append its returns to the running lists), post a `Bug Fix`
+  internal note, then **loop back and re-run this whole gate**. Max 3 fix iterations.
+- **NON-BLOCKING** — only MAJOR / MINOR / low-confidence review findings: report
+  them, file MINOR or low-confidence items as OPEN_THREADS (post-MVP backlog)
+  instead of fixing them now. Proceed.
+
+Report: "QC gate: review <summary> · tests <N> · test cases <X/Y> — PASS (after <k> fix loops)."
+
+---
+
+### Phase 4: Demo GIF (MANDATORY)
+
+After the gate passes, record a demo GIF against this session (`<URL>`). **Do NOT delegate** — you need Chrome tools directly.
+
+**Step 1: Inject caption helper**
+
+Before recording, inject a caption overlay helper via `javascript_tool`:
+```javascript
+window._addCaption = function(text) {
+    let el = document.getElementById('demo-caption');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'demo-caption';
+        el.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);' +
+            'z-index:99999;background:rgba(0,0,0,0.85);color:#fff;font-size:22px;' +
+            'font-weight:600;padding:12px 32px;border-radius:8px;text-align:center;' +
+            'pointer-events:none;max-width:80%;box-shadow:0 4px 12px rgba(0,0,0,0.3);';
+        document.body.appendChild(el);
+    }
+    el.textContent = text;
+    el.style.display = 'block';
+};
+```
+
+**Important**: Re-inject this helper after every page navigation (it gets lost on page load).
+
+**Step 2: Record frames with captions**
+
+1. Call `gif_creator` with `action: start_recording`
+2. For each step of the demo:
+   a. Navigate or interact with the UI
+   b. Wait for page to load
+   c. Call `javascript_tool` to inject caption: `window._addCaption('Step description here')`
+   d. Take a `screenshot` (this captures the frame WITH the caption overlay)
+   e. Take an extra `screenshot` for pause effect (same caption stays visible)
+3. Captions must be **non-technical, client-friendly** descriptions, e.g.:
+   - "Team Dashboard — viewing team workload"
+   - "Gantt Chart — new multi-project selector and Export button"
+   - "Overlap Warning — scheduling conflicts detected"
+   - "Project Settings — new Access Control tab"
+
+**Step 3: Export GIF**
+
+```
+gif_creator action: export
+  filename: <TASK-KEY>_demo.gif
+  download: true
+  options: { showClickIndicators: true, showActionLabels: false,
+             showProgressBar: true, showWatermark: false, quality: 8 }
+```
+
+Set `showActionLabels: false` because we use custom caption overlays instead.
+
+{% if tickets_mcp == 'odoo' %}
+**Step 4: Attach the GIF to the task over MCP**
+
+The GIF downloads to the browser's downloads folder. Attach programmatically (per `odoo-tickets` → Attachments): base64 the file, `create` an `ir.attachment` on the task, then `message_post` an internal note describing the demo with `attachment_ids` pointing at it. If the file can't be located locally, ask the user to drag-drop it.
+
+Report: "Demo GIF recorded and attached."
+{% else %}
+**Step 4: Hand the GIF over**
+
+The GIF downloads to the browser's downloads folder — tell the user where it
+is so they can attach it wherever the work is tracked.
+
+Report: "Demo GIF recorded."
+{% endif %}
+
+---
+
+### Phase 5: Pull Request
+
+**First, walk the `pre-pr-checklist` skill** over the full diff — the
+repo's reviewer standard (the diff + any fixes are in the worktree `<WT>` —
+`git -C <WT> diff`). Fix one-line items inline (directly or via a quick `dev`
+spawn), surface design calls to the user. Only then create the PR.
+
+Spawn a **general-purpose** subagent:
+
+> Create a GitHub pull request for the addons changes.
+>
+> The addons live in a NESTED git repo and this run's code is in a WORKTREE of
+> it, already on the task branch. **Run everything from the worktree:** `cd <WT>`
+> — remote `{{ custom_repo_name }}`, base `16.0`, current branch `<slug>`
+> (created off `origin/{{ odoo_version }}`). All git/gh/commit commands run here, never in the
+> parent repo or the user's main checkout `src/{{ custom_repo_name }}`.
+>
+> 1. `git status` / `git diff` — review what changed (you are already on branch
+>    `<slug>`; do NOT checkout or create branches)
+> 2. Stage the changed module files
+> 3. Commit per the **commit skill** format:
+>    ```
+>    [TAG] module_name: short description
+>
+>    Body explaining WHY.
+>
+>    {{ ticket_prefix }}-XXX
+>    ```
+>    Tags: `[IMP]` / `[FIX]` / `[ADD]` / etc. Imperative mood, header
+>    under 50 chars, task key in the BODY (never the header).
+> 4. Push: `git push -u origin <slug>`
+> 5. Create PR (title = the commit header, {{ ticket_prefix }} key in the body):
+>    ```
+>    gh pr create -R {{ custom_repo_name }} --base 16.0 \
+>      --title "[TAG] module_name: short description" \
+>      --body "<What / Why / Test plan; {{ ticket_prefix }}-XXX>"
+>    ```
+> 6. Return PR URL and number
+
+Wait for completion. Collect PR URL and number. The code was already reviewed in the Phase-3 gate, so there is no post-PR review step — the PR ships clean.
+Report: "PR created: <URL>"
+
+---
+
+### Phase 6: Memory Closure
+
+After the pipeline completes — success, abort, or user-interrupted — close out memory state. **Non-negotiable**; skipping it leaves WIP entries stale and loses session history.
+
+#### Step 0: Keep the session env — never tear it down on your own
+
+**Do NOT run `wt-stop.sh`.** The task may not be finished (review fixes,
+follow-ups, more iterations), so keep the worktree + env + DB and leave
+`odoo-wt@<slug>.service` running. Report that the env is kept at `<WT>`
+(`wt-start.sh <slug>` re-attaches the same branch if a later session needs it).
+
+Teardown is **user-gated**: only when the user explicitly says the session /
+task is finished do you **ask** — "drop the worktree `<slug>` (env + DB)?" —
+and run `wt-stop.sh <slug>` **only after they say yes**. Never infer "done"
+from a green pipeline or a merged/awaiting-review PR. See
+`feedback_never_auto_drop_worktree`.
+
+#### Step 1: Close the WIP entry{% if tickets_mcp == 'odoo' %} (state + the mirrored ticket together){% endif %}
+
+{% if tickets_mcp == 'odoo' %}
+Read `$STATE`, find the line with `[WIP_ID]` created in Phase 0 (it carries ` [odoo:<task_id>]` since Phase 1), and:
+
+- **Pipeline succeeded + PR merged** → delete the line entirely, and close
+  the ticket per `odoo-tickets`: `write {"pr_uri": "<PR URL>"}` first, then
+  `write {"stage_id": <Delivered>}` (Delivered with empty `pr_uri` is
+  blocked by a prod automation)
+- **Pipeline succeeded + PR awaiting review** → move from `## WIP`
+  to `## Ready for review`, keep the `[odoo:<task_id>]` suffix:
+  ```
+  - [WIP_ID] YYYY-MM-DD: <TASK-KEY> — PR <url> awaiting review — see journal/YYYY-MM-DD [odoo:<task_id>]
+  ```
+  The ticket stays in Development; it closes when the merged PR deploys.
+- **Pipeline aborted** → leave in `## WIP` but suffix with status, and post
+  an internal note to the ticket (`Progress` category) with the reason:
+  ```
+  - [WIP_ID] YYYY-MM-DD: <TASK-KEY> pipeline BLOCKED — <reason> [odoo:<task_id>]
+  ```
+  If a specific task blocks it, create + link that blocker on the ticket's
+  `depend_on_ids` (see "Sub-tasks & Blockers") and name it in the reason.
+{% else %}
+Read `$STATE`, find the line with `[WIP_ID]` created in Phase 0, and:
+
+- **Pipeline succeeded + PR merged** → delete the line entirely
+- **Pipeline succeeded + PR awaiting review** → move it from `## WIP` to
+  `## Ready for review` with the PR URL appended
+- **Pipeline aborted** → leave in `## WIP`, suffix with `BLOCKED — <reason>`
+{% endif %}
+
+#### Step 2: File OPEN_THREADs
+
+For each entry in `ALL_OPEN_THREADS` (accumulated across Phases 2–3):
+
+1. Read `$COUNTER` → `NEW_ID`, write `NEW_ID+1` back.
+2. Append to `## Open threads` in `$STATE`:
+   ```
+   - [NEW_ID] YYYY-MM-DD: <description> — see journal/YYYY-MM-DD
+   ```
+{% if tickets_mcp == 'odoo' %}
+3. Mirror it per the behavior protocol ("State ↔ Odoo tickets", mechanics in `odoo-tickets`): create a Backlog task in the default project, owner assigned, full-copy description, then append ` [odoo:<task_id>]` to the state line. One prod batch for all threads, restore `default` after.
+{% endif %}
+
+Collect the new IDs assigned — cite them in the journal.
+
+#### Step 3: Write session block to journal
+
+Append (do NOT overwrite) to `$JOURNAL/YYYY-MM-DD.md`, following `conventions_journal_format` **exactly** — fixed section names and order keep the greps and the standup working:
+
+```
+## Session N — HH:MM
+
+**Intent:** <TASK-KEY> pipeline — <one-line task summary>
+**Tags:** #pipeline #<module tag> <+ work-type tag from the vocabulary>
+**Files touched:**
+- M <path>          (A/M/D prefixes, from ALL_FILES_CHANGED)
+- A <path>
+**State changes:** closed/moved [WIP_ID], added [<NEW_IDs from Step 2>]
+
+### Done
+- <key outcomes — include "PR <url>" and the gate outcome>
+- Closed [WIP_ID]: <how it ended — merged+ticket Delivered / awaiting review / blocked>
+
+### Decisions
+- <from ALL_DECISIONS, or "none">
+
+### Open threads
+- [<NEW_ID>] <each thread filed in Step 2, or "none">
+
+---
+```
+
+`N` = count of existing `## Session ` headers in the day-file + 1 (the
+standup block does not count). `HH:MM` = current time. If the day-file
+doesn't exist, create it with this block as first content; otherwise
+append AFTER existing content.
+
+#### Step 4: Final report
+
+> Phase 6: Memory closed
+> — journal entry written: $JOURNAL/YYYY-MM-DD.md
+> — WIP [WIP_ID] → <deleted / moved to Ready for review / marked BLOCKED>
+> — open threads filed: N (IDs: <list>)
+> — worktree: kept at <WT> (not dropped — ask the user before teardown)
+> — pipeline complete
+
+---
+
+## Handling User Feedback Mid-Pipeline
+
+{% if tickets_mcp == 'odoo' %}
+1. **Post internal note** to the Odoo task documenting feedback
+2. **Capture clarifying Q&A**: if the feedback answered a question you asked,
+   append the Q→A pair to the task's `questions` / `answers` fields per
+   `odoo-tickets` (Phase 1 step 2 convention) — don't leave it only in chat
+{% endif %}
+3. **Determine impact**: code change -> spawn `dev`, re-run the Phase 3 gate
+4. **Apply the change** via the `dev` agent
+{% if tickets_mcp == 'odoo' %}
+5. **Update checklist** in Odoo task if steps changed
+{% endif %}
+6. **Report** what was changed
+
+---
+
+## Error Handling
+
+- If a subagent fails, report the error and ask whether to retry or abort
+- Max 3 fix-and-retry loops in the Phase 3 gate
+- Always restart this session's service (`odoo-wt@<slug>.service`) after validation;
+  the user's `odoo.service` and other sessions are never stopped
+- On abort, do Phase 6 memory closure but **keep the worktree** — do NOT run
+  `wt-stop.sh`; the env stays so work can resume, and teardown waits for the
+  user's explicit go (Phase 6 Step 0)
+
+## Reporting
+
+After each phase: `Phase X/6: <Name> — <STATUS> + 1-2 sentence summary`
+
+Final summary:
+```
+## Pipeline Summary
+- Task: <TASK-KEY> — <description>
+- Development: DONE — <files changed>
+- QC gate: PASS — <review summary> · tests green · test cases X/Y · <N fix loops>
+- Demo GIF: <attached>
+- PR: <URL>
+{% if tickets_mcp == 'odoo' %}
+- Odoo task: checklist updated, internal notes posted
+{% endif %}
+```
+{% if tickets_mcp == 'odoo' %}
+
+At the end, mark all completed checklist items over MCP (`project.task.subtask` → `write {"state": "done"}`) and restore the connection to local (`connect env_profile: "default"`).
+{% endif %}

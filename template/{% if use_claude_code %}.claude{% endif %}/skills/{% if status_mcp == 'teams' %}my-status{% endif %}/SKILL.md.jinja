@@ -1,0 +1,241 @@
+---
+name: my-status
+description: "My work status from PRODUCTION Odoo. list (default): open tasks. send: post today's plan to the Teams chat from the user_identity node (only tasks planned to close today, each with estimate + link; backlog shown to you for swaps, never posted). rebalance: when a new task enters scope, re-estimate and shift the date_deadline of your other open assigned tasks to absorb it — the ONLY mode that writes (date_deadline/estimate on your own tasks only). Use when the user asks 'what are my tasks', 'my open tasks', 'send my status to the team', or when scope grows and deadlines need rebalancing."
+argument-hint: "[send] [user login — default from user_identity node]"
+---
+
+# My status
+
+Three modes:
+- **list** (default) — show the user's open prod tasks. Read-only.
+- **send** (`send` argument, or user asks to post the status) — take all open
+  tasks ordered by **sequence**, estimate them, propose which close **today**
+  (each with estimate + link); show that plan **plus the remaining backlog** so
+  the user can confirm/swap; re-estimate any swap; then post **only today's
+  planned tasks — no backlog** to the team chat **after an explicit go**.
+  Read-only against Odoo (writes only to Teams).
+- **rebalance** (`rebalance` argument, or invoked by the pipeline when a new
+  task enters scope) — re-estimate the user's open assigned tasks and **shift
+  their `date_deadline`** so the schedule absorbs the newly-added work, then
+  write the new deadlines/estimates back. The **only** mode that writes to
+  Odoo, and only `date_deadline` + estimate fields on the **user's own** open
+  assigned tasks (scope guard below).
+
+## Identity — read first
+
+Read memory node `nodes/user_identity.md` (memory dir → see MEMORY.md): full
+name, Odoo login, default project id, "Current ticket" stage, Teams status
+chatId, required Teams auth. **Never hardcode a person** — the skill must work
+for any teammate with their own identity node. An explicit login argument
+overrides the node (list mode only).
+
+{% if tickets_mcp == 'odoo' %}
+## Fixed plumbing
+
+- **Prod RPC:** odoo MCP `connect` with `env_profile: "prod"` (reads
+  `ODOO_*_PROD` from `.env` server-side; secrets never enter tool calls).
+- **Task link template:** `{{ odoo_prod_url }}/web#id=<id>&model=project.task&view_type=form`
+- **Ticket reference (display):** always show the {{ ticket_prefix }} key (`key` field, e.g.
+  `{{ ticket_prefix }}-1064`) + title — **never the numeric database id**. The id is used only
+  to build the link URL, never shown to the user or the team.
+- **Cost rule:** never include `description` in a `search_read` over tasks —
+  prod descriptions can embed megabytes of base64 images. Explicit field
+  lists only.
+
+## Steps — list mode
+
+1. `mcp__odoo__connect` `env_profile: "prod"`.
+   - If the schema lacks `env_profile` or connect errors on `Journal Item` —
+     server predates `12fad1e`/`1560bec` in `okolovmark/odoo-fast-mcp`: use
+     the Python fallback below; `uv cache clean odoo-fast-mcp` for next time.
+2. Resolve uid: `search_read` `res.users`, `[["login", "=", "<login>"]]`,
+   fields `["id", "name"]`; empty → retry on `email`; still empty → stop, say so.
+3. Open tasks: `search_read` `project.task`,
+   domain `[["user_ids", "in", [<uid>]], ["is_closed", "=", false]]`,
+   fields `["key", "name", "project_id", "stage_id", "date_deadline", "priority", "kanban_state"]`,
+   order `"date_deadline asc, priority desc"`.
+4. Report: total count, grouped by project, one line per task:
+   `<key> name — stage — deadline` (e.g. `{{ ticket_prefix }}-1064 …`) + `⚠️ overdue` / `⭐`
+   (priority `"1"`) / `⛔` (kanban_state `"blocked"`), each linked. **Never show
+   the numeric id.** No tasks → say exactly that.
+5. Restore: `connect` `env_profile: "default"`. Local down →
+   `mcp__odoo__disconnect` and mention it (a failed connect keeps the
+   previous session, so prod would silently stay active otherwise).
+
+## Steps — send mode
+
+1–2. Same connect + uid resolution as list mode.
+3. **Candidate tasks** = all open tasks, ordered by **sequence** (manual
+   board/priority order):
+   `search_read` `project.task`,
+   domain `[["user_ids", "in", [<uid>]], ["is_closed", "=", false]]`,
+   fields `["key", "name", "project_id", "stage_id", "date_deadline", "planned_hours", "effective_hours", "kanban_state", "sequence", "priority"]`,
+   order `"sequence asc, date_deadline asc, id asc"`.
+   (Cost rule: never request `description`.) None found → status says
+   "no open tasks"; stop.
+4. **Estimate & propose today's plan.** Walk the sequence-ordered list and
+   estimate each task's *remaining* effort. Base each estimate, in order of
+   preference, on: `date_deadline`; `planned_hours` vs `effective_hours`; what
+   this session knows about the work; task messages. Budget ~6 focused h/day —
+   top tasks (by sequence) whose estimates fit that budget are the proposed
+   **"Planned for today"** set; the rest are backlog. Thin evidence → mark "low
+   confidence"; never invent precision.
+5. **Show the draft — interactive, not yet sent.** Two lists:
+   - **Planned for today** (proposed set): per task
+     `<{{ ticket_prefix }} key> <name> — <estimate> — <link>`.
+   - **Backlog** (remaining candidates, sequence-ordered): per task
+     `<{{ ticket_prefix }} key> <name>` + link, so the user can pick a swap.
+
+   User confirms, or swaps ("do <other task> instead of <X>") — then estimate
+   the swapped-in task and re-show both lists. Loop until an explicit go. The
+   backlog is shown **only here**; it never enters the posted message.
+6. **Build the Teams message** (markdown) — **always in English**, regardless of
+   the conversation language — listing **only today's planned tasks**, each with
+   estimate + link. No "Now / Next up / backlog" sections. **Do not include the
+   user's name** (sent from their own account) and **do not label the estimates**
+   (no "Claude's estimate" note):
+
+   ```
+   📋 **Status <YYYY-MM-DD>**
+   **Planned for today:**
+   1. <{{ ticket_prefix }} key> <name> — <estimate> — <link>
+   2. <{{ ticket_prefix }} key> <name> — <estimate> — <link>
+   ```
+   Nothing planned → `**Planned for today:** nothing planned`. Keep it tight
+   (≤ ~12 lines).
+7. Check `mcp__teams__auth_status` matches the identity node's "Teams auth
+   must be". Send via `mcp__teams__send_chat_message` to the identity node's
+   status chatId, `format: markdown`. ChatId errors → re-resolve by topic via
+   `mcp__teams__list_chats`, update the identity node.
+8. Restore the connection (list-mode step 5). Report the message id.
+
+## Steps — rebalance mode
+
+Trigger: a new task entered the user's active scope (the pipeline creating a
+ticket in Development, or the user adding/expanding one), so the existing
+deadlines are now unrealistic. This mode **writes** — keep it inside the scope
+guard (step 8).
+
+1–2. Same connect + uid resolution as list mode.
+3. **Candidate tasks** = all open assigned tasks ordered by **sequence** — same
+   `search_read` as send-mode step 3, fields incl. `planned_date_start`,
+   `planned_date_end`, `date_deadline`, `planned_hours`, `effective_hours`,
+   `tshirt_estimate`, `sequence`. The just-added task is in this list.
+4. **Estimate remaining effort** per task (same heuristic as send-mode step 4:
+   `date_deadline` / `planned_hours` vs `effective_hours` / what this session
+   knows / task messages). Thin evidence → low confidence; never invent
+   precision.
+5. **Compute a realistic schedule of work windows** — walk the sequence order
+   from **today**, accumulating remaining hours at ~6 focused h/day over working
+   days; each task gets a window `[start, finish]` = the consecutive working
+   days its estimate occupies. The new task takes the first window and displaces
+   everything sequenced after it, pushing those windows out.
+6. **Decide the writes** — the **Planned Dates** range is what drives scheduling
+   (Gantt / team dashboard / overdue colouring), so shift THAT, not just the
+   Deadline (`planned_date_start`/`planned_date_end` are `datetime`,
+   `date_deadline` is `date`):
+   - `planned_date_start` ← the window start; `planned_date_end` ← the window
+     finish. Day-level granularity is enough — pick a sensible work-hour boundary
+     (e.g. `YYYY-MM-DD 09:00:00` / `18:00:00`); exact intraday time + TZ aren't
+     significant here.
+   - `date_deadline` ← the date part of `planned_date_end`, kept in sync (the
+     dashboard treats `planned_date_end` as the deadline).
+   - Conservative: only push windows **out** (later) to absorb the new work, or
+     fill a missing window; never force an **earlier** start/deadline unless the
+     user asks.
+   - estimate: if a task has no `planned_hours`/`tshirt_estimate`, set
+     `planned_hours` to the computed estimate; if scope was added to an existing
+     task, bump its estimate to match.
+7. **Apply + report.** Rebalance-on-scope-growth is durably authorized by the
+   user, so when **invoked by the pipeline** write the changes and then report
+   the before→after diff (one `execute` `write` per task, or batched by
+   identical vals) — do not block the run on a per-time confirmation. When
+   invoked **manually** (`rebalance` arg), show the proposed before→after table
+   first and apply on the user's go. Writes use `mcp__odoo__execute` with the
+   quiet context `{"mail_create_nolog": true, "mail_create_nosubscribe": true,
+   "mail_auto_subscribe_no_notify": true, "tracking_disable": true}`
+   (`date_deadline` is tracked).
+8. **Scope guard — never exceed:** only the user's **own** open assigned tasks
+   (`user_ids` contains the resolved uid, `is_closed = false`); only the
+   `planned_date_start` / `planned_date_end` / `date_deadline` / `planned_hours`
+   / `tshirt_estimate` fields; never another person's tasks, never any other
+   field, never closed tasks. Report each change as `<{{ ticket_prefix }} key> <name>:
+   <old planned_date_end> → <new planned_date_end>` (the Planned Dates window).
+9. Restore the connection (list-mode step 5).
+
+## Python fallback (MCP unavailable or pre-fix)
+
+Keeps the password out of the transcript (`source`d, not pasted):
+
+```bash
+set -a; source "${{ project_dir_var }}/.env"; set +a
+python3 - <<'PY'
+import json, os, urllib.request
+URL = os.environ["ODOO_URL_PROD"].rstrip("/") + "/jsonrpc"
+DB, USER, PWD = (os.environ[k] for k in
+                 ("ODOO_DATABASE_PROD", "ODOO_USERNAME_PROD", "ODOO_PASSWORD_PROD"))
+def rpc(service, method, args):
+    payload = {"jsonrpc": "2.0", "method": "call",
+               "params": {"service": service, "method": method, "args": args}, "id": 1}
+    req = urllib.request.Request(URL, json.dumps(payload).encode(),
+                                 {"Content-Type": "application/json"})
+    r = json.load(urllib.request.urlopen(req, timeout=60))
+    if r.get("error"):
+        raise SystemExit("RPC ERROR: " + json.dumps(r["error"], ensure_ascii=False)[:1500])
+    return r["result"]
+uid = rpc("common", "login", [DB, USER, PWD])
+def kw(model, method, args, kwargs=None):
+    return rpc("object", "execute_kw", [DB, uid, PWD, model, method, args, kwargs or {}])
+me = kw("res.users", "search_read", [[["login", "=", "<login from user_identity>"]]],
+        {"fields": ["id", "name"]})[0]
+tasks = kw("project.task", "search_read",
+           [[["user_ids", "in", [me["id"]]], ["is_closed", "=", False]]],
+           {"fields": ["name", "project_id", "stage_id", "date_deadline",
+                       "priority", "kanban_state"],
+            "order": "date_deadline asc, priority desc"})
+print(json.dumps(tasks, ensure_ascii=False, indent=1))
+PY
+```
+
+## Write rules
+
+- Odoo: **list** and **send** are read-only — only `connect` / `search_read` /
+  `fields_get`. The **single** write path is **rebalance**, and only within its
+  scope guard (rebalance step 8): `planned_date_start` / `planned_date_end` /
+  `date_deadline` / `planned_hours` / `tshirt_estimate` on the user's **own**
+  open assigned tasks, via `execute` with the quiet + `tracking_disable`
+  context. Nothing else here writes.
+  (Ticket mirroring on state-item open/close is a separate flow — see the
+  behavior protocol's "State ↔ Odoo tickets" section.)
+- Teams: **always English** (regardless of conversation language); exactly one
+  message per explicit go, to the identity node's chat only.
+
+{% else %}
+## Fixed plumbing (no ticket tracker)
+
+- **Data source:** memory — `state.md` (`## WIP`, `## Ready for review`,
+  `## Open threads`) plus what this session knows; confirm with the user.
+- Items are plain text — no ticket keys, no links.
+
+## Steps — list mode
+
+1. Read `state.md` from the memory dir (path in MEMORY.md); show open items
+   grouped by section.
+
+## Steps — send mode
+
+1. Build today's plan from `state.md` WIP items + the user's input; estimate
+   each (~6 focused h/day budget). Thin evidence → "low confidence".
+2. Show the draft plan + the remaining items; loop swaps until an explicit go.
+3. Build the Teams message (markdown, **always English**) — same format as the
+   tracked variant, one numbered line per planned item with estimate, no links.
+4. Check `mcp__teams__auth_status` matches the identity node's "Teams auth
+   must be"; send via `mcp__teams__send_chat_message` to the identity node's
+   status chatId, `format: markdown`. Report the message id.
+
+## Write rules
+
+- Teams: **always English**; exactly one message per explicit go, to the
+  identity node's chat only. (`rebalance` mode is N/A without a ticket
+  tracker.)
+{% endif %}

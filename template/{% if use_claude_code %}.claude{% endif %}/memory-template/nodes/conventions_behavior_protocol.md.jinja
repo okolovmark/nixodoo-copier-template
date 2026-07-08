@@ -1,0 +1,532 @@
+---
+name: conventions_behavior_protocol
+description: Full Claude behavior rules for memory operations and session lifecycle
+type: reference
+created: 2026-04-09
+updated: 2026-04-14
+originSessionId: d22575d6-c069-40ac-a10e-8d14e6f0a5a8
+---
+# Behavior protocol
+
+This is the **canonical behavior reference** for Claude's memory operations.
+The most critical procedure (daily standup) is also inlined into `MEMORY.md`
+so it runs even if this node isn't read. Everything else lives here and is
+read on demand.
+
+## Path conventions
+
+All bash examples in this document use these environment variables.
+Define them at the top of any procedure:
+
+```bash
+MEM="__MEMORY_DIR__"
+STATE="$MEM/state.md"
+COUNTER="$MEM/state_counter"
+JOURNAL="$MEM/journal"
+NODES="$MEM/nodes"
+INDEX="$MEM/MEMORY.md"
+```
+
+When Claude executes any command from this protocol, it must use these
+absolute paths — never bare `state.md` or `nodes/` (which would resolve
+relative to whatever the current working directory is, usually the
+project root, not the memory directory).
+
+## At session start
+
+The trigger and output format are duplicated in `MEMORY.md` for guaranteed
+execution. This node has the same procedure plus extra detail.
+
+## Daily standup (full procedure)
+
+### Trigger detection
+
+The trigger is based on the presence of a `## Session ` header in today's
+journal file, **not** on mere file existence. This way, if a previous
+session crashed after writing the standup block but before writing any
+session block, the next session will refresh the standup instead of
+silently skipping it.
+
+```bash
+MEM="__MEMORY_DIR__"
+STATE="$MEM/state.md"
+JOURNAL="$MEM/journal"
+TODAY=$(date +%Y-%m-%d)
+
+if [ -f "$JOURNAL/$TODAY.md" ] && grep -q "^## Session " "$JOURNAL/$TODAY.md"; then
+  echo "Not first session of day — skip standup, proceed normally"
+else
+  echo "First session of day (or previous session crashed before writing a session block) — running standup"
+  cat "$STATE"
+fi
+```
+
+### Stale marker computation
+
+For each item in state.md, parse the date (`- [ID] YYYY-MM-DD: ...`),
+compute `age = today - date`, and append `[stale: N days]` if `age >= 14`.
+
+### Orphan node check
+
+Orphans = files in `$NODES/` not referenced from `$INDEX` either by
+markdown link (`nodes/foo.md`) or Obsidian wikilink (`[[foo]]`).
+
+```bash
+MEM="__MEMORY_DIR__"
+
+for f in "$MEM/nodes/"*.md; do
+  basename=$(basename "$f")
+  slug="${basename%.md}"
+  if ! grep -qF -e "nodes/$basename" -e "[[$slug]]" "$MEM/MEMORY.md"; then
+    echo "Orphan: $basename"
+  fi
+done
+```
+
+`grep -qF -e A -e B` searches for **fixed strings** (no regex escaping
+needed). The check passes if either the markdown-link form or the
+wikilink form is present. If any orphans exist, list them in the
+standup under `### Untracked nodes`.
+
+### Standup output format
+
+```
+## Daily standup — <YYYY-MM-DD>
+
+### Ship blockers
+- [ID] YYYY-MM-DD: description — see journal/YYYY-MM-DD [stale: N days if applicable]
+(or _(empty)_ if no items)
+
+### Blocked
+(items or _(empty)_)
+
+### Ready for review
+(items or _(empty)_)
+
+### WIP
+(items or _(empty)_)
+
+### Open threads
+(items or _(empty)_)
+
+### Untracked nodes
+(orphan files, or omit this section entirely if none)
+
+---
+```
+
+### Standup rules
+
+- **Empty section** but others non-empty → write `_(empty)_` so the check is visible
+- **All sections empty AND no orphans** → skip standup entirely, proceed normally
+- **Standup writes itself to today's journal file** — creates it if missing,
+  or replaces an existing stale standup block (see below)
+- **Section order matches state.md priority:** Ship blockers → Blocked →
+  Ready for review → WIP → Open threads → (Untracked nodes if any)
+- **Each item:** copied verbatim from state.md plus optional `[stale: N days]`
+- **Ship blockers ≥14 days old** are doubly bad — surface with extra emphasis
+  if they appear (consider also flagging to the user explicitly)
+
+### Writing the standup block to the day-file
+
+```bash
+TODAY=$(date +%Y-%m-%d)
+DAYFILE="$JOURNAL/$TODAY.md"
+
+# If the file already exists but has no session yet (previous attempt
+# crashed between standup write and session block), strip the stale
+# standup before writing a fresh one. Matches the block starting at
+# "## Daily standup" up to and including the first "---" line.
+if [ -f "$DAYFILE" ] && ! grep -q "^## Session " "$DAYFILE"; then
+  awk '
+    /^## Daily standup/{flag=1; next}
+    flag && /^---$/{flag=0; next}
+    !flag
+  ' "$DAYFILE" > "$DAYFILE.tmp" && mv "$DAYFILE.tmp" "$DAYFILE"
+fi
+
+# Then append (or create) with the new standup block.
+# Leading "# YYYY-MM-DD" heading only if creating a fresh file.
+```
+
+### On-demand standup
+
+User can ask for it any time, mid-day:
+- "show me the standup"
+- "what's still blocked?"
+- "what's WIP?"
+- "what needs my review?"
+- "what's stale?"
+
+Run the same procedure but skip the first-session-of-day check.
+
+## When Claude writes a new node
+
+Claude auto-creates a node when:
+- **Feedback:** user corrects Claude ("don't do X") or confirms a
+  non-obvious choice ("yes, that's right")
+- **User fact:** user mentions something stable about role, expertise,
+  preferences, communication style
+- **Project fact:** user reveals a non-obvious decision, constraint, or
+  gotcha not in code or git history
+- **Reference:** user points Claude to an external resource
+
+Claude does NOT auto-create a node for:
+- Anything already in `CLAUDE.md`
+- Code patterns visible in the repo
+- Ephemeral context for the current task only
+- Things that contradict an existing node — instead Claude flags and asks
+
+Before writing: grep `$MEM/nodes/` for keywords from the new fact. If a
+similar node exists, update it instead. See [[conventions_node_format]]
+for the duplicate-prevention rules.
+
+## When Claude updates an existing node
+
+- Same statement (same rule, same domain, same scope) → update existing,
+  bump `updated` date
+- If the rule itself changed → mark old version `Superseded_by:` and create new
+- New aspect of related topic → create new node + mutual `Related:` links
+
+## When Claude writes a journal entry
+
+At session end, IF any of:
+- One or more files were changed (created/modified/deleted)
+- An architectural/scoping decision was made
+- Something left intentionally incomplete (open thread, status tag)
+- A node was created or significantly updated
+
+Claude does NOT write a journal entry for pure Q&A or single trivial edits
+(e.g., a 1-line fix with no surrounding decisions).
+
+When writing: append a `## Session N` block to `$JOURNAL/$TODAY.md`
+(creates the file if it's the first session of the day, including any
+standup block already there).
+
+Session number `N` = count of existing `## Session ` headers in the
+day-file + 1 (the standup block does not count).
+
+See [[conventions_journal_format]] for the section structure and the
+`A`/`M`/`D` Files-touched format.
+
+## Session close trigger (proactive flush)
+
+When the user signals they're about to end the session — phrases like
+"close this session", "I'll start a new one", "wrap up", "ending here",
+"I might have to go", or any similar intent-to-disconnect — treat it as
+an explicit instruction to flush memory **in the same turn**, before the
+sign-off response.
+
+Flush checklist:
+1. Write a `## Session N` block to `$JOURNAL/$TODAY.md` if any substantive
+   work happened (per "When Claude writes a journal entry" above).
+2. Update `$STATE`: close done items by ID, file open threads / WIP
+   with fresh IDs from `$COUNTER`.
+3. Save any pending feedback / user / project nodes, update `$INDEX`.
+4. Write back the incremented `$COUNTER` if IDs were assigned.
+
+Rationale: once the user ends the conversation, any pending memory is
+lost. Deferring ("I'll write it later") is unreliable. The close signal
+itself is the trigger — do not require the user to separately say
+"update memory". See [[feedback_session_close]].
+
+## State.md update protocol
+
+`state.md` must stay in sync with what's actually open. Claude updates it
+**incrementally** as state changes — there is **no batch validation pass**.
+Get it right at the time, or fix it manually later.
+
+### Item format
+
+Each line in any state.md section follows this exact format:
+
+```
+- [ID] YYYY-MM-DD: short description — see journal/YYYY-MM-DD
+```
+
+- **`[ID]`** — stable monotonic integer identifier (see "ID generation" below)
+- **`YYYY-MM-DD`** at start — **when the item was first added** (not today's date)
+- **description** — short, ≤80 chars, what the item is
+- **`see journal/YYYY-MM-DD`** — anchor back to the session that opened it
+  (the date matches the start date above)
+
+Example:
+```
+- [42] 2026-04-05: legal review for MSL token format — see journal/2026-04-05
+```
+
+### ID generation
+
+IDs are **monotonic integers**, never reused, never recycled. Next ID
+lives in the `state_counter` file as a single integer. Read it, use it,
+write back `id + 1`:
+
+```bash
+MEM="__MEMORY_DIR__"
+COUNTER="$MEM/state_counter"
+
+# Read next ID (default to 1 if file is missing or empty)
+next_id=$(cat "$COUNTER" 2>/dev/null | grep -oE '^[0-9]+$' || echo 1)
+
+# Use $next_id in the state.md line you're adding...
+# e.g. echo "- [$next_id] $TODAY: description — see journal/$TODAY" >> "$STATE"
+
+# Then increment the counter
+echo $((next_id + 1)) > "$COUNTER"
+echo "Assigned ID: $next_id, next will be $((next_id + 1))"
+```
+
+**Why a separate counter file instead of `max(state.md)`:** if the user
+(or Claude) removes the max-ID item from state.md, `max(state.md)` would
+reassign that same ID to the next new item — re-using an ID that still
+lives in journal history under a different meaning. The counter file
+survives state.md edits and guarantees true monotonicity.
+
+**Counter recovery:** if `state_counter` is missing or corrupted, rebuild
+it from max observed across state.md and all journal files (see
+"Recovery procedures → Lost ID counter" below).
+
+IDs survive section moves: if an item moves from `## WIP` to
+`## Ready for review`, it keeps the same ID.
+
+### Add to state.md when
+
+- A session adds tag `#wip` → add line to `## WIP` with new ID
+- A session adds tag `#blocked` → add line to `## Blocked` with new ID
+- A session adds tag `#ship_blocker` → add line to `## Ship blockers` with new ID
+- A session adds tag `#ready_for_review` → add line to `## Ready for review` with new ID
+- A session has items in `### Open threads` → add each to `## Open threads` with new IDs
+
+When adding, also mention the new IDs in the session's `**State changes:**`
+field for reference (see [[conventions_journal_format]]).
+
+### Remove from state.md when
+
+- The current session's `### Done` mentions the item's ID → remove that line
+  from state.md by ID match (reliable, not text-based)
+- User explicitly marks something resolved
+- User manually edits state.md (just respect the edit)
+
+### Closure pattern
+
+When closing an item, the journal `### Done` line **must** include the ID:
+
+```markdown
+### Done
+- Closed [42]: legal review approved by legal team
+- Closed [44]: verified multi-company behavior, all green
+```
+
+Then state.md removal is mechanical:
+```bash
+MEM="__MEMORY_DIR__"
+sed -i '/\[42\]/d' "$MEM/state.md"
+sed -i '/\[44\]/d' "$MEM/state.md"
+```
+
+Or done in-line as part of the journal write. The `**State changes:**`
+session field should also reflect closures:
+
+```markdown
+**State changes:** added [45] open thread, closed [42], closed [44]
+```
+
+### Stale items — two thresholds
+
+There are two distinct thresholds for "old" items, used for different
+purposes:
+
+- **14 days = informational warning.** The daily standup adds
+  `[stale: N days]` to items aged ≥14 days. Doesn't require action — just
+  visibility, so old items don't sit in the periphery forgotten.
+- **30 days = cleanup candidate.** The user-initiated monthly health check
+  lists items aged ≥30 days as candidates for removal or refresh. Ask the
+  user to run it (or wait for them to ask "what's stale?").
+
+Why two thresholds: 14 days catches "this is sitting longer than I expected"
+early without crying wolf on every old item. 30 days is when you should
+actually decide if it's still relevant.
+
+Neither threshold causes automatic removal. The marker is informational
+only.
+
+When you see a stale item, decide:
+- Still relevant → leave it, update its date if anything new happened
+- No longer relevant → remove the line manually or ask Claude to close it
+- Forgot about it → remember and act
+
+{% if tickets_mcp == 'odoo' %}
+## State ↔ Odoo tickets (prod mirror)
+
+State items are mirrored to prod Odoo tasks so the team sees the same queue.
+Everything identity-dependent (login, project, stages, chat) comes from
+[[user_identity]] — never hardcode a person; each teammate fills their own
+identity node on bootstrap. Prod credentials live in the project `.env` as
+the `ODOO_*_PROD` profile (`connect(env_profile="prod")` on the odoo MCP).
+
+**Hard rules:**
+- Mirrored tasks are **always assigned to the user** (uid from
+  [[user_identity]]), **never to the service account**.
+- `description` = a **full copy** of the item's content: the state line
+  verbatim + the relevant journal excerpt that opened it (and the node body,
+  if applicable). Reference footer (`Claude memory item [ID] — see
+  journal/<date>`) on top. Simple HTML (`<p>`, `<code>`).
+
+**Service-account constraints** (verified on Kaertech prod 2026-06-10):
+- `kaertech_project_software` restricts `user_ids`/`stage_id` writes — the
+  service account must be in the project's **Task Assignors**
+  (`task_assignor_ids`) to assign users and move stages of assigned tasks.
+- The service account has no sender email; core Odoo 16 sends the
+  assignment notice unconditionally, which would block assignment — fixed
+  by `kaertech_project_software` PR 770 (deployed 2026-06-10):
+  `_task_message_auto_subscribe_notify` honours
+  `mail_auto_subscribe_no_notify`, so assignment works **when the flag is
+  passed**.
+- Always `create`/`write` via `execute` (the plain tools can't pass
+  context) with context `{"mail_create_nolog": true,
+  "mail_create_nosubscribe": true, "mail_auto_subscribe_no_notify": true}`;
+  add `"tracking_disable": true` on stage-move writes to keep bot moves out
+  of chatter noise.
+
+### On adding a state item
+
+1. File it locally first (state.md + ID), as always.
+2. Mirror to prod: `connect(env_profile="prod")`, then `create` `project.task`:
+   - `name` = the state item description
+   - `project_id` = default project from [[user_identity]]
+   - `user_ids` = `[[6, 0, [<uid>]]]` — uid resolved by Odoo login from
+     [[user_identity]]
+   - `stage_id` = the project's entry stage (resolve by name, e.g. Backlog)
+   - `description` = `Claude memory item [<ID>], opened <date> — see
+     journal/<date>` (plain text; never dump node/journal bodies into prod)
+3. Append the task id to the state line:
+   `- [ID] DATE: desc — see journal/DATE [odoo:TASKID]`
+4. Restore the MCP: `connect(env_profile="default")`.
+
+Exceptions: the user says "local-only" → skip mirroring. Prod unreachable →
+append `[odoo:pending]` instead and mirror at the next natural prod touch.
+
+### On closing a state item with `[odoo:TASKID]`
+
+- Closed as **done** → move the task to the project's done stage (a stage
+  with `fold=True`, e.g. Delivered). Kaertech-convention gotcha: Delivered requires a
+  non-empty `pr_uri` — `write` it first (the PR URL if the work has one,
+  else `memory://journal/<date>#<ID>`), then `write` the stage.
+- Closed as **no longer relevant** → the cancel stage (e.g. Canceled).
+- `[odoo:pending]` items close locally only.
+
+### Current ticket definition
+
+"What the user works on now" = the task with the latest `write_date` in the
+"Current ticket" stage (see [[user_identity]]) of the default project,
+assigned to the user. Used by the standup Odoo section and `/my-status`.
+
+### Start-of-work trigger
+
+When the user asks to start working on a ticket or a memory item with
+`[odoo:ID]` ("let's start X", "take it", naming a ticket key):
+
+1. Move the Odoo task to the project's in-development stage (how:
+   `odoo-tickets` skill — `tracking_disable` context);
+2. Assign the owner if not yet assigned;
+{% if status_mcp == 'teams' %}
+3. **Send the Teams status** — `/my-status` `send` flow (draft → explicit go
+   → the identity node's status chat);
+{% endif %}
+4. Move/add the state item under `## WIP`.
+{% if status_mcp == 'teams' %}
+
+The stage move and the status notification are a mandatory pair — never one
+without the other.
+{% endif %} Mechanics live in the `odoo-tickets` skill; this section
+is only the trigger.
+
+### Querying prod tasks — cost rule
+
+Never `search_read` `project.task` with the `description` field included —
+task descriptions can embed base64 images (megabytes). Fetch explicit field
+lists only; if the description text is genuinely needed, fetch it for ONE
+task and strip HTML before looking at it.
+
+{% endif %}
+## When Claude reads memory
+
+- **Always (auto):** `MEMORY.md` — loaded by Claude Code's auto-memory system,
+  contains the standup procedure and the node index
+- **Auto at first session of day:** `state.md` (for standup)
+- **On demand (any time):** `state.md` for "show me the standup" or similar
+- **On demand:** individual nodes — Claude greps by topic, reads matches,
+  follows `[[wikilinks]]`
+- **Read once per conversation if needed:** convention nodes
+  (`conventions_*.md`) — heavier (~500-3000 tokens each), don't re-read
+  multiple times in the same conversation
+- **On request:** journal entries — only when continuity is needed
+  ("what did we do last time?")
+
+## Token budget
+
+- `MEMORY.md` is the only thing always in context. Keep under ~2k tokens
+  (~200 lines, whichever comes first). The session-start procedure inside
+  it is part of this budget.
+- `state.md` is loaded once per day at standup time, plus on demand. Keep
+  it focused — periodic cleanup of stale items is the main cost control.
+- Nodes are read individually, ~100-300 tokens each. 3-5 per session is normal.
+- Convention nodes (`conventions_*.md`) are heavier (~500-3000 tokens) but
+  read at most once per conversation.
+- Journal entries are NEVER in context unless explicitly requested.
+
+## Recovery procedures
+
+### Missed journal entry
+
+If Claude forgot to write a journal entry at session end:
+
+> "Write a journal entry for what we just did this session."
+
+Claude reconstructs from conversation context and appends to today's
+journal file. Best-effort — earlier conversation context may be compressed.
+
+### Missed state.md update
+
+> "Update state.md based on what we just did."
+
+Claude reviews the session, identifies status tags and open threads,
+adds corresponding state.md entries with new IDs (and removes any closed
+ones).
+
+### Wrong journal entry
+
+Journal files are plain markdown. Edit any entry manually with any
+editor. Claude reads what's there next time it consults a journal file —
+no caching.
+
+### Wrong state.md content
+
+Same — edit manually. State.md is the single source of truth and Claude
+respects whatever is in it.
+
+### Lost ID counter
+
+If `state_counter` is missing, corrupted, or you start fresh, rebuild it
+by scanning all live sources for the maximum ID ever seen, then adding 1:
+
+```bash
+MEM="__MEMORY_DIR__"
+STATE="$MEM/state.md"
+COUNTER="$MEM/state_counter"
+JOURNAL="$MEM/journal"
+
+max_state=$(grep -oE '\[[0-9]+\]' "$STATE" 2>/dev/null | tr -d '[]' | sort -n | tail -1)
+max_journal=$(grep -rhoE '\[[0-9]+\]' "$JOURNAL" 2>/dev/null | tr -d '[]' | sort -n | tail -1)
+max_id=$(printf '%s\n%s\n' "${max_state:-0}" "${max_journal:-0}" | sort -n | tail -1)
+echo $((max_id + 1)) > "$COUNTER"
+echo "Counter rebuilt: next ID = $((max_id + 1))"
+```
+
+Rebuilding from journals (not just state.md) is important — closed items
+no longer live in state.md but their IDs are still referenced in past
+journal entries, and we don't want to reassign them.
+
+To **explicitly reset** to 1: make sure state.md has no items AND no
+journal references to any ID, then `echo 1 > "$COUNTER"`. This should
+only be used on a fresh install.

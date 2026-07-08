@@ -1,0 +1,78 @@
+---
+name: bootstrap_questions
+description: Template questions for first-time onboarding and re-bootstrap
+type: reference
+created: 2026-04-09
+updated: 2026-04-09
+---
+
+# Bootstrap question template
+
+Use these questions when bootstrapping (or re-bootstrapping) Claude's
+memory for this project. Pick the ones most relevant to current gaps;
+skip those already adequately covered by existing nodes.
+
+## Questions
+
+1. **Workflow style** — "What's your typical workflow when fixing a bug?
+   For example: reproduce → debug → patch → test → review, or some
+   different sequence?"
+2. **Testing preference** — "What's your testing philosophy here? TDD?
+   Test after? Integration vs unit? Coverage targets?"
+3. **Code review process** — "What does the team review process look like?
+   What kinds of issues do reviewers typically catch?"
+4. **Sensitive areas** — "Are there modules I should be extra careful with?
+   Legacy code, undocumented hacks, performance-critical paths?"
+5. **Decision history** — "Are there historical decisions I should know
+   about that aren't visible in code or git history?"
+6. **Communication when wrong** — "When I'm wrong about something, how
+   do you prefer I respond? Admit and pivot? Defend with reasoning? Ask
+   clarifying questions first?"
+7. **Time pressure signals** — "How do you signal urgency? Deadlines,
+   `#ship_blocker` tag, explicit ask?"
+8. **Scope discipline** — "When I find unrelated improvements while doing
+   a task, do you want me to mention them inline, file them as open
+   threads in state.md, or ignore them and stay scoped?"
+{% if status_mcp == 'teams' or tickets_mcp == 'odoo' %}
+9. **Automation identity** — "Your full name{% if status_mcp == 'teams' %} as it appears in Teams{% endif %}{% if tickets_mcp == 'odoo' %}{% if status_mcp == 'teams' %} and
+   Odoo{% endif %}? Your Odoo (prod) login? Which Odoo project is your default board
+   and which stage means 'in development'{% endif %}?{% if status_mcp == 'teams' %} Which Teams chat should daily
+   statuses go to?{% endif %}" → fill ALL placeholders in [[user_identity]] (resolve
+   {% if status_mcp == 'teams' %}the chatId via `mcp__teams__list_chats`{% endif %}{% if tickets_mcp == 'odoo' %}{% if status_mcp == 'teams' %}, {% endif %}the uid and project/stage ids
+   over prod RPC{% endif %}); integrations stay disabled until no placeholders remain.
+{% endif %}
+
+## When to re-bootstrap
+
+Re-bootstrap is appropriate when:
+- Workflow has shifted significantly (new team, new project phase,
+  new tech stack)
+- Memory feels stale (stale items piling up, feedback rules contradicting
+  each other, tags inconsistent)
+- Major life event (job change, role change, returning after long break)
+
+## How to save the answers
+
+Each answer becomes a node in `nodes/`:
+
+| Question topic | Suggested node name |
+|---|---|
+| Workflow style | `feedback_workflow.md` or `user_workflow_style.md` |
+| Testing preference | `feedback_testing.md` |
+| Code review process | `project_code_review.md` |
+| Sensitive areas | `project_sensitive_areas.md` |
+| Decision history | `project_<topic>_history.md` for each |
+| Communication when wrong | `feedback_correction_handling.md` |
+| Time pressure | `feedback_urgency_signals.md` |
+| Scope discipline | `feedback_scope_discipline.md` |
+| Automation identity | `user_identity.md` (already exists — replace placeholders) |
+
+Follow [[conventions_node_format]] for the body structure
+(`**Why:**` + `**How to apply:**` for feedback/project nodes).
+
+After saving the new nodes, also update `MEMORY.md` index — add a one-line
+entry under the appropriate type section (Feedback / Project / User).
+
+## Links
+
+- **Related:** [[user_role]], [[conventions_node_format]], [[conventions_behavior_protocol]]

@@ -1,0 +1,76 @@
+# Claude memory template
+
+Seed for Claude Code's **per-project persistent memory** — a plain-markdown
+graph (atomic `nodes/` linked via `[[wikilinks]]`), a session `journal/`, and a
+mutable `state.md` the daily standup reads. No services, no dependencies; you
+can open, edit, or delete any file in any editor and Claude picks it up next
+session.
+
+This replaces the old prose `CLAUDE_MEMORY_SETUP.md` guide: instead of a
+document describing how to build the system, this **is** the system, ready to
+copy into place.
+
+## Where memory lives
+
+Claude Code loads memory from a path derived from the project's absolute path,
+with `/` replaced by `-`:
+
+```
+$HOME/.claude/projects/<project-slug>/memory/
+# e.g. $HOME/{{ project_name }}
+#   ->  $HOME/.claude/projects/-home-mark-projects-{{ project_name }}/memory/
+```
+
+`MEMORY.md` at that path is auto-loaded into context at every session start.
+
+## Install
+
+> The Kaertech project's live memory already exists at its slug path. Use this
+> only to **re-seed** (after wiping), to bootstrap a **fresh machine**, or to
+> seed **another project**. The installer refuses to overwrite existing memory.
+
+From the project you want memory for:
+
+```bash
+bash .claude/memory-template/scripts/init-memory.sh
+# or target a specific project dir:
+bash .claude/memory-template/scripts/init-memory.sh /home/mark/projects/some-odoo
+```
+
+It computes the slug, copies this template to the slug path, substitutes the
+`__MEMORY_DIR__` placeholder with the real absolute path, drops the installer +
+this README from the live copy, and makes the scripts executable.
+
+**Manual alternative:** copy everything except `README.md` and
+`scripts/init-memory.sh` to the slug path, then replace every `__MEMORY_DIR__`
+occurrence with that absolute path (`grep -rl __MEMORY_DIR__`).
+
+## What's inside
+
+- `MEMORY.md` — always-loaded index + the standup procedure (Claude runs it first thing).
+- `state.md` / `state_counter` — current open items + monotonic ID source.
+- `nodes/`
+  - `conventions_*` — how to write nodes, journals, tags; the full behavior protocol.
+  - `bootstrap_questions.md` — onboarding questions to seed `user_role` and project facts.
+  - `user_role.md` — **stub**; fill it in on first bootstrap.
+  - `reference_*` — 8 general Odoo framework facts (search kwarg, ir.cron trigger,
+    m2m domain/picker, mute_logger, savepoint, autovacuum, o2m active_test) as
+    starter knowledge. Verified on Odoo 17; the mechanisms hold on 16.
+- `journal/` — chronological session logs (one file per day).
+- `scripts/`
+  - `standup.sh` — daily continuity render (idempotent; GNU + BSD/macOS `date`/`stat`).
+  - `digest.sh` — list unprocessed `raw/` drops.
+  - `raw-drop.sh` — quick capture into `raw/` from a shell alias.
+  - `init-memory.sh` — this installer (not copied into live memory).
+
+Node taxonomy: `user` (who they are), `feedback` (rules the user gave Claude —
+always with **Why** + **How to apply**), `project` (non-obvious project facts),
+`reference` (framework/external facts). See `nodes/conventions_node_format.md`.
+
+## Optional: raw-drop alias
+
+```bash
+alias raw='bash $HOME/.claude/projects/<project-slug>/memory/scripts/raw-drop.sh'
+```
+
+Then `raw https://…` or `raw "idea: …"` captures into `raw/` for a later `digest.sh` pass.

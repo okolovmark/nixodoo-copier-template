@@ -33,6 +33,18 @@ if [ ! -f .env ]; then
 
     read -r -p "Preferred editor (default: nano): " editor
     editor=${editor:-nano}
+{% if tickets_mcp == 'odoo' %}
+
+    read -r -p "Production Odoo URL (default: {{ odoo_prod_url }}): " odoo_url_prod
+    odoo_url_prod=${odoo_url_prod:-{{ odoo_prod_url }}}
+
+    read -r -p "Production Odoo database: " odoo_db_prod
+
+    read -r -p "Production Odoo login: " odoo_user_prod
+
+    read -r -s -p "Production Odoo password/API key: " odoo_password_prod
+    echo
+{% endif %}
 
     {
         printf "{{ project_dir_var }}=%s\n" "$PWD"
@@ -51,6 +63,13 @@ if [ ! -f .env ]; then
         printf "ODOO_USERNAME=%s\n" "admin"
         printf "ODOO_PASSWORD=%s\n" "admin"
         printf "ODOO_TIMEOUT=%s\n" "30"
+{% if tickets_mcp == 'odoo' %}
+        printf "ODOO_URL_PROD=%s\n" "$odoo_url_prod"
+        printf "ODOO_DATABASE_PROD=%s\n" "$odoo_db_prod"
+        printf "ODOO_USERNAME_PROD=%s\n" "$odoo_user_prod"
+        printf "ODOO_PASSWORD_PROD=%s\n" "$odoo_password_prod"
+        printf "ODOO_TIMEOUT_PROD=%s\n" "60"
+{% endif %}
     } > .env
     echo
     echo ".env file created successfully!"

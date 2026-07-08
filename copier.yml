@@ -130,6 +130,36 @@ ticket_prefix:
   default: "TASK"
   when: "{{ use_claude_code }}"
 
+status_mcp:
+  type: str
+  help: MCP used to post work status to the team (adds the my-status skill, the Teams MCP server and Teams bootstrap questions)
+  default: none
+  choices:
+    - none
+    - teams
+  when: "{{ use_claude_code }}"
+
+tickets_mcp:
+  type: str
+  help: MCP used for ticket tracking (adds the odoo-tickets skill; ticket keys/links in statuses and the pipeline)
+  default: none
+  choices:
+    - none
+    - odoo
+  when: "{{ use_claude_code }}"
+
+odoo_prod_url:
+  type: str
+  help: Production Odoo base URL (ticket links + ODOO_*_PROD profile in .env)
+  default: ""
+  when: "{{ tickets_mcp == 'odoo' }}"
+
+use_pipeline:
+  type: bool
+  help: Include the pipeline skill (task -> dev -> QC gate -> demo GIF -> PR orchestrator; runs in isolated worktree envs)?
+  default: true
+  when: "{{ use_claude_code and custom_repo_pattern != '' and backup_s3_bucket != '' }}"
+
 backup_s3_bucket:
   type: str
   help: S3 bucket with production pg_dump backups (empty = no download-backup/aws tooling)

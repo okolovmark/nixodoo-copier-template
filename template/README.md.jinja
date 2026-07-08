@@ -27,7 +27,14 @@ curl -fsSL https://claude.ai/install.sh | bash
 
 The project ships Claude Code integration: `CLAUDE.md` (project facts), `.claude/`
 (guard hooks, Odoo dev skills, `dev`/`review` agents) and `.mcp.json`
-(odoo / postgres / pdb MCP servers driven by `.env`).
+(odoo / postgres / pdb{% if status_mcp == 'teams' %} / teams{% endif %} MCP servers driven by `.env`).
+
+Initialize Claude's persistent per-project memory once (index, journal, state,
+bootstrap questions — see `.claude/memory-template/README.md`):
+
+```bash
+bash .claude/memory-template/scripts/init-memory.sh
+```
 
 {% endif %}
 ### UV and UVX Installation

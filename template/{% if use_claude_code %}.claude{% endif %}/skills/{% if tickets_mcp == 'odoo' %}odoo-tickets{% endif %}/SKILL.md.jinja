@@ -1,0 +1,268 @@
+---
+name: odoo-tickets
+description: "How to create, read, update and close prod Odoo tasks over the odoo MCP (RPC): field conventions, internal notes, checklist, test cases, attachments (incl. every prod shell / bulk-data script you run), stage moves, start-work flow. Use when creating a ticket, taking a ticket into work ('let's start {{ ticket_prefix }}-xxx'), posting progress notes, marking test cases, attaching a script you ran against prod, or closing tickets. Single source of truth for prod task plumbing — pipeline and the memory mirror reference it."
+argument-hint: "[{{ ticket_prefix }}-key or task id] [action]"
+---
+
+# Prod Odoo tickets over MCP
+
+- All prod task operations go through the odoo MCP — never claude-in-chrome.
+- Identity (login, uid, default project, stages, chat) comes from memory node
+  `user_identity` — read it first, never hardcode a person.
+
+## Connection & context flags
+
+- `mcp__odoo__connect` `env_profile: "prod"` before, `env_profile: "default"`
+  after — always restore.
+- **Every create/write goes through `mcp__odoo__execute`** (the plain
+  create/write tools can't pass context) with context:
+  `{"mail_create_nolog": true, "mail_create_nosubscribe": true,
+  "mail_auto_subscribe_no_notify": true}` — add `"tracking_disable": true`
+  on stage moves. Why: the service account has no sender email (deliberate);
+  the assign-notify guard from PR 770 keys off `mail_auto_subscribe_no_notify`.
+- **Cost rule:** never include `description` / `solution` / any Html field in
+  a multi-record `search_read` — prod descriptions embed base64 images
+  (megabytes). Read heavy fields for ONE record at a time, explicit lists only.
+
+## Resolve a ticket
+
+{{ ticket_prefix }} key → id: `search_read` `project.task` `[["key", "=", "{{ ticket_prefix }}-xxxx"]]`
+fields `["id", "name", "stage_id", "user_ids"]`. From a URL, take `id=<n>`.
+
+## Creating a task — field conventions
+
+| Field | Convention |
+|---|---|
+| `name` | Imperative summary of the work. No {{ ticket_prefix }} prefix — `project_key` adds it. |
+| `project_id` | Default project from `user_identity` (see user_identity). |
+| `stage_id` | Backlog (41) for queued work; Development (43) only if work starts immediately. Resolve by name if the board changed. |
+| `user_ids` | `[[6, 0, [<uid>]]]` — **always the human owner** (from `user_identity`), never the service account, never empty on purpose. |
+| `task_type` | Honest pick: `bug` (broken behavior) / `feature` (net-new) / `improvement` (enhance existing) / `investigation` / `technical_debt` / `support` / `milestone`. |
+| `tag_ids` | **Always set.** `[[6, 0, [ids]]]` on create. ≥1 **area** tag + a **feature/topic** tag for any multi-ticket effort so siblings group. Reuse existing tags — never a near-duplicate. See [Tags](#tags-projecttags). |
+| `tshirt_estimate` | `xs`=1h, `s`=4h, `m`=8h (1d), `l`=24h (3d), `xl`=40h (1w), `xxl`=80h. **Also set `planned_hours` to the same number** — RPC fires no onchange. |
+| `priority_level` | `"4"` Highest … `"0"` Lowest; default `"1"`. |
+| **Planned Dates** — `planned_date_start` / `planned_date_end` (both `datetime`) | The scheduled work window: drives the Gantt, team dashboard and overdue colouring, and `planned_date_end` is the **deadline** the dashboard shows. Set both for any task in progress / with a planned slot (`"YYYY-MM-DD HH:MM:SS"`; day-level granularity is enough). |
+| `date_deadline` (`date`) | Keep **in sync with `planned_date_end`** (its date part); the status ETA reads it. Don't set it alone — set the Planned Dates window too, or the Gantt/dashboard stay empty. |
+| `description` | **Full copy** of the source content (for memory mirrors: state line verbatim + the journal excerpt / node body), simple HTML (`<p>`, `<code>`), footer `Claude memory item [ID] — see journal/<date>`. |
+| `difficulty`, `knowledge_area_level` | Optional (`easy/medium/hard`, `basic/intermediate/advanced`); defaults are fine. |
+
+Tabs on the form map to: Description → `description`, Technical Solution →
+`solution` (Html), Questions/Answers → `questions`/`answers`, Test Cases →
+`project.task.testcase`, Checklist → `project.task.subtask`.
+
+## Technical Solution tab — `solution` + clarifying Q&A
+
+Three Html fields on `project.task` (defined in `kaertech_project_software`),
+shown in this order on the **Technical Solution** tab:
+
+| Field | Holds |
+|---|---|
+| `questions` | Clarifying questions raised about the task (yours or the team's). |
+| `answers` | The answers received — keep aligned with `questions` (parallel numbered lists, so Q1↔A1). |
+| `solution` | The technical solution / implementation plan. |
+
+**Always persist clarifying Q&A.** Whenever you ask the user clarifying
+questions while creating or refining a ticket — standalone or inside the
+`pipeline` — save BOTH sides here: the questions to `questions`, the matching
+answers to `answers`. Don't let a clarification live only in the chat. Use
+parallel numbered lists so each pair lines up by position:
+
+```
+execute("project.task", "write", [[<id>], {
+  "questions": "<ol><li>Which warehouses are in scope?</li><li>Block or only warn on conflict?</li></ol>",
+  "answers":   "<ol><li>Only the Manila DC.</li><li>Hard block.</li></ol>"
+}], {"context": {"mail_create_nolog": true, "mail_create_nosubscribe": true,
+                 "mail_auto_subscribe_no_notify": true}})
+```
+
+**Append, don't overwrite:** if the fields already hold an earlier round,
+read the current Html first (single-record read) and add the new Q&A below
+it — never replace prior rounds. When an answer changes scope or a design
+choice, also post the matching internal note (`Requirement Change` /
+`Design Decision`).
+
+On `create`, pass `questions`/`answers` in the same `vals` if the
+clarifying exchange happened before the task existed.
+
+## Tags (`project.tags`)
+
+Set on **every** task you create; back-fill when you touch an untagged sibling.
+`project.tags` is **global** (shared across all projects) — reuse, never duplicate.
+
+**Two layers, both written through `tag_ids`:**
+
+- **Area** (≥1, required) — reuse the coarse vocabulary, never a near-duplicate.
+  Current vocab: `Accounting`, `SCM`, `Inventory`, `Manufacturing`, `Purchases`,
+  `Sales`, `Quality`, `Project Management`, `Human Resource`, `Engineering`,
+  `Website`, `Business Operations`, `Product Lifecycle Management`, plus type-ish
+  `Bug` / `Feature` / `Custom Report` / `Customization` / `Support` / `NeedAssistance`.
+- **Feature / topic** (set on any multi-ticket effort) — a specific tag clustering
+  one body of work, e.g. `Cash Flow Forecast`. Create **once**, reuse the exact
+  same tag on every related ticket — turns "show me every cashflow ticket" into a
+  one-click filter.
+
+**Reuse discipline** (avoid `Cashflow` vs `Cash Flow` vs `Cash Flow Forecast`):
+search before creating, match case-insensitively, reuse exact hits, create only when
+genuinely new. Tags are an index, not free-text labels.
+
+**Resolve-or-create a tag:**
+
+```
+hit = search_read("project.tags", [["name", "=ilike", "Cash Flow Forecast"]], ["id", "name"])
+tag_id = hit[0].id  if hit  else  execute("project.tags", "create", [{"name": "Cash Flow Forecast", "color": 4}])
+```
+
+**Write tags** — on create pass the whole set, `"tag_ids": [[6, 0, [<id1>, <id2>]]]`.
+To add a tag to an existing ticket non-destructively (keeps current tags), use
+`(4, id)` with the quiet context:
+
+```
+execute("project.task", "write", [[<task_id>], {"tag_ids": [[4, <tag_id>]]}],
+        {"context": {"mail_create_nolog": true, "mail_create_nosubscribe": true,
+                     "mail_auto_subscribe_no_notify": true, "tracking_disable": true}})
+```
+
+## Internal notes (chatter)
+
+Posted **on behalf of the developer** — `author_id` and `email_from` come from
+`user_identity` (each teammate has their own), never the service account. Explicit
+author+sender also keep the email-less service account from raising:
+
+```
+execute("project.task", "message_post", [[<task_id>]], {
+  "body": "<p><b>Category</b> — text…</p>",
+  "subtype_xmlid": "mail.mt_note",
+  "author_id": <user_identity → Odoo prod partner id>,   # e.g. 2161 (Mark)
+  "email_from": "<Full name> <<odoo login email>>",      # e.g. Full Name <user@example.com>
+  "context": {"mail_create_nosubscribe": true}
+})
+```
+
+Bold **Category** prefix: `Requirement Change` / `Design Decision` /
+`Bug Fix` / `Review Fix` / `User Feedback` / `Progress` / `Deploy` (the exact
+commands a deploy ran — see the `deploy` skill). Re-resolve the partner id via
+`res.users read [uid] ["partner_id"]` if it ever mismatches.
+
+## Checklist (`project.task.subtask`)
+
+- Create: `{"task_id": <id>, "name": "<step>", "user_id": <owner uid>}`
+  (`user_id` is required); optional `deadline`.
+- States: `todo` (default) / `done` / `waiting` / `cancelled` — complete a
+  step with `write {"state": "done"}`.
+
+## Test cases (`project.task.testcase`)
+
+- Create: `{"task_id": <id>, "name": "<short scenario>",
+  "steps_to_execute": "<ol>…</ol>", "expected_results": "<p>…</p>"}` —
+  state defaults to `todo`.
+- Mark verified: `write {"passed": true, "state": "done"}`; failed stays
+  `todo` with a `comments` note; not applicable → `state: "cancelled"`.
+
+## Sub-tasks & blockers (task↔task links)
+
+Two more form tabs, each linking to **other `project.task` records**. A linked
+task is a full task — it follows every create convention above (`name`,
+`project_id`, `user_ids`, `task_type`, `tag_ids`, estimate, full-copy
+`description`).
+
+| Tab | Field on `project.task` | Meaning |
+|---|---|---|
+| **Sub-tasks** | `child_ids` (O2M via `parent_id`) | Children of this task — a slice split off the work. |
+| **Blocked By** | `depend_on_ids` (M2M, `tracking=True`) | Tasks that must finish before this one can proceed. |
+
+⚠️ The **Sub-tasks tab** is `child_ids` (real child tasks) — **not** the
+Checklist model `project.task.subtask` above, despite the name.
+
+**Add a sub-task** — create the child with `parent_id` on the new task (don't
+write `child_ids` from the parent):
+
+```
+execute("project.task", "create", [{"name": "<slice>", "parent_id": <current_id>,
+  "project_id": <proj>, "user_ids": [[6, 0, [<uid>]]], "task_type": "...",
+  "tag_ids": [[6, 0, [<ids>]]], "tshirt_estimate": "...", "planned_hours": <n>,
+  "description": "<full copy>"}],
+  {"context": {"mail_create_nolog": true, "mail_create_nosubscribe": true,
+               "mail_auto_subscribe_no_notify": true}})
+```
+
+**Link a blocker** — create the blocker task first (full conventions), then add
+it to the **blocked** task's `depend_on_ids`. `depend_on_ids` is tracked, so
+include `tracking_disable`:
+
+```
+blocker = execute("project.task", "create", [{...full task vals...}], {"context": {<quiet>}})
+execute("project.task", "write", [[<blocked_id>], {"depend_on_ids": [[4, blocker]]}],
+        {"context": {"mail_create_nolog": true, "mail_create_nosubscribe": true,
+                     "mail_auto_subscribe_no_notify": true, "tracking_disable": true}})
+```
+
+- The blocker must have a `project_id` (the field's domain requires it).
+- Reverse field `dependent_ids` ("Block") mirrors `depend_on_ids` — set only
+  the blocked side; both tabs populate.
+- Tabs require the project's `allow_subtasks` / `allow_task_dependencies`
+  (dependencies also need group `project.group_project_task_dependencies`); the
+  prod default project has both.
+
+## Attachments (demo GIFs, executed scripts, exports)
+
+Generic mechanism — any local file. Pick `mimetype` per kind: `image/gif`,
+`text/x-python` (scripts), `text/plain`, `text/csv`.
+
+```
+b64 = base64 of the local file
+att = execute("ir.attachment", "create", [{"name": "<file>",
+      "datas": b64, "res_model": "project.task", "res_id": <id>,
+      "mimetype": "<mimetype>"}])
+execute("project.task", "message_post", [[<id>]],
+        {..internal-note kwargs.., "attachment_ids": [att]})
+```
+
+### Always attach scripts you run against prod
+
+Ran a script as part of a task? Attach it. Covers any **Odoo shell**
+(`odoo shell` / `odoo-bin shell`, local or over SSH on prod) and any
+**multi-record data-mutating RPC** (bulk `write`/`unlink`, `_merge`, mass state
+change). No silent prod mutation: if it changed data and isn't one trivial
+write, the script goes on the task as a record of what was run.
+
+- **Save the exact code** that ran, verbatim — including dry-run guard, batch
+  size, savepoint/`commit`. File `<{{ ticket_prefix }}-key>_<what>.py`
+  (e.g. `{{ ticket_prefix }}-1117_partner_merge.py`), mimetype `text/x-python`.
+- **Attach when you run it**, not only at close: attach the script + post a
+  `Progress` / `Bug Fix` note stating model, records affected, dry-run vs
+  committed, result counts. Note + file together are the audit trail.
+- Re-ran a changed version? Attach the final one that actually ran; if behaviour
+  differed materially between runs, attach each distinct version.
+
+## Lifecycle / stage moves
+
+- **Start of work** (the user says to start / take into work a ticket or
+  a memory item with `[odoo:ID]`):
+  1. `write {"stage_id": <Development>}` (+ `tracking_disable` context);
+  2. assign the owner if not yet assigned (`user_ids` + flag context);
+  3. **set the Planned Dates window** so the ticket lands on the schedule:
+     `planned_date_start` = now, `planned_date_end` = now + the estimate
+     (`tshirt_estimate`/`planned_hours` at ~6 focused h/day), and
+     `date_deadline` = the date part of `planned_date_end`. A ticket taken into
+     work with no Planned Dates is invisible on the Gantt/dashboard.
+  4. **rebalance the user's other deadlines** — the new in-scope work pushes
+     existing tickets out: run `my-status` `rebalance` (shifts their Planned
+     Dates windows). See `feedback_rebalance_deadlines_on_scope_growth`.
+  5. **send the Teams status** — run the `my-status` skill `send` flow (current
+     ticket + ETA + next up, draft → explicit go → IT team chat). In the
+     `pipeline` this is a **hard gate**: if Teams isn't authenticated, pause,
+     request auth, send, then proceed (see `feedback_teams_status_hard_gate`).
+  Stage-move + Planned Dates + rebalance + sent status are a mandatory set;
+  don't do one without the others.
+- **Close as done** → `write {"pr_uri": "<PR URL, or memory://journal/<date>#<ID>>"}`
+  first, then `{"stage_id": <Delivered>}` — Delivered with empty `pr_uri` is
+  blocked by a prod automation. Before closing a task that ran prod shell /
+  bulk-data scripts, confirm each is attached (see Attachments).
+- **Close as no longer relevant** → `{"stage_id": <Canceled>}` (no pr_uri).
+- Stage rights: assignors/PM/assignees only (`kaertech_project_software`);
+  the service account is a Task Assignor of project 8.
+
+## Memory mirror linkage
+
+State items carry `[odoo:<task_id>]` — see the behavior protocol
+("State ↔ Odoo tickets") for the WHEN. This skill is the HOW (fields, flags, calls).
