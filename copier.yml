@@ -154,14 +154,15 @@ test_web_url:
   default: ""
   when: "{{ test_ssh_host != '' }}"
 
+project_dir_var:
+  type: str
+  help: Name of the env variable holding the project root (make it unique if you run two projects on the same Odoo version)
+  default: "ODOO{{ odoo_version | replace('.0', '') }}_PROJECT_DIR"
+  validator: "{% if not (project_dir_var | regex_search('^[A-Z][A-Z0-9_]*$')) %}Use an UPPER_SNAKE_CASE shell variable name{% endif %}"
+
 # === computed (hidden) ===
 
 odoo_major:
   type: str
   when: false
   default: "{{ odoo_version | replace('.0', '') }}"
-
-project_dir_var:
-  type: str
-  when: false
-  default: "ODOO{{ odoo_version | replace('.0', '') }}_PROJECT_DIR"
