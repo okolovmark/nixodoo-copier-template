@@ -47,6 +47,11 @@ nix run .#setup-dev           # local postgres, odoo.conf, nginx, systemd units
 systemctl --user enable --now postgres.service odoo.service nginx.service odoo-logrotate.timer
 ```
 
+The same generated project also deploys as a **test** or **production** server:
+`nix run .#setup-test` / `nix run .#setup-prod` + `nix profile add .#test-server` /
+`.#prod-server` (leaner toolchain, odoo + nginx units, external PostgreSQL).
+The generated `README.md` documents all three flows step by step.
+
 Later, to pull template improvements into a generated project:
 
 ```bash
