@@ -57,6 +57,7 @@ uvx copier update --trust
 | `postgres_version` | 15 for Odoo ≤17, 17 for 18+ |
 | ports (http / gevent / nginx / postgres) | derived from the Odoo major (`16.0` → 1669/1672/16069/16432) |
 | `db_name` / `db_user` / `db_password` | `develop` / `odoo` / `odoo` |
+| `project_dir_var` (project-root env var; make unique to run two projects on one Odoo version) | `ODOO<major>_PROJECT_DIR` |
 | `use_queue_job` | `false` |
 | `default_repo_pattern` | `https://github.com/OCA/{}.git` |
 | `backup_s3_bucket` | empty → no backup tooling |
