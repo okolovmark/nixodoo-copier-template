@@ -77,7 +77,7 @@ uvx copier update --trust
 | `status_mcp` | `none` (or `teams` → my-status skill, Teams MCP + bootstrap questions) |
 | `tickets_mcp` | `none` (or `odoo` → odoo-tickets skill, ticket links, `ODOO_*_PROD` in `.env`) |
 | `odoo_prod_url` | asked when `tickets_mcp=odoo` |
-| `use_pipeline` | `true` (asked when custom repo + S3 bucket are set) |
+| `use_pipeline` | `true` (asked when a custom addons repo is set) |
 | `backup_s3_bucket` | empty → no backup tooling |
 | `prod_ssh_host` (+user/url), `test_ssh_host` (+user/port/forward/url) | empty → no SSH helpers |
 

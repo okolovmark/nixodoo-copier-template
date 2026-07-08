@@ -33,5 +33,5 @@ systemctl --user daemon-reload
 if ls "$BACKUP_DIR"/*.dump >/dev/null 2>&1; then
     echo "STATUS: bootstrap-ok (seed dump: $(ls -1t "$BACKUP_DIR"/*.dump | head -1 | xargs basename))"
 else
-    echo "STATUS: bootstrap-ok-NO-DUMP — run \`nix run .#download-backup\` once to fetch the prod seed (it also stops postgres/odoo briefly; do it before starting sessions)"
+    echo "STATUS: bootstrap-ok-NO-DUMP — {% if backup_s3_bucket %}run \`nix run .#download-backup\` once to fetch the prod seed{% else %}put a prod dump into backup/{% endif %} before starting sessions"
 fi

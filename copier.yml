@@ -158,7 +158,7 @@ use_pipeline:
   type: bool
   help: Include the pipeline skill (task -> dev -> QC gate -> demo GIF -> PR orchestrator; runs in isolated worktree envs)?
   default: true
-  when: "{{ use_claude_code and custom_repo_pattern != '' and backup_s3_bucket != '' }}"
+  when: "{{ use_claude_code and custom_repo_pattern != '' }}"
 
 backup_s3_bucket:
   type: str

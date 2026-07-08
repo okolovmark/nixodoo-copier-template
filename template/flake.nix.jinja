@@ -281,7 +281,7 @@
                 checks.shellcheck = pkgs.runCommand "shellcheck-scripts" { } ''
                     export LC_ALL=C.UTF-8
                     ${pkgs.shellcheck}/bin/shellcheck --severity=warning -e SC1090,SC1091 \
-{% if use_claude_code and custom_repo_name and backup_s3_bucket %}
+{% if use_claude_code and custom_repo_name %}
                         ${./.claude/skills/worktree-env/scripts}/*.sh \
 {% endif %}
 {% if use_claude_code %}

@@ -47,12 +47,17 @@ the `URL`. "what envs are running" → `wt-list.sh`. "tear down kio-1234" →
 
 ## Prerequisite — the seed dump
 
-Each session restores `backup/*.dump` (a raw prod dump) into its own DB. Fetch /
-refresh it with **`nix run .#download-backup`** — that app `aws s3 cp`s the latest
-prod dump into `backup/`. With the shared cluster already running it restores in
-place (no `pg_ctl`) and only drops/recreates its **target** DB (default `{{ db_name }}`),
+Each session restores `backup/*.dump` (a raw prod dump) into its own DB.
+{% if backup_s3_bucket %}
+Fetch / refresh it with **`nix run .#download-backup`** — that app `aws s3 cp`s the
+latest prod dump into `backup/`. With the shared cluster already running it restores
+in place (no `pg_ctl`) and only drops/recreates its **target** DB (default `{{ db_name }}`),
 so active sessions are unaffected. If `wt-start` reports no dump, ask the user to
 run it once first.
+{% else %}
+Place a prod dump into `backup/` manually (any `*.dump` produced by `pg_dump -Fc`);
+the newest file is used. If `wt-start` reports no dump, ask the user to drop one in.
+{% endif %}
 
 ## How it works / gotchas
 
@@ -61,16 +66,15 @@ run it once first.
   takes the first hit — so the main symlink farm would always shadow a worktree on
   `addons_path`. Each session therefore has its own data_dir whose farm IS the
   source of truth: custom modules → the worktree, OCA/CE → the shared pinned `src/`.
-- **Why sessions restore the dump themselves instead of `nix run .#download-backup`
-  per session:** that app re-downloads from S3 and restores into a single target DB;
-  `wt-restore.sh` restores the already-fetched dump straight into the per-slug
+- **Why sessions restore the dump themselves:** the seed flow targets a single
+  DB; `wt-restore.sh` restores the already-fetched dump straight into the per-slug
   `wt_<slug>` DB and neutralizes it, so parallel sessions stay independent.
 - **The dump is raw prod** → `wt-restore.sh` runs Odoo's native neutralization
   (`odoo neutralize` — every installed module's `data/neutralize.sql`: outgoing mail
   blocked by a dummy SMTP server, fetchmail off, crons off except autovacuum,
   payment/IAP disabled, `database.is_neutralized` flag +
   visible banner), then the shared `nix/scripts/dev-fixup.sql` (admin → `admin`/`admin`,
-  requeue stuck queue jobs) — same pair `nix run .#download-backup` uses.
+  requeue stuck queue jobs){% if backup_s3_bucket %} — same pair `nix run .#download-backup` uses{% endif %}.
 - **Concurrency:** port allocation + `git worktree add` run under `flock`
   (`.worktrees/.wt.lock`); the slow `pg_restore` runs outside the lock so parallel
   starts overlap. DBs/ports/worktrees are per-slug, so sessions never collide.

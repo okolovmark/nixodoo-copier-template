@@ -19,7 +19,7 @@ SEED_FILESTORE="$PROJ/.local/share/Odoo/filestore/{{ db_name }}"  # best-effort 
 
 WT_ROOT="$PROJ/.worktrees"                         # per-task git worktrees (gitignored)
 WT_ENVROOT="$WT_ROOT/_env"                         # per-session runtime (conf/data/port)
-BACKUP_DIR="$PROJ/backup"                           # prod dump from `nix run .#download-backup`
+BACKUP_DIR="$PROJ/backup"                           # prod seed dump lives here
 LOCKFILE="$WT_ROOT/.wt.lock"                        # serializes port alloc + git worktree add
 
 PORT_BASE=2700                                      # session http ports live in [2700, 2799]

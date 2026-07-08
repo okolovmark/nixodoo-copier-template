@@ -130,8 +130,8 @@ needs from it:
   `develop`/prod, so pass explicit params, not a profile. The connection is global per
   MCP server — alternate deliberately with prod ticket ops (`odoo-tickets`) and check
   `get_connection_status`.
-- Prereq: a seed dump in `backup/` (`nix run .#download-backup` to fetch/refresh) —
-  if `wt-start` reports none, ask the user to run it once first.
+- Prereq: a seed dump in `backup/` ({% if backup_s3_bucket %}`nix run .#download-backup` to fetch/refresh{% else %}drop a `pg_dump -Fc` file in manually{% endif %}) —
+  if `wt-start` reports none, ask the user to provide it first.
 
 ---
 
@@ -401,7 +401,7 @@ Before spawning any subagent:
    `PORT:` as `<WT>`/`<CONF>`/`<URL>`/`<DB>`/`<PORT>`** — every later phase uses them.
    All code/git for this run happens in `<WT>`; the user's `src/{{ custom_repo_name }}` and
    `develop` are never touched. (Prereq: a seed dump in `backup/` — if `wt-start`
-   reports none, ask the user to run `nix run .#download-backup` once first.)
+   reports none, ask the user to {% if backup_s3_bucket %}run `nix run .#download-backup` once{% else %}drop a prod dump into `backup/`{% endif %} first.)
 
 Report: "Starting pipeline for: <TASK-KEY> — <task summary>".{% if tickets_mcp == 'odoo' %} If clarifying questions were asked, add "N clarifying Q&A captured to the Technical Solution tab." If Technical Solution was enriched, add "Technical Solution auto-generated and written to the task. Please review." If Test Cases were generated, add "N test cases written to Test Cases tab."{% endif %}
 
