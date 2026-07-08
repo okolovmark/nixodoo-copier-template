@@ -123,8 +123,7 @@ needs from it:
   browser `<URL>`. All code/git happens in `<WT>`, never in `src/{{ custom_repo_name }}`.
 - **Phase 6** does NOT tear the env down on its own — the worktree is kept so
   the task can continue. `wt-stop.sh <slug>` runs ONLY when the user says the
-  session is finished, and only after you ask (see Phase 6 Step 0 /
-  `feedback_never_auto_drop_worktree`).
+  session is finished, and only after you ask (see Phase 6 Step 0).
 - The odoo MCP can verify a session too — `connect` to it explicitly (`host="localhost"`,
   `port=<PORT>`, `database=<DB>`, `admin`/`admin`); the `default`/`prod` profiles are
   `develop`/prod, so pass explicit params, not a profile. The connection is global per
@@ -272,12 +271,11 @@ Before spawning any subagent:
      chat). **If Teams is not authenticated** (`mcp__teams__auth_status` is not
      the identity-node account, or the send errors on auth): **PAUSE the
      pipeline here.** Show the user the ready-to-send draft and ask them to
-     authenticate Teams (their forked `teams-mcp`, never upstream `@latest` —
-     see `feedback_fork_third_party_tools`), then STOP and wait. When the user
+     authenticate Teams (the `teams` MCP server from `.mcp.json`), then STOP
+     and wait. When the user
      says they have authenticated, re-check `auth_status`, send the status, and
      only **after the send succeeds** proceed to Phase 2. The stage move + the
-     *sent* status are a mandatory pair — an unsent status blocks the run (see
-     `feedback_teams_status_hard_gate`).
+     *sent* status are a mandatory pair — an unsent status blocks the run.
 {% endif %}
 
 2. **Clarify ambiguities — and capture the Q&A**: if the Description (or the
@@ -648,8 +646,7 @@ follow-ups, more iterations), so keep the worktree + env + DB and leave
 Teardown is **user-gated**: only when the user explicitly says the session /
 task is finished do you **ask** — "drop the worktree `<slug>` (env + DB)?" —
 and run `wt-stop.sh <slug>` **only after they say yes**. Never infer "done"
-from a green pipeline or a merged/awaiting-review PR. See
-`feedback_never_auto_drop_worktree`.
+from a green pipeline or a merged/awaiting-review PR.
 
 #### Step 1: Close the WIP entry{% if tickets_mcp == 'odoo' %} (state + the mirrored ticket together){% endif %}
 

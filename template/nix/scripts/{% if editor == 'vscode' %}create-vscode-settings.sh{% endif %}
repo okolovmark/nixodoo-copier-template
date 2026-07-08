@@ -18,7 +18,7 @@ else
         ".ruff_cache": true,
         ".playwright-mcp": true,
         "result": true
-    },
+    }
 }
 
 EOF

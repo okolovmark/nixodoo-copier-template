@@ -22,8 +22,8 @@ WT_ENVROOT="$WT_ROOT/_env"                         # per-session runtime (conf/d
 BACKUP_DIR="$PROJ/backup"                           # prod seed dump lives here
 LOCKFILE="$WT_ROOT/.wt.lock"                        # serializes port alloc + git worktree add
 
-PORT_BASE=2700                                      # session http ports live in [2700, 2799]
-PORT_MAX=2799
+PORT_BASE={{ (odoo_major | int + 11) * 100 }}                                      # session http ports live in [{{ (odoo_major | int + 11) * 100 }}, {{ (odoo_major | int + 11) * 100 + 99 }}]
+PORT_MAX={{ (odoo_major | int + 11) * 100 + 99 }}
 
 # Local postgres (odoo.conf: localhost:{{ postgres_port }}, odoo/odoo). The shared cluster is
 # already up via postgres.service — we never pg_ctl it, only create/drop DBs.

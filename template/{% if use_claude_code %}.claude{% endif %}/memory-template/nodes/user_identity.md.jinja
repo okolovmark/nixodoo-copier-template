@@ -7,10 +7,10 @@ metadata:
 ---
 # User identity (automation)
 
-Stable, machine-parseable identity used by `/my-status`, the state↔Odoo ticket
-sync and the standup Odoo section. Keep the `**Key:**` labels exactly as-is —
-scripts grep them. While placeholders remain, the Odoo/Teams integrations
-stay silently disabled (the standup checks for `<ODOO LOGIN>`).
+Stable, machine-parseable identity used by the automations{% if status_mcp == 'teams' %} (`/my-status`){% endif %}{% if tickets_mcp == 'odoo' %} (the
+state↔Odoo ticket sync and the standup Odoo section){% endif %}. Keep the `**Key:**`
+labels exactly as-is — scripts grep them. While placeholders remain, the
+integrations stay silently disabled{% if tickets_mcp == 'odoo' %} (the standup checks for `<ODOO LOGIN>`){% endif %}.
 
 - **Full name:** `<FULL NAME>`
 {% if tickets_mcp == 'odoo' %}
@@ -27,9 +27,11 @@ stay silently disabled (the standup checks for `<ODOO LOGIN>`).
 - **Teams auth must be:** `<FULL NAME>` (`<EMAIL>`) — check `mcp__teams__auth_status`
 {% endif %}
 
+{% if tickets_mcp == 'odoo' %}
 Optionally add the project's stage map here once known (names + ids, which
-ones are fold/closed, any stage-move constraints like Kaertech's `pr_uri`
-requirement for Delivered).
+ones are fold/closed, any stage-move constraints — e.g. a `pr_uri` required
+before the done stage).
+{% endif %}
 
 Related: [[user_role]], [[conventions_behavior_protocol]] (State ↔ Odoo
 tickets section).

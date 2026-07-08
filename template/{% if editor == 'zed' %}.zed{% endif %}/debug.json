@@ -1,0 +1,21 @@
+[
+  {
+    "label": "Odoo: Debug Server",
+    "adapter": "Debugpy",
+    "request": "launch",
+    "program": "$ZED_WORKTREE_ROOT/src/odoo/odoo-bin",
+    "args": [
+      "--config=$ZED_WORKTREE_ROOT/odoo.conf",
+      "--dev=reload,qweb,werkzeug,xml",
+      "--workers=0",
+      "--logfile=/dev/stdout",
+    ],
+    "python": "python",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "redirectOutput": true,
+    "justMyCode": false,
+    "env": {
+      "PYTHONUNBUFFERED": "1",
+    },
+  },
+]

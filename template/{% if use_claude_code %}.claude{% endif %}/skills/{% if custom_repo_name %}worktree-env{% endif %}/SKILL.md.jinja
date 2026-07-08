@@ -16,7 +16,7 @@ touch the user's main env (`src/{{ custom_repo_name }}` / `{{ db_name }}` / `odo
 | Runtime | `odoo.conf` | `.worktrees/_env/<slug>/{odoo.conf,data,port}` |
 | Service | `odoo.service` | `odoo-wt@<slug>.service` |
 | DB | `{{ db_name }}` | `wt_<slug>` (own restore of the prod dump) |
-| HTTP | nginx {{ nginx_port }} → {{ odoo_http_port }} | auto-allocated in **2700–2799** (direct, no nginx) |
+| HTTP | nginx {{ nginx_port }} → {{ odoo_http_port }} | auto-allocated in **{{ (odoo_major | int + 11) * 100 }}–{{ (odoo_major | int + 11) * 100 + 99 }}** (direct, no nginx) |
 
 ## Commands
 

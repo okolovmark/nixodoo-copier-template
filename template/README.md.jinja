@@ -6,6 +6,7 @@ Generated from [nixodoo-copier-template](https://github.com/okolovmark/nixodoo-c
 
 ## Prerequisites
 
+{% if editor == 'vscode' %}
 ### VScode Extensions
 
 [RUFF](https://marketplace.visualstudio.com/items?itemName=charliermarsh.ruff)
@@ -18,6 +19,16 @@ Generated from [nixodoo-copier-template](https://github.com/okolovmark/nixodoo-c
 
 [Debugger](https://marketplace.visualstudio.com/items?itemName=ms-python.debugpy)
 
+{% elif editor == 'zed' %}
+### Zed
+
+Install [Zed](https://zed.dev) with the
+[Odoo (OdooLS)](https://github.com/odoo/odoo-ls) and Python extensions.
+The project ships `odools.toml` (language-server config: odoo path, addons
+paths, diagnostics filter) and `.zed/debug.json` (debugpy launch config for
+the Odoo server).
+
+{% endif %}
 {% if use_claude_code %}
 ### Claude Code CLI installation
 
@@ -79,7 +90,13 @@ sudo systemctl restart nix-daemon
 {% if prod_ssh_host %}
 ├── .ssh/               # SSH keys for server access
 {% endif %}
+{% if editor == 'vscode' %}
 ├── .vscode/            # VSCode settings
+{% endif %}
+{% if editor == 'zed' %}
+├── .zed/               # Zed debug config
+├── odools.toml         # OdooLS language-server config
+{% endif %}
 ├── odoo.conf           # Odoo configuration file (generated)
 ├── odoo.log            # Odoo logs (rotated daily)
 {% if backup_s3_bucket %}
@@ -196,7 +213,9 @@ This will:
 1. Configure AWS credentials
 {% endif %}
 1. Create Nginx configuration
+{% if editor == 'vscode' %}
 1. Create VSCode settings
+{% endif %}
 
 ```bash
 cd {{ project_name }}
@@ -292,9 +311,11 @@ nix run .#create-nginx-config
 nix run .#create-aws-config
 {% endif %}
 
+{% if editor == 'vscode' %}
 {% set ns.step = ns.step + 1 %}
 # {{ ns.step }}. Create VSCode settings
 nix run .#create-vscode-settings
+{% endif %}
 ```
 
 ### Development URLs

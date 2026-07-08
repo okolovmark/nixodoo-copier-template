@@ -1,0 +1,40 @@
+# OdooLS configuration — https://github.com/odoo/odoo-ls
+# Profile name must match "selectedProfile" in Zed settings.json.
+#
+# Paths use documented OdooLS variables:
+#   ${workspaceFolder} -> the folder opened in the editor (this project root)
+#   ${userHome}        -> the user's home directory
+# NOTE: ${workspaceFolder} only resolves correctly if you open the PROJECT
+# ROOT as the Zed workspace — opening a subfolder would break these paths.
+
+[[config]]
+name = "{{ project_name }}"
+
+# Odoo Community source root (contains odoo-bin, odoo/, addons/)
+odoo_path = "${workspaceFolder}/src/odoo"
+
+# Python interpreter — used to resolve stdlib and 3rd-party imports
+python_path = "${userHome}/.nix-profile/bin/python3"
+
+# Module directories. Each entry is a folder that DIRECTLY contains modules.
+# Add one line per repo key from addons.yaml.
+# (src/odoo is omitted — its addons come from odoo_path automatically.)
+addons_paths = [
+{% if custom_repo_name %}
+    "${workspaceFolder}/src/{{ custom_repo_name }}",
+{% endif %}
+{% if use_queue_job %}
+    "${workspaceFolder}/src/queue",
+{% endif %}
+]
+{% if custom_repo_name %}
+
+# Report OdooLS diagnostics ONLY for our custom addons repo.
+# Every path above is still used for model/import resolution — this filter
+# only suppresses the *display* of diagnostics outside src/{{ custom_repo_name }}.
+# path_type = "not_in" -> filter applies to files NOT matching these globs.
+[[config.diagnostic_filters]]
+codes = ["OLS.*"]
+paths = ["**/{{ custom_repo_name }}/**"]
+path_type = "not_in"
+{% endif %}

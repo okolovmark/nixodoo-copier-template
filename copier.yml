@@ -11,7 +11,9 @@ _envops:
 
 _tasks:
   - "[ -d .git ] || git init -q"
-  # Empty-but-valid uv.lock so the flake evaluates before bootstrap-deps runs
+  # Empty-but-valid uv.lock so the flake evaluates before bootstrap-deps runs.
+  # Uses the system uv; any lock-format skew self-heals when bootstrap-deps
+  # re-locks with the flake-pinned uv.
   - "uv lock 2>/dev/null || echo 'NOTE: uv not found — nix run .#bootstrap-deps will create uv.lock'"
 
 # === questions ===
@@ -20,7 +22,7 @@ project_name:
   type: str
   help: Technical project name (kebab-case; used in pyproject, flake, banners)
   default: odoo-dev-env
-  validator: "{% if not (project_name | regex_search('^[a-z][a-z0-9-]+$')) %}Use lowercase kebab-case (letters, digits, dashes){% endif %}"
+  validator: "{% if not (project_name | regex_search('^[a-z][a-z0-9-]+$')) %}Use lowercase kebab-case (letters, digits, dashes){% elif project_name | length > 32 %}Keep it under 32 characters{% endif %}"
 
 odoo_version:
   type: str
@@ -90,6 +92,15 @@ db_password:
   help: PostgreSQL password for the Odoo role (local dev cluster)
   default: odoo
 
+editor:
+  type: str
+  help: Editor configuration to generate (vscode = .vscode settings; zed = odools.toml + .zed debug config for OdooLS)
+  default: none
+  choices:
+    - none
+    - vscode
+    - zed
+
 # --- optional integrations ---
 
 use_queue_job:
@@ -121,7 +132,8 @@ use_claude_code:
 module_prefix:
   type: str
   help: Technical prefix of your custom modules (used across the Claude skills and examples)
-  default: "{{ project_name.split('-')[0] }}"
+  default: "{% if project_name.split('-')[0] in ['odoo', 'base', 'web'] %}custom{% else %}{{ project_name.split('-')[0] }}{% endif %}"
+  validator: "{% if not (module_prefix | regex_search('^[a-z][a-z0-9_]+$')) %}Use lowercase snake_case{% endif %}"
   when: "{{ use_claude_code }}"
 
 ticket_prefix:

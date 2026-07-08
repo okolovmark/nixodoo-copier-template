@@ -158,7 +158,9 @@
 {% if prod_ssh_host %}
                     setup-ssh-access = mkScript "setup-ssh-access" { };
 {% endif %}
+{% if editor == 'vscode' %}
                     create-vscode-settings = mkScript "create-vscode-settings" { };
+{% endif %}
                     setup-dev = mkScript "setup-dev" {
                         deps = [
                             setup-prod
@@ -167,7 +169,9 @@
 {% if prod_ssh_host %}
                             setup-ssh-access
 {% endif %}
+{% if editor == 'vscode' %}
                             create-vscode-settings
+{% endif %}
                         ];
                     };
                 };

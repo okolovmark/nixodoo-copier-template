@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default-19
+            args: -d project_name=ci-default
+          - name: full-16
+            args: >-
+              -d project_name=ci-full -d odoo_version=16.0 -d use_queue_job=true
+              -d custom_repo_pattern=git@github.com:acme/{}.git
+              -d custom_repo_name=acme-addons
+              -d module_prefix=acme -d ticket_prefix=ACME
+              -d status_mcp=teams -d tickets_mcp=odoo
+              -d odoo_prod_url=https://odoo.example.com -d use_pipeline=true
+              -d backup_s3_bucket=acme-backups -d editor=vscode
+              -d prod_ssh_host=203.0.113.1 -d prod_web_url=https://odoo.example.com
+              -d test_ssh_host=203.0.113.2
+          - name: no-claude-18
+            args: >-
+              -d project_name=ci-plain -d odoo_version=18.0
+              -d use_claude_code=false -d editor=zed
+          - name: repo-no-s3-17
+            args: >-
+              -d project_name=ci-repo -d odoo_version=17.0
+              -d custom_repo_pattern=git@github.com:acme/{}.git
+              -d custom_repo_name=acme-addons
+    name: ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: DeterminateSystems/nix-installer-action@v16
+      - name: Generate project
+        run: uvx copier copy --trust --defaults --vcs-ref=HEAD ${{ matrix.args }} . /tmp/gen
+      - name: Bash syntax check
+        run: |
+          shopt -s globstar nullglob
+          for f in /tmp/gen/nix/scripts/*.sh /tmp/gen/.claude/hooks/*.sh /tmp/gen/.claude/skills/**/scripts/*.sh; do
+            bash -n "$f"
+          done
+      - name: nix flake check
+        run: |
+          cd /tmp/gen
+          git add -A
+          git -c user.email=ci@ci -c user.name=ci commit -qm init
+          nix flake check

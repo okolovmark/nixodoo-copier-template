@@ -94,6 +94,7 @@ uvx copier update --trust
 | `db_name` / `db_user` / `db_password` | `develop` / `odoo` / `odoo` |
 | `project_dir_var` (project-root env var; make unique to run two projects on one Odoo version) | `ODOO<major>_PROJECT_DIR` |
 | `use_queue_job` | `false` |
+| `editor` | `none` (or `vscode` → settings generator; `zed` → `odools.toml` + debug config) |
 | `default_repo_pattern` | `https://github.com/OCA/{}.git` |
 | `custom_repo_pattern` / `custom_repo_name` | empty → no custom addons repo |
 | `use_claude_code` | `true` — CLAUDE.md, hooks, skills, agents, MCP config |
@@ -104,6 +105,14 @@ uvx copier update --trust
 | `use_pipeline` | `true` (asked when a custom addons repo is set) |
 | `backup_s3_bucket` | empty → no backup tooling |
 | `prod_ssh_host` (+user/url), `test_ssh_host` (+user/port/forward/url) | empty → no SSH helpers |
+
+## Notes
+
+- `.mcp.json` points the `odoo` and `teams` MCP servers at
+  [okolovmark's](https://github.com/okolovmark) forks — swap the URLs for your
+  own if you prefer.
+- `postgres-mcp` in `.mcp.json` runs with `--access-mode=unrestricted` — it
+  targets the **local dev database** only (`DATABASE_URI` from `.env`).
 
 ## License
 

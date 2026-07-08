@@ -251,7 +251,7 @@ write, the script goes on the task as a record of what was run.
   5. **send the Teams status** — run the `my-status` skill `send` flow (current
      ticket + ETA + next up, draft → explicit go → IT team chat). In the
      `pipeline` this is a **hard gate**: if Teams isn't authenticated, pause,
-     request auth, send, then proceed (see `feedback_teams_status_hard_gate`).
+     request auth, send, then proceed.
   Stage-move + Planned Dates + rebalance + sent status are a mandatory set;
   don't do one without the others.
 - **Close as done** → `write {"pr_uri": "<PR URL, or memory://journal/<date>#<ID>>"}`
