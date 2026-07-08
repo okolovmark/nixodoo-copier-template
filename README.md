@@ -30,8 +30,32 @@ locked with uv/uv2nix.
 ## Requirements
 
 - [Nix](https://nixos.org/download) with flakes enabled
-- [copier](https://copier.readthedocs.io) (easiest: `uvx copier`)
+- [uv](https://docs.astral.sh/uv/) (`uvx` runs copier without installing it)
 - systemd user session (Linux)
+
+### Install uv
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+### Install Nix
+
+```bash
+sh <(curl --proto '=https' --tlsv1.2 -L https://nixos.org/nix/install) --daemon
+```
+
+Enable flakes — add to `~/.config/nix/nix.conf` (create the file if it doesn't exist):
+
+```ini
+experimental-features = nix-command flakes
+```
+
+Then restart the daemon:
+
+```bash
+sudo systemctl restart nix-daemon
+```
 
 ## Usage
 
