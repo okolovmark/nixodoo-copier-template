@@ -142,6 +142,12 @@ ticket_prefix:
   default: "TASK"
   when: "{{ use_claude_code }}"
 
+readme_gen_source:
+  type: str
+  help: pip source of OCA maintainer-tools (oca-gen-addon-readme, used by the documenter agent; point at your own fork/ref for supply-chain control)
+  default: "git+https://github.com/OCA/maintainer-tools@master"
+  when: "{{ use_claude_code }}"
+
 status_mcp:
   type: str
   help: MCP used to post work status to the team (adds the my-status skill, the Teams MCP server and Teams bootstrap questions)
@@ -168,7 +174,7 @@ odoo_prod_url:
 
 use_pipeline:
   type: bool
-  help: Include the pipeline skill (task -> dev -> QC gate -> demo GIF -> PR orchestrator; runs in isolated worktree envs)?
+  help: Include the pipeline skill (task -> dev -> QC gate -> docs -> demo GIF -> PR orchestrator; runs in isolated worktree envs)?
   default: true
   when: "{{ use_claude_code and custom_repo_pattern != '' }}"
 

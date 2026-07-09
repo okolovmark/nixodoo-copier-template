@@ -1,6 +1,6 @@
 ---
 name: pipeline
-description: "Full Odoo development lifecycle orchestrator. Chains subagents: task reading -> dev -> QC gate (review + validation, loops back to dev) -> demo GIF -> PR. Two subagents: dev (writes code), review (read-only QC/review)."
+description: "Full Odoo development lifecycle orchestrator. Chains subagents: task reading -> dev -> QC gate (review + validation, loops back to dev) -> docs -> demo GIF -> PR. Three subagents: dev (writes code), review (read-only QC/review), documenter (writes module docs)."
 argument-hint: "[task URL or description]"
 ---
 
@@ -40,24 +40,27 @@ Defined in `.claude/agents/`:
 |-------|---------|-------|-----------------|
 | `dev` | Development — writes code | All | style, code-patterns |
 | `review` | QC + code review — read-only analysis | Read, Grep, Glob, Bash | style, testing |
+| `documenter` | Module docs — readme fragments, `readme/*.puml`, docstrings, manifest summary/description, PR description | All | style, inspect-model |
 
 Interactive Odoo debugging is the **`debug` skill** (mcp-pdb), run in-context — not a subagent.
 
 ## Collecting subagent returns
 
-Every `dev` / `review` subagent returns a structured closing block:
+Every `dev` / `review` / `documenter` subagent returns a structured closing block:
 
     FILES_CHANGED: <list>
     OPEN_THREADS: <list, or "none">
     DECISIONS: <scope expansions or design calls, or "none">
 
+`documenter` additionally returns a `PR_DESCRIPTION:` block — hold it for Phase 6 (PR).
+
 Maintain running lists across ALL phases:
 
-- `ALL_FILES_CHANGED` — union of FILES_CHANGED from every `dev` spawn
+- `ALL_FILES_CHANGED` — union of FILES_CHANGED from every `dev`/`documenter` spawn
 - `ALL_OPEN_THREADS` — every OPEN_THREAD returned, any phase
 - `ALL_DECISIONS` — every DECISION returned, any phase
 
-These feed Phase 6 (Memory Closure). If a subagent forgets the closing block, ask it again — do not guess.
+These feed Phase 7 (Memory Closure). If a subagent forgets the closing block, ask it again — do not guess.
 
 ---
 
@@ -84,7 +87,7 @@ The Checklist tab = `project.task.subtask` records (see `odoo-tickets`):
 Two task↔task link tabs the orchestrator maintains (fields + calls in
 `odoo-tickets` → "Sub-tasks & blockers"). Both stay attached to the current
 task — **distinct from OPEN_THREADS**, which are unrelated issues that become
-standalone Backlog tasks in Phase 6.
+standalone Backlog tasks in Phase 7.
 
 - **Too big → Sub-task.** If you judge the task too large to ship as one clean
   PR (several independent deliverables, spans unrelated concerns), surface the
@@ -96,14 +99,14 @@ standalone Backlog tasks in Phase 6.
   dependency that must be resolved first (missing upstream change, external
   fix, data migration), create a task for the blocker (full conventions) and
   link it on the current task's `depend_on_ids`. Post a `Progress` note naming
-  the blocker, then take the **BLOCKED** close in Phase 6 — the current task
+  the blocker, then take the **BLOCKED** close in Phase 7 — the current task
   can't finish until the blocker does.
 
 {% else %}
 ## Change Tracking
 
 No ticket tracker configured — record decisions and progress in the session
-report and the Phase-6 memory closure (journal + state.md).
+report and the Phase-7 memory closure (journal + state.md).
 {% endif %}
 
 ---
@@ -119,11 +122,11 @@ needs from it:
 - **Phase 1** runs `wt-start.sh <slug>` and captures its output as `<WT>` (worktree
   path), `<CONF>` (session `odoo.conf`), `<URL>` (browser URL), `<DB>`, `<PORT>`.
   Re-running `wt-start.sh <slug>` refreshes the env (idempotent).
-- **Phases 2–5** edit/test/PR using those: `git -C <WT> …`, `odoo -c <CONF> …`,
+- **Phases 2–6** edit/test/PR using those: `git -C <WT> …`, `odoo -c <CONF> …`,
   browser `<URL>`. All code/git happens in `<WT>`, never in `src/{{ custom_repo_name }}`.
-- **Phase 6** does NOT tear the env down on its own — the worktree is kept so
+- **Phase 7** does NOT tear the env down on its own — the worktree is kept so
   the task can continue. `wt-stop.sh <slug>` runs ONLY when the user says the
-  session is finished, and only after you ask (see Phase 6 Step 0).
+  session is finished, and only after you ask (see Phase 7 Step 0).
 - The odoo MCP can verify a session too — `connect` to it explicitly (`host="localhost"`,
   `port=<PORT>`, `database=<DB>`, `admin`/`admin`); the `default`/`prod` profiles are
   `develop`/prod, so pass explicit params, not a profile. The connection is global per
@@ -213,11 +216,11 @@ Do NOT write to memory files directly. The orchestrator owns memory writes.
    ```
    - [NEXT_ID] YYYY-MM-DD: <TASK-KEY> pipeline in progress — see journal/YYYY-MM-DD
    ```
-3. Remember `NEXT_ID` as `WIP_ID` — you close it in Phase 6.
+3. Remember `NEXT_ID` as `WIP_ID` — you close it in Phase 7.
 
 #### Step 5: Initialize running collection lists
 
-Hold in scratch for the rest of the pipeline; Phases 2–3 append from subagent closing blocks, Phase 6 flushes to memory:
+Hold in scratch for the rest of the pipeline; Phases 2–4 append from subagent closing blocks, Phase 7 flushes to memory:
 
 - `ALL_FILES_CHANGED = []`
 - `ALL_OPEN_THREADS = []`
@@ -518,7 +521,36 @@ Report: "QC gate: review <summary> · tests <N> · test cases <X/Y> — PASS (af
 
 ---
 
-### Phase 4: Demo GIF (MANDATORY)
+### Phase 4: Documentation
+
+After the gate passes, spawn the **`documenter`** subagent:
+
+> <PROJECT_RULES_BLOB>
+>
+> Document this run's changes. **Work in the worktree `<WT>`** — never in
+> `${{ project_dir_var }}/src/{{ custom_repo_name }}`.
+> Task: <TASK-KEY> — <one-line summary>. Changed files: <ALL_FILES_CHANGED>.
+> For each changed module: create/update the OCA readme fragments
+> (`readme/*.rst`), update any `readme/*.puml` schema the change touches (or
+> add one for a new non-trivial data model/flow), fill missing docstrings on
+> new/changed public methods, set `__manifest__.py` summary/description if
+> missing or stale, then regenerate README.rst (command in your agent
+> definition). Docs only — do not change behavior.
+> When done, return the closing block (FILES_CHANGED / OPEN_THREADS /
+> DECISIONS / PR_DESCRIPTION).
+
+Wait for completion. Verify with `git -C <WT> diff --name-only` +
+`git -C <WT> diff <behavior files>` that only documentation surfaces changed
+(`readme/`, `README.rst`, `static/description/index.html`, docstring-only `.py`
+hunks, manifest `summary`/`description`); anything else → revert that hunk and
+re-spawn naming the violation. Append returns to the running lists; hold
+`PR_DESCRIPTION` for Phase 6.
+
+Report: "Documentation: <modules> — fragments updated, <n> diagrams, README regenerated."
+
+---
+
+### Phase 5: Demo GIF (MANDATORY)
 
 After the gate passes, record a demo GIF against this session (`<URL>`). **Do NOT delegate** — you need Chrome tools directly.
 
@@ -588,7 +620,7 @@ Report: "Demo GIF recorded."
 
 ---
 
-### Phase 5: Pull Request
+### Phase 6: Pull Request
 
 **First, walk the `pre-pr-checklist` skill** over the full diff — the
 repo's reviewer standard (the diff + any fixes are in the worktree `<WT>` —
@@ -619,20 +651,24 @@ Spawn a **general-purpose** subagent:
 >    Tags: `[IMP]` / `[FIX]` / `[ADD]` / etc. Imperative mood, header
 >    under 50 chars, task key in the BODY (never the header).
 > 4. Push: `git push -u origin <slug>`
-> 5. Create PR (title = the commit header, {{ ticket_prefix }} key in the body):
+> 5. Create PR (title = the commit header; body = the documenter's
+>    PR_DESCRIPTION below, verify the {{ ticket_prefix }} key is in it):
 >    ```
 >    gh pr create --base {{ odoo_version }} \
 >      --title "[TAG] module_name: short description" \
->      --body "<What / Why / Test plan; {{ ticket_prefix }}-XXX>"
+>      --body "<PR_DESCRIPTION>"
 >    ```
 > 6. Return PR URL and number
+>
+> PR_DESCRIPTION (from the documentation phase; if absent, write What / Why /
+> Test plan yourself): <PR_DESCRIPTION>
 
 Wait for completion. Collect PR URL and number. The code was already reviewed in the Phase-3 gate, so there is no post-PR review step — the PR ships clean.
 Report: "PR created: <URL>"
 
 ---
 
-### Phase 6: Memory Closure
+### Phase 7: Memory Closure
 
 After the pipeline completes — success, abort, or user-interrupted — close out memory state. **Non-negotiable**; skipping it leaves WIP entries stale and loses session history.
 
@@ -681,7 +717,7 @@ Read `$STATE`, find the line with `[WIP_ID]` created in Phase 0, and:
 
 #### Step 2: File OPEN_THREADs
 
-For each entry in `ALL_OPEN_THREADS` (accumulated across Phases 2–3):
+For each entry in `ALL_OPEN_THREADS` (accumulated across Phases 2–4):
 
 1. Read `$COUNTER` → `NEW_ID`, write `NEW_ID+1` back.
 2. Append to `## Open threads` in `$STATE`:
@@ -728,7 +764,7 @@ append AFTER existing content.
 
 #### Step 4: Final report
 
-> Phase 6: Memory closed
+> Phase 7: Memory closed
 > — journal entry written: $JOURNAL/YYYY-MM-DD.md
 > — WIP [WIP_ID] → <deleted / moved to Ready for review / marked BLOCKED>
 > — open threads filed: N (IDs: <list>)
@@ -760,13 +796,13 @@ append AFTER existing content.
 - Max 3 fix-and-retry loops in the Phase 3 gate
 - Always restart this session's service (`odoo-wt@<slug>.service`) after validation;
   the user's `odoo.service` and other sessions are never stopped
-- On abort, do Phase 6 memory closure but **keep the worktree** — do NOT run
+- On abort, do Phase 7 memory closure but **keep the worktree** — do NOT run
   `wt-stop.sh`; the env stays so work can resume, and teardown waits for the
-  user's explicit go (Phase 6 Step 0)
+  user's explicit go (Phase 7 Step 0)
 
 ## Reporting
 
-After each phase: `Phase X/6: <Name> — <STATUS> + 1-2 sentence summary`
+After each phase: `Phase X/7: <Name> — <STATUS> + 1-2 sentence summary`
 
 Final summary:
 ```
@@ -774,6 +810,7 @@ Final summary:
 - Task: <TASK-KEY> — <description>
 - Development: DONE — <files changed>
 - QC gate: PASS — <review summary> · tests green · test cases X/Y · <N fix loops>
+- Docs: <modules documented — fragments / diagrams / README>
 - Demo GIF: <attached>
 - PR: <URL>
 {% if tickets_mcp == 'odoo' %}
