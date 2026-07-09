@@ -26,7 +26,7 @@ if db_exists "$DB"; then
 fi
 
 DUMP="$(ls -1t "$BACKUP_DIR"/*.dump 2>/dev/null | head -1 || true)"
-[ -n "$DUMP" ] || { echo "ERROR: no dump in $BACKUP_DIR — {% if backup_s3_bucket %}run `nix run .#download-backup`{% else %}put a prod dump into backup/{% endif %} first" >&2; exit 1; }
+[ -n "$DUMP" ] || { echo "ERROR: no dump in $BACKUP_DIR — {% if backup_s3_bucket %}run \`nix run .#download-backup\`{% else %}put a prod dump into backup/{% endif %} first" >&2; exit 1; }
 [ -f "$CONF" ] || { echo "ERROR: $CONF missing — wt-start writes it before the restore" >&2; exit 1; }
 
 RESTORE_LOG="$WT_ENVROOT/$SLUG/pg_restore.log"

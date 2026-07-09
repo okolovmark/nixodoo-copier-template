@@ -18,7 +18,7 @@ CONF="$ENV_DIR/odoo.conf"
 
 bash "$WT_SCRIPT_DIR/wt-bootstrap.sh"
 ls "$BACKUP_DIR"/*.dump >/dev/null 2>&1 || {
-    echo "ERROR: no prod seed dump in $BACKUP_DIR — {% if backup_s3_bucket %}run `nix run .#download-backup`{% else %}put a prod dump into backup/{% endif %}, then retry" >&2; exit 1; }
+    echo "ERROR: no prod seed dump in $BACKUP_DIR — {% if backup_s3_bucket %}run \`nix run .#download-backup\`{% else %}put a prod dump into backup/{% endif %}, then retry" >&2; exit 1; }
 
 mkdir -p "$ENV_DIR" "$DATA_DIR/sessions" "$DATA_DIR/filestore"
 
