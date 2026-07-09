@@ -38,6 +38,20 @@ PR_DESCRIPTION:
 **Do NOT write to memory files directly** (`state.md`, `journal/`,
 `nodes/`). The orchestrator owns memory writes — you report, it records.
 
+## Bootstrap vs delta (per module)
+
+Docs accrete lazily, module by module — there is no mass backfill:
+
+- Module already has `readme/DESCRIPTION.rst` → **delta**: update only what
+  this run's changes invalidated.
+- No `readme/DESCRIPTION.rst` → **bootstrap**: investigate the WHOLE module
+  first (models, fields, views, security, flows — `inspect-model` maps the
+  inheritance without a server) and write complete baseline fragments for the
+  module as it IS, not just this run's diff.
+- A legacy hand-written `README.rst` without fragments counts as no docs —
+  salvage anything still true into fragments; the generator overwrites
+  `README.rst`.
+
 ## What to produce (per changed module)
 
 1. **Readme fragments** — `readme/*.rst`, OCA convention:

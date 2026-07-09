@@ -535,7 +535,10 @@ After the gate passes, spawn the **`documenter`** subagent:
 > add one for a new non-trivial data model/flow), fill missing docstrings on
 > new/changed public methods, set `__manifest__.py` summary/description if
 > missing or stale, then regenerate README.rst (command in your agent
-> definition). Docs only — do not change behavior.
+> definition). A changed module with no `readme/DESCRIPTION.rst` yet gets
+> BOOTSTRAPPED per your bootstrap rule: investigate the whole module and
+> write full baseline docs — docs accrete as modules get touched.
+> Docs only — do not change behavior.
 > When done, return the closing block (FILES_CHANGED / OPEN_THREADS /
 > DECISIONS / PR_DESCRIPTION).
 
