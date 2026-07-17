@@ -22,7 +22,10 @@ locked with uv/uv2nix.
   isolated worktree envs), `dev`/`review`/`documenter` agents, MCP servers config, a persistent
   **memory template** (journal / state / standup), and optional workflow skills:
   the **pipeline** orchestrator (task → dev → QC gate → docs → demo GIF → PR), **my-status**
-  (status posting, Teams) and **odoo-tickets** (ticket tracking in a prod Odoo)
+  (status posting, Teams), **odoo-tickets** (ticket tracking in a prod Odoo) and
+  **deploy-checks** (blast-radius classification of a change set + read-only
+  post-deploy invariant check: unbalanced postings, failed queue jobs, stuck
+  crons, negative stock)
 - Optional (asked during generation): custom addons repo wiring, S3 production-backup
   restore with **native Odoo neutralization** (`odoo neutralize` + dev fixups),
   SSH helpers for prod/test servers, OCA `queue_job` wiring

@@ -1,0 +1,78 @@
+---
+name: deploy-checks
+description: "Deploy risk tooling: blast-radius classification of an addons change set (high/medium/low risk to business documents) + post-deploy invariant check (read-only SQL via odoo shell: unbalanced postings, failed queue jobs, stuck crons, negative stock). Use before a deploy to tag its risk, after a deploy to verify invariants (T+0 and again ~T+60), or on demand to health-check a database."
+argument-hint: "[blast-radius <git-range> | invariants [since-timestamp]]"
+---
+
+# Deploy checks
+
+Two standalone scripts under `${{ project_dir_var }}/.claude/skills/deploy-checks/scripts/`.
+Wire them into your deploy procedure: blast radius decides how much post-deploy
+checking a change earns; the invariant check is that checking.
+
+## Blast radius — tag a change set before deploying
+
+```bash
+python3 .../scripts/blast-radius.py --repo src/{{ custom_repo_name }} --range origin/{{ odoo_version }}..HEAD
+```
+
+Prints one `MODULE <name>: <tier> -- <reasons>` line per touched module, then
+`BLAST_RADIUS=<high|medium|low>` (the max) for scripting.
+
+- **high** — code creating/mutating business documents (journal entries, stock
+  moves, payslips), raw SQL writes, `store=True` field definitions (schema
+  change + recompute during `-u`), migration scripts
+- **medium** — other server-side `.py`, `security/`, `data/`, manifests
+- **low** — views, reports, static assets, docs, tests, translations
+
+Content-aware mode (`--repo` + `--range`) scans the changed lines; from a bare
+PR file list use `--files-from -` (path heuristics only — weaker, says so in
+the output). Project-specific high-risk models: `BLAST_HIGH_MODELS=my.model,…`.
+
+Recommended policy: **high** → run the invariant check at T+0 and again ~T+60
+after the deploy; **medium** → T+0; **low** → deploy as usual.
+
+## Invariant check — verify the database after deploying
+
+Read-only. Runs inside `odoo shell`, so it needs no ports or credentials beyond
+a config file. Local database:
+
+```bash
+INV_SINCE="<deploy time UTC, YYYY-MM-DD HH:MM:SS>" \
+  odoo shell -c ${{ project_dir_var }}/odoo.conf --no-http \
+  < .../scripts/invariant-check.py
+```
+{% if prod_ssh_host %}
+
+Against production (script stays local, streams over stdin; `--no-http` is
+mandatory next to a live service):
+
+```bash
+cat .../scripts/invariant-check.py .../scripts/invariant_local.py | \
+  ssh -F "${{ project_dir_var }}/.ssh/config" prod \
+  'INV_SINCE="..." python <odoo-bin> shell -c <conf> -d <db> --no-http'
+```
+
+(`INV_*` must be set on the REMOTE side of the ssh command, as above.)
+{% endif %}
+
+Core checks — each prints `INVARIANT <name>: PASS|FAIL|WARN|SKIP -- detail`:
+
+| check | severity | meaning |
+|---|---|---|
+| `unbalanced_moves` | FAIL | posted journal entries since `INV_SINCE` that don't balance |
+| `failed_queue_jobs` | FAIL | new `queue.job` failures since `INV_SINCE` (skips if not installed) |
+| `stuck_crons` | WARN | active crons overdue > `INV_CRON_GRACE_HOURS` (default 2) |
+| `negative_internal_stock` | WARN | internal-location on-hand freshly negative since `INV_SINCE` |
+
+Callers grep `": FAIL"` / `": WARN"`. `INV_SKIP=name,name` disables checks —
+e.g. skip `negative_internal_stock` on projects with a custom availability
+model and encode the real rule in `invariant_local.py` instead.
+
+## Project-local invariants
+
+`scripts/invariant_local.py` is **project-owned** (edit it, keep your version on
+`copier update`). It is appended after the core script on the same stdin
+(`cat core local | odoo shell …`), so `sql()` / `report()` / `check()` /
+`SINCE` are already defined. Encode the guarantees specific to your modules —
+the checks that would page you if they ever went false.
