@@ -1,0 +1,74 @@
+---
+name: domain-modeling
+description: "Maintain the project domain model: CONTEXT.md glossary (canonical business terms mapped to Odoo models) and docs/adr/ decision records. Use when pinning down terminology, recording a hard-to-reverse decision, or when the grill/pipeline skills resolve terms or decisions."
+---
+
+# Domain Modeling
+
+The project's shared language and decision history. *Reading* `CONTEXT.md` is a one-line habit any agent does before work; invoke this skill when the model *changes* — a term crystallizes or a decision locks.
+
+## Files
+
+| File | Content |
+|------|---------|
+| `${{ project_dir_var }}/CONTEXT.md` | glossary — pure vocabulary; no implementation details, no spec, no scratch notes |
+| `${{ project_dir_var }}/docs/adr/NNNN-slug.md` | one decision each, sequential numbering (next = highest existing + 1) |
+
+Both created lazily — on the first resolved term / first qualifying decision. Both written in English.
+
+## CONTEXT.md format
+
+```md
+# {Project} Domain Language
+
+{One or two sentences: what business this system runs.}
+
+## Language
+
+**Term**:
+One or two sentences: what it IS (not what it does).
+_Model_: `model.technical.name` or `model.field_name` — omit if none
+_Avoid_: overloaded synonyms
+```
+
+Rules:
+
+- **Opinionated.** One canonical word per concept; the losing synonyms go under `_Avoid_`.
+- **`_Model_` maps the business term to its Odoo model/field** — the fastest jargon decoder in a multi-module codebase. When the term is NOT the model a reader would guess, say so explicitly ("NOT `sale.order`").
+- **Tight definitions.** One or two sentences max.
+- **Only project-specific concepts.** Generic Odoo/programming vocabulary (picking, quant, cron) enters only if this project redefines it.
+- Group terms under subheadings when natural clusters emerge; a flat list is fine.
+
+## During any design discussion
+
+- **Challenge against the glossary.** A term used contrary to `CONTEXT.md` → call it out immediately: "the glossary says X means A; you seem to mean B — which is it?"
+- **Sharpen fuzzy language.** Vague or overloaded word → propose a canonical term and record the losers under `_Avoid_`.
+- **Stress-test with concrete scenarios.** Invent edge cases that force precise boundaries between neighboring concepts.
+- **Cross-reference with code.** When someone states how something works, verify against the code (`inspect-model` skill, grep) or read-only DB/MCP queries. Surface contradictions instead of absorbing them.
+- **Update `CONTEXT.md` inline** the moment a term resolves — never batch to the end of the session.
+- **Offer ADRs sparingly** — the three-part test below.
+
+## ADR format
+
+Often a single paragraph:
+
+```md
+# {Short title of the decision}
+
+{1-3 sentences: context, the decision, why — name the rejected
+alternative and the reason it lost.}
+
+{{ ticket_prefix }}-XXX
+```
+
+Optional, only when genuinely valuable: a `Status:` line (`proposed | accepted | superseded by NNNN`), Considered Options, Consequences.
+
+**Offer an ADR only when ALL three hold:**
+
+1. **Hard to reverse** — changing the decision later costs real work
+2. **Surprising without context** — a future reader would ask "why on earth?"
+3. **A real trade-off** — genuine alternatives existed; one won for specific reasons
+
+Qualifies: architectural shape, integration patterns between modules/companies, technology choices with lock-in, boundary and scope no-s, deliberate deviations from the obvious Odoo path, constraints invisible in the code, rejections that would otherwise be re-proposed in six months.
+
+Division of labor: `readme/*.puml` diagrams state what the system IS (pure facts, no decision history); ADRs are where the WHY lives.

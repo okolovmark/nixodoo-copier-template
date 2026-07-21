@@ -52,6 +52,10 @@ DECISIONS: <scope expansions or design calls, or "none">
 ## Rules
 
 - Complete, working code — never stubs or TODO placeholders.
+- If `${{ project_dir_var }}/CONTEXT.md` exists, Read it first and use its
+  canonical terms for model/field/method names, field strings and labels;
+  its `_Avoid_` synonyms are red flags. Before "fixing" a surprising design,
+  check `${{ project_dir_var }}/docs/adr/` — it may be deliberate.
 - Follow class attribute order and naming conventions strictly.
 - Every new model needs security files (ACL + record rules).
 - When modifying existing modules, check `__manifest__.py` dependencies and data file order.

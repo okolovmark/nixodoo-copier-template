@@ -19,7 +19,11 @@ locked with uv/uv2nix.
 - **Claude Code integration** (optional): `CLAUDE.md`, guard hooks (read-only OCA/core,
   dangerous-command blocker, ruff auto-format), Odoo dev skills (code patterns, style,
   testing, commit conventions, pre-PR checklist, model inspector, pdb debugging,
-  isolated worktree envs), `dev`/`review`/`documenter` agents, MCP servers config, a persistent
+  isolated worktree envs, a **grill** requirements interview — one question at a
+  time, decisions routed to their owner, explicit assumptions — and
+  **domain-modeling**: a `CONTEXT.md` glossary of canonical terms mapped to Odoo
+  models + `docs/adr/` decision records, both maintained as design conversations
+  resolve), `dev`/`review`/`documenter` agents, MCP servers config, a persistent
   **memory template** (journal / state / standup), and optional workflow skills:
   the **pipeline** orchestrator (task → dev → QC gate → docs → demo GIF → PR), **my-status**
   (status posting, Teams), **odoo-tickets** (ticket tracking in a prod Odoo) and

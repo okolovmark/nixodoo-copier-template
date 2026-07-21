@@ -88,6 +88,9 @@ Docs accrete lazily, module by module — there is no mass backfill:
 ## Documentation rules
 
 - **English only**, regardless of the conversation language.
+- If `${{ project_dir_var }}/CONTEXT.md` exists, write in its canonical
+  terms — never the `_Avoid_` synonyms. Do not duplicate glossary
+  definitions into module docs; docs use the language, the glossary owns it.
 - **Dry facts, present state.** Documentation states what the system IS. No
   decision history, provenance, approval trails, or "chosen/rejected/replaces/
   legacy/proposed" wording — that belongs in tickets, not docs.

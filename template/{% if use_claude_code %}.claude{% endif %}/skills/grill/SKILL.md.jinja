@@ -1,0 +1,71 @@
+---
+name: grill
+description: "Relentless requirements interview BEFORE building: one question at a time with a recommended answer, decisions routed to their owner (user vs stakeholder), an explicit assumptions ledger; resolved terms and decisions written down via domain-modeling. Use when the user asks to be grilled about a plan, or before any feature-shaped change; the pipeline invokes it as its Phase-1 gate."
+argument-hint: "[task key / topic / plan to stress-test]"
+---
+
+# Grill
+
+Interview the user about the change until shared understanding is reached, then STOP — do not build until they confirm. Misalignment is the most common failure mode in development: the expensive rework is never the code, it's the question that was never asked.
+
+## Session rules
+
+- **One question at a time.** Wait for the answer before the next. A questionnaire dump is bewildering.
+- **Recommend an answer with every question** — your best guess plus why, so the user can just say "yes".
+- **Facts are looked up, decisions are asked.** Anything the environment can answer — code (`inspect-model`, grep), read-only DB/MCP queries, git history, memory journals — look it up and say what you checked. Only genuine decisions go to a human.
+- **Order by blast radius.** Ask first the questions whose wrong answer rebuilds the engine: the domain model itself, timing/anchoring of money and goods, data ownership, scope boundaries. Naming and UI come last. Walk each branch of the decision tree, resolving dependencies before going deeper.
+- **Stress-test with concrete scenarios.** For each mechanism, invent a specific case and narrate it end to end ("a component arrives by sea in 28 days — when does manufacturing start? when is the supplier paid?"). A fuzzy answer to a concrete scenario is the misalignment signal.
+- **The happy path is not enough.** Probe boundaries: multi-company, partial/zero quantities, cancellations and reversals, backdated records, permissions.
+
+## Decision routing
+
+Every open question has an owner. Route explicitly:
+
+- **Fact** → look it up; never ask the user for what the environment knows.
+- **The user's decision** → ask, one at a time. Multiple choice is fine — always leave a free-form escape.
+- **A stakeholder's decision** (product owner, director, accountant…) → do NOT guess and do NOT press the user to guess. Collect into a **Questions for \<stakeholder\>** list: free-form, concrete-scenario phrasing suited to a whiteboard session or a chat message — never multiple-choice. The user's memory (e.g. the `user_identity` node) records who the stakeholders are and how to address them.
+- **Whiteboard photos and free-form braindumps are first-class answers.** Parse them, restate your interpretation, get it confirmed — then continue the grill from what they settled.
+
+## Assumptions ledger
+
+A stakeholder question that can't be answered now either **blocks** the work or becomes an **explicit assumption**:
+
+```
+ASSUMPTION: <what we assume> — blast radius if wrong: <what gets rebuilt>
+```
+
+The user signs off on every assumption before building starts. No silent assumptions — an unstated one baked into an engine is how weeks of rework happen.
+
+## Write the model down as you go
+
+Apply the `domain-modeling` skill inline: each term that resolves → `CONTEXT.md` immediately (not batched); each locked hard-to-reverse decision → offer an ADR (three-part test). The grill must leave a paper trail — alignment that lives only in the conversation dies with it.
+
+## Output — Alignment Summary
+
+When the tree is walked, produce:
+
+```
+## Alignment Summary — <topic>
+**In scope:** …
+**Out of scope:** … (the explicit no-s)
+**Decisions:** <one line each — what + owner>
+**Assumptions:** <ledger entries, signed off; or "none">
+**Questions for <stakeholder>:** <list; or "none">
+**Glossary/ADR updates:** <CONTEXT.md terms touched, ADRs written; or "none">
+```
+
+Then ask: "Did I understand correctly — do we build this?" **Do not start building until the user confirms.**
+{% if tickets_mcp == 'odoo' %}
+
+## Persistence to the ticket
+
+When the grill runs against a tracked task, persist per `odoo-tickets`:
+
+- every Q&A round → the task's `questions` / `answers` Html fields (parallel numbered lists, append — never overwrite earlier rounds)
+- a scope change or settled design call → a `Requirement Change` / `Design Decision` internal note
+- the stakeholder-questions list and the assumptions ledger → into the Technical Solution tab or a note, so they live on the ticket, not only in chat
+{% endif %}
+
+## In the pipeline
+
+Pipeline Phase 1 invokes this as a **gate** for feature-shaped tasks — new module, new model/engine/report, redesign, cross-module flow, anything whose description leaves the domain model underspecified. The pipeline PAUSES until the Alignment Summary is confirmed. Mechanical tasks (typo, one-field change, clear bugfix with a reproduction) skip the grill — but a real ambiguity discovered later re-opens it for one focused round, persisted the same way.

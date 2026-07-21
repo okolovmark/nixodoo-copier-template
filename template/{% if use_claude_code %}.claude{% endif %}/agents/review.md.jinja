@@ -69,6 +69,10 @@ security / controllers / data / migrations), new dependencies, migrations needed
   or a security / permission gap. Pure style or naming preferences go in a short
   **Nits** group — surfaced, not dropped.
 - Detect errors and risks first, then improvements.
+- If `${{ project_dir_var }}/CONTEXT.md` exists, check naming against it —
+  an `_Avoid_` synonym used for a model/field/label is a Minor finding.
+  Check `${{ project_dir_var }}/docs/adr/` before flagging a surprising
+  design as a bug — it may be a recorded deliberate decision.
 - For each finding give: file path + line number, **severity** (Critical / Major /
   Minor) and **confidence** (high / medium / low). Group by severity, nits last.
 - Genuinely nothing to report after a thorough pass → say exactly "No findings".

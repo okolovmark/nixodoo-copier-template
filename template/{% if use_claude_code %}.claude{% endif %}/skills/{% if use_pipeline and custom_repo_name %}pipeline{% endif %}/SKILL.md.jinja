@@ -190,6 +190,13 @@ having higher priority than your defaults.
 ### Rule 3 — Bug-fix workflow
 <body of feedback_workflow.md>
 
+### Rule 4 — Shared language
+If `${{ project_dir_var }}/CONTEXT.md` exists, Read it before starting.
+Use its canonical terms for model/field/method names, field strings,
+labels and docs; the `_Avoid_` synonyms are red flags. Decision records
+live in `${{ project_dir_var }}/docs/adr/` — do not re-litigate or
+silently "fix" what an ADR records as deliberate.
+
 ### Return protocol
 
 At the end of your task, return a structured closing block:
@@ -281,19 +288,31 @@ Before spawning any subagent:
      *sent* status are a mandatory pair — an unsent status blocks the run.
 {% endif %}
 
-2. **Clarify ambiguities — and capture the Q&A**: if the Description (or the
-   codebase analysis in the next step) leaves real implementation ambiguities,
-   ask the user before writing code. **Persist every clarifying round to the
-   task's Technical Solution tab** per `odoo-tickets` (`questions` / `answers`
-   Html fields):
+2. **Grill gate — align before building.** Classify the task:
+   - **Feature-shaped** (new module, new model/engine/report, redesign,
+     cross-module flow, anything whose Description leaves the domain model
+     underspecified) → run the **`grill` skill** now and **PAUSE the pipeline
+     until the user explicitly confirms its Alignment Summary** — same
+     blocking semantics as the status gate above. Never spawn `dev` on an
+     unconfirmed understanding; a wrong domain model costs an engine rework,
+     not a review fix.
+   - **Mechanical** (typo, one-field change, clear bugfix with a
+     reproduction) → skip the grill; ask only if a real ambiguity surfaces —
+     and a real ambiguity discovered in ANY later phase re-opens a focused
+     grill round.
+
+   **Persist every clarifying round to the task's Technical Solution tab**
+   per `odoo-tickets` (`questions` / `answers` Html fields):
    - `questions` ← the questions you asked, `answers` ← the user's answers, as
      parallel numbered lists so Q1↔A1.
    - Append to any existing content; never overwrite earlier rounds.
-   - This applies to **every** clarifying exchange about the task — here, and
-     anytime later in the pipeline (e.g. mid-development feedback), not just the
-     first round.
+   - This applies to **every** clarifying exchange about the task — the grill
+     rounds here, and anything later in the pipeline (e.g. mid-development
+     feedback), not just the first round.
    - When an answer changes scope or settles a design choice, also post the
      matching internal note (`Requirement Change` / `Design Decision`).
+   - The grill's stakeholder-questions list and assumptions ledger go to the
+     ticket too (Technical Solution or a note) — never chat-only.
 
 3. **Enrich Technical Solution** — when the `solution` tab is empty, under ~50 words, or lacks implementation specifics (just restates the description):
    a. Analyze the Description tab content **and any answers captured in the previous step**
@@ -374,7 +393,10 @@ Before spawning any subagent:
 
 {% else %}
 0. **Read the task** — gather requirements from the user's description (and any
-   linked docs); ask clarifying questions in chat until the scope is clear.
+   linked docs). For a **feature-shaped** task (new module, new
+   model/engine/report, redesign, cross-module flow) run the **`grill` skill**
+   and PAUSE until the user confirms its Alignment Summary; for a mechanical
+   task ask clarifying questions in chat only if the scope is unclear.
 {% if status_mcp == 'teams' %}
 
 1. **Send the Teams status — HARD GATE: do NOT start Phase 2 until the status
@@ -404,7 +426,7 @@ Before spawning any subagent:
    `develop` are never touched. (Prereq: a seed dump in `backup/` — if `wt-start`
    reports none, ask the user to {% if backup_s3_bucket %}run `nix run .#download-backup` once{% else %}drop a prod dump into `backup/`{% endif %} first.)
 
-Report: "Starting pipeline for: <TASK-KEY> — <task summary>".{% if tickets_mcp == 'odoo' %} If clarifying questions were asked, add "N clarifying Q&A captured to the Technical Solution tab." If Technical Solution was enriched, add "Technical Solution auto-generated and written to the task. Please review." If Test Cases were generated, add "N test cases written to Test Cases tab."{% endif %}
+Report: "Starting pipeline for: <TASK-KEY> — <task summary>". Add the grill-gate outcome: "Grill gate: Alignment Summary confirmed (N questions, M assumptions)" or "Grill gate: skipped (mechanical task)".{% if tickets_mcp == 'odoo' %} If clarifying questions were asked, add "N clarifying Q&A captured to the Technical Solution tab." If Technical Solution was enriched, add "Technical Solution auto-generated and written to the task. Please review." If Test Cases were generated, add "N test cases written to Test Cases tab."{% endif %}
 
 ---
 
@@ -733,6 +755,16 @@ For each entry in `ALL_OPEN_THREADS` (accumulated across Phases 2–4):
 
 Collect the new IDs assigned — cite them in the journal.
 
+#### Step 2b: Record ADR-worthy decisions
+
+Run `ALL_DECISIONS` (and the grill's Alignment Summary, if Phase 1 grilled)
+through the `domain-modeling` three-part test: hard to reverse + surprising
+without context + a real trade-off. Each qualifying decision → write
+`${{ project_dir_var }}/docs/adr/NNNN-<slug>.md` per the skill's format
+(task key inside). Most runs produce zero ADRs — that is the intended shape.
+Also flush any glossary terms that resolved during the run but were not yet
+written to `${{ project_dir_var }}/CONTEXT.md`.
+
 #### Step 3: Write session block to journal
 
 Append (do NOT overwrite) to `$JOURNAL/YYYY-MM-DD.md`, following `conventions_journal_format` **exactly** — fixed section names and order keep the greps and the standup working:
@@ -771,6 +803,7 @@ append AFTER existing content.
 > — journal entry written: $JOURNAL/YYYY-MM-DD.md
 > — WIP [WIP_ID] → <deleted / moved to Ready for review / marked BLOCKED>
 > — open threads filed: N (IDs: <list>)
+> — ADRs written: <list of docs/adr files, or "none">; CONTEXT.md: <terms added, or "unchanged">
 > — worktree: kept at <WT> (not dropped — ask the user before teardown)
 > — pipeline complete
 
@@ -784,7 +817,10 @@ append AFTER existing content.
    append the Q→A pair to the task's `questions` / `answers` fields per
    `odoo-tickets` (Phase 1 step 2 convention) — don't leave it only in chat
 {% endif %}
-3. **Determine impact**: code change -> spawn `dev`, re-run the Phase 3 gate
+3. **Determine impact**: a *requirement change* (the domain model shifted, not
+   just a bug) → run a focused `grill` round first and update
+   `CONTEXT.md`/ADRs per `domain-modeling`; a code change -> spawn `dev`,
+   re-run the Phase 3 gate
 4. **Apply the change** via the `dev` agent
 {% if tickets_mcp == 'odoo' %}
 5. **Update checklist** in Odoo task if steps changed
