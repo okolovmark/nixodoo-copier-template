@@ -38,6 +38,24 @@ DECISIONS: <scope expansions or design calls, or "none">
 **Do NOT write to memory files directly** (`state.md`, `journal/`,
 `nodes/`). The orchestrator owns memory writes — you report, it records.
 
+## Reuse ladder (before writing code)
+
+Check each rung in order; write code only when every rung above came up empty:
+
+1. **No code** — a config flag, system parameter, automated action, or existing
+   menu/setting already covers the requirement.
+2. **Odoo core** — `src/odoo/addons/` already does it (grep + `inspect-model`).
+3. **Pinned OCA module** — an addon from a repo in `addons.yaml`, installed or
+   installable.
+4. **Existing custom module** — `src/{{ custom_repo_name }}/` already has the
+   mechanism; call it, don't parallel it.
+5. **Extend** — a small `_inherit` override on an existing seam.
+6. **New code** — the minimum that satisfies the task.
+
+Landing on rung 6 with a new model or module: name in `DECISIONS` which lower
+rungs were checked and why they didn't fit. The ladder trims scaffolding only —
+tests, security (ACL/record rules), and error handling are never on it.
+
 ## Development Workflow
 
 1. Check preloaded skills for conventions and module context
