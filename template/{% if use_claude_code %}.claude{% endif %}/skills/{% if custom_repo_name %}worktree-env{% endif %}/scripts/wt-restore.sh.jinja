@@ -30,11 +30,18 @@ DUMP="$(ls -1t "$BACKUP_DIR"/*.dump 2>/dev/null | head -1 || true)"
 [ -f "$CONF" ] || { echo "ERROR: $CONF missing — wt-start writes it before the restore" >&2; exit 1; }
 
 RESTORE_LOG="$WT_ENVROOT/$SLUG/pg_restore.log"
-echo "STATUS: restoring $DB from $(basename "$DUMP") … (errors: $RESTORE_LOG)"
+# Parallel restore, deliberately capped lower than the main env: worktree
+# sessions are meant to run side by side, and every job holds a connection on
+# the SHARED cluster alongside each session's Odoo workers. Half the cores,
+# max 4. PG_RESTORE_JOBS overrides (1 = the old serial behaviour).
+RESTORE_JOBS="${PG_RESTORE_JOBS:-$(( $(nproc 2>/dev/null || echo 4) / 2 ))}"
+if [ "$RESTORE_JOBS" -lt 1 ]; then RESTORE_JOBS=1; fi
+if [ "$RESTORE_JOBS" -gt 4 ]; then RESTORE_JOBS=4; fi
+echo "STATUS: restoring $DB from $(basename "$DUMP") … ($RESTORE_JOBS jobs, errors: $RESTORE_LOG)"
 $PSQL -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='$DB' AND pid<>pg_backend_pid();" >/dev/null 2>&1 || true
 $PSQL -d postgres -c "DROP DATABASE IF EXISTS $DB;" >/dev/null
 $PSQL -d postgres -c "CREATE DATABASE $DB OWNER {{ db_user }};" >/dev/null
-pg_restore --clean --no-acl --no-owner -h localhost -p {{ postgres_port }} -U {{ db_user }} -d "$DB" "$DUMP" 2>"$RESTORE_LOG" || true
+pg_restore --clean --no-acl --no-owner -j "$RESTORE_JOBS" -h localhost -p {{ postgres_port }} -U {{ db_user }} -d "$DB" "$DUMP" 2>"$RESTORE_LOG" || true
 
 [ "$($PSQL -d "$DB" -tAc "SELECT count(*) FROM res_users" 2>/dev/null)" -gt 0 ] 2>/dev/null \
     || { echo "ERROR: restore incomplete (res_users empty) — see $RESTORE_LOG" >&2; exit 1; }

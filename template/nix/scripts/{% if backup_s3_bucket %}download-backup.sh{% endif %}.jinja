@@ -113,11 +113,17 @@ if [ "$(ls -A backup)" ]; then
         PG_CONN_HOST="$PGHOST"
         export PGPASSWORD="$PGPASSWORD"
     fi
-    echo "Restoring backup to database '$PGDATABASE'... (errors: $PWD/backup/pg_restore.log)"
+    # Parallel restore: -j spreads table loads and index builds over cores.
+    # One job per core, capped at 8 — past that the single dump file is the
+    # bottleneck, and every job holds its own connection. PG_RESTORE_JOBS
+    # overrides (1 = the old serial behaviour).
+    RESTORE_JOBS="${PG_RESTORE_JOBS:-$(nproc 2>/dev/null || echo 4)}"
+    if [ "$RESTORE_JOBS" -gt 8 ]; then RESTORE_JOBS=8; fi
+    echo "Restoring backup to database '$PGDATABASE'... ($RESTORE_JOBS jobs, errors: $PWD/backup/pg_restore.log)"
     env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='$PGDATABASE' AND pid<>pg_backend_pid();" >/dev/null 2>&1 || true
     env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d postgres -c "DROP DATABASE IF EXISTS $PGDATABASE;"
     env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d postgres -c "CREATE DATABASE $PGDATABASE OWNER $PGUSER;"
-    pg_restore --clean --no-acl --no-owner -h "$PG_CONN_HOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" backup/*.dump 2>"$PWD/backup/pg_restore.log" || true
+    pg_restore --clean --no-acl --no-owner -j "$RESTORE_JOBS" -h "$PG_CONN_HOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" backup/*.dump 2>"$PWD/backup/pg_restore.log" || true
     if ! [ "$(env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d "$PGDATABASE" -tAc "SELECT count(*) FROM res_users" 2>/dev/null)" -gt 0 ] 2>/dev/null; then
         echo "ERROR: restore incomplete (res_users empty) — see $PWD/backup/pg_restore.log" >&2
         exit 1
