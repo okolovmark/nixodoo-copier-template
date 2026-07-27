@@ -59,7 +59,8 @@ const fmtUsd = (n) => `$${n.toFixed(n >= 100 ? 0 : n >= 10 ? 1 : 2)}`;
 // the transcripts ourselves: the main session file PLUS every subagent file in
 // <session>/subagents/ (subagents run as separate sessions, so their usage is
 // only here). Published per-MTok rates; cache write = 1.25x (5m) / 2x (1h) of
-// input, cache read = 0.1x. Opus 4.x 1M context is standard-priced (no premium).
+// input, cache read = 0.1x. Opus 4.x/5 1M context is standard-priced (no
+// premium); Opus 5 keeps Opus 4.8 pricing, so the `opus` row covers both.
 const PRICES = {
   opus: { in: 5, out: 25, cw5: 6.25, cw1h: 10, cr: 0.5 },
   sonnet: { in: 3, out: 15, cw5: 3.75, cw1h: 6, cr: 0.3 },
@@ -71,7 +72,7 @@ function rateFor(model = "") {
   if (m.includes("haiku")) return PRICES.haiku;
   if (m.includes("sonnet")) return PRICES.sonnet;
   if (m.includes("fable") || m.includes("mythos")) return PRICES.fable;
-  return PRICES.opus; // opus-4.x and unknown default
+  return PRICES.opus; // opus 4.x/5 and unknown default
 }
 function priceLine(o) {
   const u = o.message?.usage;
