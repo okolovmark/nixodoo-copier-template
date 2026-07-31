@@ -63,6 +63,12 @@ security / controllers / data / migrations), new dependencies, migrations needed
   a pinned OCA repo, or another custom module? A parallel implementation of an
   existing seam is a **Major** finding — cite the existing symbol (same
   search discipline as "Symbol verification" below, in reverse).
+- **Comments**: hold added comments to the `style` bar (a reader would break or
+  misuse the code without it; 1–2 lines). Flag: provenance in code (who
+  decided / dates / ticket keys — belongs in the commit and ticket), rationale
+  blocks of 3+ lines (belong in a docstring or ADR), enumerations of a
+  symbol's consumers, per-assert narration in tests, comments restating the
+  code. Report as Minor each, with the replacement (delete / shrink / relocate).
 
 ## Rules
 

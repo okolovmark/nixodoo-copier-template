@@ -77,22 +77,38 @@ description: "Odoo {{ odoo_version }} code style and conventions for {{ project_
 
 ## Docstrings & Comments
 
-- **Comments answer *why*, code answers *what*.** Write a comment only to
-  explain why the code is this way and not the obvious alternative — a
-  non-obvious constraint, gotcha, or deliberate trade-off. The code itself must
-  say *what* it does through naming and structure; if a comment only restates
-  the line below it, delete the comment and fix the names instead.
+- **Comments answer *why*, code answers *what*.** The code must say *what* it
+  does through naming and structure; if a comment only restates the line below
+  it, delete the comment and fix the names instead.
+- **The bar for an inline comment**: without it, a competent reader would
+  break the code ("fixing" something deliberate) or misuse it — a hidden
+  constraint, an invariant, a deliberate deviation from the obvious approach.
+  Context that is merely nice to know does not pass the bar; most correct code
+  needs no comment at all.
+- **Budget: 1–2 lines.** A why that needs more belongs in the method docstring,
+  a readme fragment or an ADR — never a paragraph over a line of code. More
+  than one rationale block in a method is a smell: the design carrier (docstring
+  / ADR) should hold the story, not the method body.
+- **Placement ladder**: *what* → names and structure; *local, load-bearing why*
+  → 1–2-line comment; *design-level why* → docstring / readme / ADR; *who
+  decided, when, which ticket* → commit message and ticket, never code. Don't
+  enumerate a constant's or helper's consumers — grep answers that, and such
+  lists rot silently.
 - **No narration, no dead comments**: don't label what the next line plainly
   does (`# loop over orders`, `# set flag to True`, `# return result`), and
   don't leave commented-out code in the diff.
+- **Tests**: the test name and assert messages carry the intent. Comment only
+  genuinely non-obvious fixture setup; never per-assert explanations or
+  step-by-step narration.
+- **Don't inherit density.** "Match the surrounding style" applies to naming
+  and idiom, not to comment volume — an over-commented neighbouring module is
+  not a license to match it. Apply this section's bar regardless.
 - Terse, **non-obvious only**. Cut numbered "Owns N responsibilities" lists,
   ALL-CAPS rules ("NEVER", "MUST"), RST double-backticks, narrative chains
   explaining trivial behavior.
-- Keep: hidden constraints, invariants, why-this-not-the-obvious-rewrite.
-- 2-3 lines max. If the gotcha doesn't fit in 3 lines, it's probably padded.
 - Single backticks or no formatting in prose. No ALL-CAPS for emphasis.
-- When in doubt, delete the docstring. Project favors no module docstring +
-  brief inline comments at non-obvious points only.
+- When in doubt, delete the docstring/comment. Project favors no module
+  docstring + brief inline comments at non-obvious points only.
 
 ## Model Class Attribute Order
 
