@@ -121,6 +121,10 @@ uvx copier update --trust
   own if you prefer.
 - `postgres-mcp` in `.mcp.json` runs with `--access-mode=unrestricted` — it
   targets the **local dev database** only (`DATABASE_URI` from `.env`).
+- `postgres-mcp` and `mcp-pdb` run with `--with 'mcp<2'`: both import
+  `mcp.server.fastmcp`, which the `mcp` SDK dropped in 2.0.0, and neither caps
+  its own dependency. The `odoo` server needs no pin — it goes through the
+  `fastmcp` package, which caps `mcp` itself.
 
 ## License
 

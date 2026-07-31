@@ -13,7 +13,7 @@
       "command": "bash",
       "args": [
         "-c",
-        "source .env && uvx postgres-mcp --access-mode=unrestricted $DATABASE_URI"
+        "source .env && uvx --with 'mcp<2' postgres-mcp --access-mode=unrestricted $DATABASE_URI"
       ]
     },
     "mcp-pdb": {
@@ -22,6 +22,8 @@
       "args": [
         "--from",
         "mcp-pdb==0.4.0",
+        "--with",
+        "mcp<2",
         "mcp-pdb"
       ]
     }{% if status_mcp == 'teams' %},
