@@ -10,7 +10,9 @@ locked with uv/uv2nix.
 - **Odoo 16.0 / 17.0 / 18.0 / 19.0**, **Python 3.10–3.13**, **PostgreSQL 13–17** — picked at
   generation time; every Odoo version runtime-verified end-to-end (clone → lock → build → `-i base`)
 - Nix flake with three installable toolchains (`dev-server`, `test-server`, `prod-server`):
-  wrapped `odoo`, `psql`/`pg_dump`/... bound to the project cluster, `ruff`, `uv`, `ccze`
+  wrapped `odoo`, `psql`/`pg_dump`/... bound to the project cluster, `ruff`, `uv`, `ccze`;
+  `dev-server` runs on a python env carrying the pyproject `dev` extras (`debugpy`), so an
+  editor's debug adapter and the Odoo process it debugs share one interpreter
 - Pinnable source management: `repos.yaml` (odoo) + `addons.yaml` (OCA/custom addon repos,
   branch- or commit-pinned) with an addons symlink farm builder
 - Generated configs: `.env`, `odoo.conf` (random master password), nginx reverse proxy,
