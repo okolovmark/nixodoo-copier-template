@@ -6,7 +6,9 @@
     "program": "$ZED_WORKTREE_ROOT/src/odoo/odoo-bin",
     "args": [
       "--config=$ZED_WORKTREE_ROOT/odoo.conf",
-      "--dev=reload,qweb,werkzeug,xml",
+      // No `reload`: the reloader re-execs the process and the debugger loses it
+      // ("process exited before debugger attached").
+      "--dev=qweb,werkzeug,xml",
       "--workers=0",
       "--logfile=/dev/stdout",
     ],

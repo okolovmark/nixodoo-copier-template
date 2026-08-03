@@ -28,6 +28,21 @@ The project ships `odools.toml` (language-server config: odoo path, addons
 paths, diagnostics filter) and `.zed/debug.json` (debugpy launch config for
 the Odoo server).
 
+Point Zed's debug adapter at the dev-server python, which ships `debugpy`, so
+adapter and debuggee run on one interpreter: Zed's own managed adapter venv
+cannot be created on Nix (`python -m venv` fails at `ensurepip`), and a `uvx`
+adapter never attaches because it injects a different python into the debuggee.
+In Zed settings (`~/.config/zed/settings.json`), with `$HOME` spelled out:
+
+```json
+"dap": {
+  "Debugpy": {
+    "binary": "/home/<you>/.nix-profile/bin/python",
+    "args": ["-m", "debugpy.adapter"]
+  }
+}
+```
+
 {% endif %}
 {% if use_claude_code %}
 ### Claude Code CLI installation
