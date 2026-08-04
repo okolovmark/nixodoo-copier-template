@@ -28,20 +28,25 @@ The project ships `odools.toml` (language-server config: odoo path, addons
 paths, diagnostics filter) and `.zed/debug.json` (debugpy launch config for
 the Odoo server).
 
-Point Zed's debug adapter at the dev-server python, which ships `debugpy`, so
-adapter and debuggee run on one interpreter: Zed's own managed adapter venv
-cannot be created on Nix (`python -m venv` fails at `ensurepip`), and a `uvx`
-adapter never attaches because it injects a different python into the debuggee.
-In Zed settings (`~/.config/zed/settings.json`), with `$HOME` spelled out:
+**Debugger setup.** Select `./.venv` as the worktree's Python toolchain (the
+environment picker in the status bar); `nix run .#setup-dev` creates it. Zed
+builds its own debugpy adapter by running `<toolchain python> -m venv` and
+installing debugpy with that venv's pip, which the project env cannot serve - it
+is itself a venv, and a venv over a venv sends `ensurepip` into the read-only
+nix store ("Failed to create base virtual environment"). `.venv` sits over the
+base interpreter and has no such problem. The debugged Odoo process still runs
+on the project env: `.zed/debug.json` sets `"python": "python"`, which resolves
+through PATH to `~/.nix-profile/bin/python`.
 
-```json
-"dap": {
-  "Debugpy": {
-    "binary": "/home/<you>/.nix-profile/bin/python",
-    "args": ["-m", "debugpy.adapter"]
-  }
-}
-```
+Two things that cost hours if unknown:
+
+- **Restart Zed after changing the toolchain.** Zed caches the adapter-venv
+  result for the lifetime of the process, failure included, so a fixed setup
+  keeps reporting the old error until you quit and reopen.
+- **Do not set `dap.Debugpy.binary`.** Zed appends it as a script argument
+  (`python3 <binary> <args>`) and talks to debugpy over TCP, so an override
+  pointing at an interpreter dies instantly ("process exited before debugger
+  attached") and one pointing at a stdio adapter is never sent a single byte.
 
 {% endif %}
 {% if use_claude_code %}

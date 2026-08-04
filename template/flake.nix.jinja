@@ -214,6 +214,9 @@
 {% if editor == 'vscode' %}
                     create-vscode-settings = mkScript "create-vscode-settings" { };
 {% endif %}
+                    create-debug-venv = mkScript "create-debug-venv" {
+                        vars.DEV_PYTHON = "${devPythonEnv}/bin/python";
+                    };
                     setup-dev = mkScript "setup-dev" {
                         deps = [
                             setup-prod
@@ -225,6 +228,7 @@
 {% if editor == 'vscode' %}
                             create-vscode-settings
 {% endif %}
+                            create-debug-venv
                         ];
                     };
                 };
