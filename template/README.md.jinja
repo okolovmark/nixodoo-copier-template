@@ -31,12 +31,13 @@ the Odoo server).
 **Debugger setup.** Select `./.venv` as the worktree's Python toolchain (the
 environment picker in the status bar); `nix run .#setup-dev` creates it. Zed
 builds its own debugpy adapter by running `<toolchain python> -m venv` and
-installing debugpy with that venv's pip, which the project env cannot serve - it
-is itself a venv, and a venv over a venv sends `ensurepip` into the read-only
-nix store ("Failed to create base virtual environment"). `.venv` sits over the
-base interpreter and has no such problem. It stays empty on purpose - the
-debugged Odoo process runs on the project env, because `.zed/debug.json` sets
-`"python": "python"`, which resolves through PATH to `~/.nix-profile/bin/python`.
+installing debugpy with pip, which the project env cannot serve - it is itself
+a venv, and a venv over a venv sends `ensurepip` into the read-only nix store
+("Failed to create base virtual environment"). `.venv` sits over the base
+interpreter and has no such problem. It stays empty on purpose: the debugged
+Odoo process is pinned by `.zed/debug.json` to `.venv/bin/dev-python`, a
+symlink to the nix profile's python (the full project env), and needs no
+debugpy of its own - the adapter injects one into the process it launches.
 
 Two things that cost hours if unknown:
 

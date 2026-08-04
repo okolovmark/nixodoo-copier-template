@@ -145,12 +145,6 @@
                 thisProjectAsNixPkg = pythonSet.${projectNameInToml};
                 appPythonEnv = pythonSet.mkVirtualEnv (thisProjectAsNixPkg.pname + "-env") workspace.deps.default;
 
-                # Same environment plus every pyproject extra (`dev`: debugpy).
-                # The dev server runs on this one so the editor's debug adapter and
-                # the debuggee share a single interpreter - debugpy cannot attach
-                # across two pythons. Prod and test stay on appPythonEnv.
-                devPythonEnv = pythonSet.mkVirtualEnv (thisProjectAsNixPkg.pname + "-dev-env") workspace.deps.optionals;
-
             # ===      shell scripts      ===
 
                 # All shell code lives in nix/scripts/*.sh. mkScript wraps
@@ -215,7 +209,7 @@
                     create-vscode-settings = mkScript "create-vscode-settings" { };
 {% endif %}
                     create-debug-venv = mkScript "create-debug-venv" {
-                        vars.DEV_PYTHON = "${devPythonEnv}/bin/python";
+                        vars.PROJECT_PYTHON = "${appPythonEnv}/bin/python";
                     };
                     setup-dev = mkScript "setup-dev" {
                         deps = [
@@ -235,9 +229,9 @@
 
             # ===      production, test and development      ===
 
-                # Runtime tools needed to run Odoo, around a given python env
-                mkRuntimeTools = pythonEnv: [
-                    pythonEnv
+                # Runtime tools needed in production
+                productionTools = [
+                    appPythonEnv
                     pkgs.wkhtmltopdf
                     postgresql
                     pkgs.awscli2
@@ -245,30 +239,20 @@
                     pkgs.nginx
                     pkgs.yq-go
                 ];
-                productionTools = mkRuntimeTools appPythonEnv;
-                devRuntimeTools = mkRuntimeTools devPythonEnv;
 
                 # Odoo binary (supports subcommands: server, shell, scaffold, etc.)
-                mkOdooWrapper = { pythonEnv, tools, devFlags }: mkScript "odoo" {
-                    deps = tools;
+                mkOdooWrapper = devFlags: mkScript "odoo" {
+                    deps = productionTools;
                     vars = {
-                        ODOO_PYTHON = "${pythonEnv}/bin/python";
+                        ODOO_PYTHON = "${appPythonEnv}/bin/python";
                         ODOO_DEV_FLAGS = devFlags;
                     };
                 };
-                odooWrapper = mkOdooWrapper {
-                    pythonEnv = appPythonEnv;
-                    tools = productionTools;
-                    devFlags = "";
-                };
-                odooDevWrapper = mkOdooWrapper {
-                    pythonEnv = devPythonEnv;
-                    tools = devRuntimeTools;
-                    devFlags = "--dev=reload,qweb,werkzeug,xml";
-                };
+                odooWrapper = mkOdooWrapper "";
+                odooDevWrapper = mkOdooWrapper "--dev=reload,qweb,werkzeug,xml";
 
                 # The servers are the same package modulo tools, odoo wrapper and extras
-                mkServer = { suffix, tools, odoo, pythonEnv ? appPythonEnv, extraInstall ? "" }:
+                mkServer = { suffix, tools, odoo, extraInstall ? "" }:
                     pkgs.stdenv.mkDerivation {
                         pname = "${thisProjectAsNixPkg.pname}-${suffix}";
                         version = thisProjectAsNixPkg.version;
@@ -281,9 +265,9 @@
                             mkdir -p $out/bin
 
                             # Python with all dependencies
-                            makeWrapper ${pythonEnv}/bin/python $out/bin/python \
+                            makeWrapper ${appPythonEnv}/bin/python $out/bin/python \
                                 --prefix PATH : ${lib.makeBinPath tools}
-                            makeWrapper ${pythonEnv}/bin/python3 $out/bin/python3 \
+                            makeWrapper ${appPythonEnv}/bin/python3 $out/bin/python3 \
                                 --prefix PATH : ${lib.makeBinPath tools}
 
                             makeWrapper ${pkgs.awscli2}/bin/aws $out/bin/aws
@@ -390,9 +374,8 @@
                     # nix profile add .#dev-server / nix profile remove dev-server
                     dev-server = mkServer {
                         suffix = "dev-server";
-                        tools = devRuntimeTools ++ devTools;
+                        tools = productionTools ++ devTools;
                         odoo = odooDevWrapper;
-                        pythonEnv = devPythonEnv;
                         extraInstall = devServerExtras;
                     };
                 };

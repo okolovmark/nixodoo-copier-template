@@ -11,9 +11,8 @@ locked with uv/uv2nix.
   generation time; every Odoo version runtime-verified end-to-end (clone → lock → build → `-i base`)
 - Nix flake with three installable toolchains (`dev-server`, `test-server`, `prod-server`):
   wrapped `odoo`, `psql`/`pg_dump`/... bound to the project cluster, `ruff`, `uv`, `ccze`;
-  `dev-server` runs on a python env carrying the pyproject `dev` extras (`debugpy`, for
-  attaching to a running server), and `setup-dev` leaves a `./.venv` over the base
-  interpreter (empty, pip only) for editors that build their own debug adapter
+  `setup-dev` leaves a `./.venv` over the base interpreter for editors that build their
+  own debug adapter (Zed), with a `dev-python` symlink pinning the debuggee to the project env
 - Pinnable source management: `repos.yaml` (odoo) + `addons.yaml` (OCA/custom addon repos,
   branch- or commit-pinned) with an addons symlink farm builder
 - Generated configs: `.env`, `odoo.conf` (random master password), nginx reverse proxy,

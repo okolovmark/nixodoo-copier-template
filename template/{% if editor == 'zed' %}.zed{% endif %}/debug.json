@@ -12,7 +12,10 @@
       "--workers=0",
       "--logfile=/dev/stdout",
     ],
-    "python": "python",
+    // Pin the debuggee to the project env (via the profile symlink kept fresh by
+    // create-debug-venv). A bare "python" resolves through PATH, and Zed puts the
+    // selected toolchain (./.venv, empty) first there.
+    "python": "$ZED_WORKTREE_ROOT/.venv/bin/dev-python",
     "cwd": "$ZED_WORKTREE_ROOT",
     "redirectOutput": true,
     "justMyCode": false,
