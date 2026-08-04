@@ -13,7 +13,7 @@ locked with uv/uv2nix.
   wrapped `odoo`, `psql`/`pg_dump`/... bound to the project cluster, `ruff`, `uv`, `ccze`;
   `dev-server` runs on a python env carrying the pyproject `dev` extras (`debugpy`, for
   attaching to a running server), and `setup-dev` leaves a `./.venv` over the base
-  interpreter for editors that build their own debug adapter
+  interpreter (empty, pip only) for editors that build their own debug adapter
 - Pinnable source management: `repos.yaml` (odoo) + `addons.yaml` (OCA/custom addon repos,
   branch- or commit-pinned) with an addons symlink farm builder
 - Generated configs: `.env`, `odoo.conf` (random master password), nginx reverse proxy,
