@@ -71,6 +71,13 @@ End with one line: `✓ N/N items pass · M flagged · K fixed inline · J need 
 - [ ] Comments explain **why**, not **what** — code with self-documenting names doesn't need narration
 - [ ] No multi-line comment blocks on standard code; if a comment is longer than 2 lines, consider splitting the method or adding it to the docstring
 - [ ] If a non-trivial decision is in the code, leave a one-line «why» — but make it scannable
+- [ ] **Every comment earns its place.** Read each one you added and ask: *is this the answer to a `purpose` question that was genuinely ambiguous or hard, and that explains why the code took an unusual route?* If yes, keep it — and cut it to the shortest form that still carries that answer. If no, delete it. Delete on sight:
+  - restatements of the next statement (`# Nothing left to buy` above `if need <= 0: continue`)
+  - narration of the code that follows (`# Then re-derive the purchases once` above the call that does it)
+  - ticket-key provenance (`(KIO-1234 item 3)`, `see KIO-1234`) — git blame and the PR carry it. Naming an **ADR** is fine: that is a document the reader can go read
+  - narration of ordinary framework mechanics (that a compute is a compute, that sudo is sudo, that a context flag is passed)
+  - anything already said in the method's docstring
+- [ ] Test when unsure: *delete the comment — would a competent developer then make a WRONG change?* Wrong change → keep it. Merely slower to follow → delete it
 
 ### Tests
 
