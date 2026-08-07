@@ -1,6 +1,6 @@
 ---
 name: grill
-description: "Relentless requirements interview BEFORE building: one question at a time with a recommended answer, decisions routed to their owner (user vs stakeholder), an explicit assumptions ledger; resolved terms and decisions written down via domain-modeling. Use when the user asks to be grilled about a plan, or before any feature-shaped change; the pipeline invokes it as its Phase-1 gate."
+description: "Relentless requirements interview BEFORE building: one question at a time with a recommended answer, decisions routed to their owner (user vs stakeholder), an NFR sweep, an explicit assumptions ledger, a trade-off matrix at real design forks, a pre-mortem round before the build is confirmed; resolved terms and decisions written down via domain-modeling. Use when the user asks to be grilled about a plan, or before any feature-shaped change; the pipeline invokes it as its Phase-1 gate."
 argument-hint: "[task key / topic / plan to stress-test]"
 ---
 
@@ -15,7 +15,7 @@ Interview the user about the change until shared understanding is reached, then 
 - **Facts are looked up, decisions are asked.** Anything the environment can answer — code (`inspect-model`, grep), read-only DB/MCP queries, git history, memory journals — look it up and say what you checked. Only genuine decisions go to a human.
 - **Order by blast radius.** Ask first the questions whose wrong answer rebuilds the engine: the domain model itself, timing/anchoring of money and goods, data ownership, scope boundaries. Naming and UI come last. Walk each branch of the decision tree, resolving dependencies before going deeper.
 - **Stress-test with concrete scenarios.** For each mechanism, invent a specific case and narrate it end to end ("a component arrives by sea in 28 days — when does manufacturing start? when is the supplier paid?"). A fuzzy answer to a concrete scenario is the misalignment signal.
-- **The happy path is not enough.** Probe boundaries: multi-company, partial/zero quantities, cancellations and reversals, backdated records, permissions.
+- **The happy path is not enough.** Probe boundaries with every scenario; the systematic pass is the NFR sweep below.
 
 ## Decision routing
 
@@ -26,6 +26,19 @@ Every open question has an owner. Route explicitly:
 - **A stakeholder's decision** (product owner, director, accountant…) → do NOT guess and do NOT press the user to guess. Collect into a **Questions for \<stakeholder\>** list: free-form, concrete-scenario phrasing suited to a whiteboard session or a chat message — never multiple-choice. The user's memory (e.g. the `user_identity` node) records who the stakeholders are and how to address them.
 - **Whiteboard photos and free-form braindumps are first-class answers.** Parse them, restate your interpretation, get it confirmed — then continue the grill from what they settled.
 
+## NFR sweep
+
+Non-functional requirements are the questions that usually surface only after the solution ships. Before declaring the tree walked, sweep them explicitly; every hit becomes a routed question or a ledger assumption — never a silent default:
+
+- **Volume** — records per day, lines per document, growth; what breaks at 10×: a slow view or a locked table?
+- **External systems** — for every integration the change touches: behavior when the remote is down, slow, or returns errors; retries; where a human sees the failure.
+- **Repeat operations** — double-click, cron/job re-run, re-import of the same file: the second run is a no-op or an explicit error, never a duplicate.
+- **Time** — backdated documents, period close, timezone edges.
+- **Data lifecycle** — what accumulates forever, what gets archived or deleted, and by whom.
+- **Boundaries** — multi-company, permissions/record rules, partial/zero quantities, cancellations and reversals.
+
+If `NFR.md` exists next to this skill, walk its entries too — project-owned anchors: known integration points and scaling cliffs.
+
 ## Assumptions ledger
 
 A stakeholder question that can't be answered now either **blocks** the work or becomes an **explicit assumption**:
@@ -35,6 +48,17 @@ ASSUMPTION: <what we assume> — blast radius if wrong: <what gets rebuilt>
 ```
 
 The user signs off on every assumption before building starts. No silent assumptions — an unstated one baked into an engine is how weeks of rework happen.
+
+## Design options — trade-off matrix
+
+When more than one viable design survives the interview, the choice is made in the open, not silently:
+
+1. Present 2–3 genuinely different options; include one from outside the project's habits — a core mechanism nobody remembered, a pattern from another domain.
+2. Ask the user for the criteria and their weights (rework cost, migration risk, performance, maintenance…). Criteria are theirs; scores are yours.
+3. Show the option × criterion matrix, one line of justification per cell that matters, and recommend one option.
+4. The matrix outlives the chat as the "alternatives considered" of the ADR (domain-modeling three-part test) — including why the losers lost.
+
+A single obvious design needs no matrix. Its value shows at real forks: it regularly reveals that the initially unattractive option wins on the user's own criteria.
 
 ## Write the model down as you go
 
@@ -50,9 +74,14 @@ When the tree is walked, produce:
 **Out of scope:** … (the explicit no-s)
 **Decisions:** <one line each — what + owner>
 **Assumptions:** <ledger entries, signed off; or "none">
+**Accepted risks:** <pre-mortem survivors the user chose to live with; or "none">
 **Questions for <stakeholder>:** <list; or "none">
 **Glossary/ADR updates:** <CONTEXT.md terms touched, ADRs written; or "none">
 ```
+
+## Pre-mortem
+
+With the summary drafted and BEFORE asking for confirmation, run one round against the agreed design: break the requirements and the solution. Integration outage mid-flow, a peak-volume day, two users on the same document, a backdated correction, the cancellation path. Most raised risks get discarded; the two or three that survive become ledger assumptions, scope changes, or **Accepted risks** in the summary. The pre-mortem attacks what was agreed — it does not grow scope.
 
 Then ask: "Did I understand correctly — do we build this?" **Do not start building until the user confirms.**
 {% if tickets_mcp == 'odoo' %}
