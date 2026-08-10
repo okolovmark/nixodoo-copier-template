@@ -104,8 +104,10 @@ overrides the node (list mode only).
    Nothing planned → `**Planned for today:** nothing planned`. Keep it tight
    (≤ ~12 lines).
 7. Check `mcp__teams__auth_status` matches the identity node's "Teams auth
-   must be". Send via `mcp__teams__send_chat_message` to the identity node's
-   status chatId, `format: markdown`. ChatId errors → re-resolve by topic via
+   must be"; mismatch or not authenticated → run the re-auth yourself
+   (`teams-message` skill, Send step 1). Send via
+   `mcp__teams__send_chat_message` to the identity node's status chatId,
+   `format: markdown`. ChatId errors → re-resolve by topic via
    `mcp__teams__list_chats`, update the identity node.
 8. Restore the connection (list-mode step 5). Report the message id.
 
@@ -232,8 +234,10 @@ PY
 3. Build the Teams message (markdown, **always English**) — same format as the
    tracked variant, one numbered line per planned item with estimate, no links.
 4. Check `mcp__teams__auth_status` matches the identity node's "Teams auth
-   must be"; send via `mcp__teams__send_chat_message` to the identity node's
-   status chatId, `format: markdown`. Report the message id.
+   must be"; mismatch or not authenticated → run the re-auth yourself
+   (`teams-message` skill, Send step 1). Send via
+   `mcp__teams__send_chat_message` to the identity node's status chatId,
+   `format: markdown`. Report the message id.
 
 ## Write rules
 
