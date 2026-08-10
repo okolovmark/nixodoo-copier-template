@@ -208,7 +208,9 @@ PY
   (Ticket mirroring on state-item open/close is a separate flow — see the
   behavior protocol's "State ↔ Odoo tickets" section.)
 - Teams: **always English** (regardless of conversation language); exactly one
-  message per explicit go, to the identity node's chat only.
+  message per explicit go, to the identity node's chat only. Shaping and sending
+  follow the `teams-message` skill (`format: "markdown"`, named links, read-back
+  check).
 
 {% else %}
 ## Fixed plumbing (no ticket tracker)
@@ -236,6 +238,6 @@ PY
 ## Write rules
 
 - Teams: **always English**; exactly one message per explicit go, to the
-  identity node's chat only. (`rebalance` mode is N/A without a ticket
-  tracker.)
+  identity node's chat only; shaping and sending per the `teams-message` skill.
+  (`rebalance` mode is N/A without a ticket tracker.)
 {% endif %}

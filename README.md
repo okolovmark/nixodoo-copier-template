@@ -28,7 +28,9 @@ locked with uv/uv2nix.
   resolve), `dev`/`review`/`documenter` agents, MCP servers config, a persistent
   **memory template** (journal / state / standup), and optional workflow skills:
   the **pipeline** orchestrator (task → dev → QC gate → docs → demo GIF → PR), **my-status**
-  (status posting, Teams), **odoo-tickets** (ticket tracking in a prod Odoo) and
+  (status posting, Teams), **teams-message** (readable Teams messages: markdown Teams
+  actually renders, recipient verified by email, draft before send),
+  **odoo-tickets** (ticket tracking in a prod Odoo) and
   **deploy-checks** (blast-radius classification of a change set + read-only
   post-deploy invariant check: unbalanced postings, failed queue jobs, stuck
   crons, negative stock)
@@ -109,7 +111,7 @@ uvx copier update --trust
 | `custom_repo_pattern` / `custom_repo_name` | empty → no custom addons repo |
 | `use_claude_code` | `true` — CLAUDE.md, hooks, skills, agents, MCP config |
 | `module_prefix` / `ticket_prefix` | first word of project name / `TASK` |
-| `status_mcp` | `none` (or `teams` → my-status skill, Teams MCP + bootstrap questions) |
+| `status_mcp` | `none` (or `teams` → my-status + teams-message skills, Teams MCP + bootstrap questions) |
 | `tickets_mcp` | `none` (or `odoo` → odoo-tickets skill, ticket links, `ODOO_*_PROD` in `.env`) |
 | `odoo_prod_url` | asked when `tickets_mcp=odoo` |
 | `use_pipeline` | `true` (asked when a custom addons repo is set) |

@@ -150,7 +150,7 @@ readme_gen_source:
 
 status_mcp:
   type: str
-  help: MCP used to post work status to the team (adds the my-status skill, the Teams MCP server and Teams bootstrap questions)
+  help: MCP used to post work status to the team (adds the my-status and teams-message skills, the Teams MCP server and Teams bootstrap questions)
   default: none
   choices:
     - none
