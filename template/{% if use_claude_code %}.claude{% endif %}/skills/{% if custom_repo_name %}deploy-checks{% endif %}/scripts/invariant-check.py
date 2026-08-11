@@ -5,6 +5,8 @@
 # Window: env INV_SINCE ("YYYY-MM-DD HH:MM:SS", UTC) -- set it to the deploy
 # timestamp; default is now-2h. Skip checks: INV_SKIP=name,name.
 # Cron grace: INV_CRON_GRACE_HOURS (default 2).
+# Blast-radius tier: INV_TIER=high|medium|low (default high) -- gates the
+# deep_check() set.
 #
 # Contract: prints one line per check --
 #   INVARIANT <name>: PASS|FAIL|WARN|SKIP -- <detail>
@@ -14,7 +16,8 @@
 #
 # Project-local checks: append your file on stdin --
 #   cat invariant-check.py invariant_local.py | python odoo-bin shell ...
-# The local file reuses sql()/report()/table_exists()/check() and SINCE.
+# The local file reuses sql()/report()/table_exists()/check()/deep_check()
+# and SINCE.
 import os
 from datetime import datetime, timedelta, timezone
 
@@ -23,6 +26,9 @@ SINCE = os.environ.get("INV_SINCE") or (
 ).strftime("%Y-%m-%d %H:%M:%S")
 SKIP = {s.strip() for s in os.environ.get("INV_SKIP", "").split(",") if s.strip()}
 CRON_GRACE = int(os.environ.get("INV_CRON_GRACE_HOURS", "2"))
+# Blast-radius tier of this run. Unset OR empty means high: a caller that did
+# not resolve the tier gets the full set, never a silently narrower one.
+TIER = (os.environ.get("INV_TIER") or "high").strip().lower()
 
 
 def sql(query, params=()):
@@ -49,6 +55,17 @@ def check(name, fn):
     except Exception as e:  # one broken check must not kill the run
         env.cr.rollback()  # noqa: F821 -- failed SQL poisons the cursor
         report(name, "WARN", "check errored: %s" % e)
+
+
+def deep_check(name, fn):
+    """A check only a high-blast-radius run earns -- an expensive scan, or one
+    whose back-end needs its own cron to catch up before it means anything.
+    Prints a SKIP line at a lower tier: a check that did not run must never
+    read as a pass."""
+    if TIER != "high":
+        report(name, "SKIP", "tier=%s, deep check runs on high blast radius only" % TIER)
+        return
+    check(name, fn)
 
 
 def unbalanced_moves():
