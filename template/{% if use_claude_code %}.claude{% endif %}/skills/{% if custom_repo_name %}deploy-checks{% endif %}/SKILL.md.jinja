@@ -30,7 +30,8 @@ PR file list use `--files-from -` (path heuristics only — weaker, says so in
 the output). Project-specific high-risk models: `BLAST_HIGH_MODELS=my.model,…`.
 
 Recommended policy: **high** → run the invariant check at T+0 and again ~T+60
-after the deploy; **medium** → T+0; **low** → deploy as usual.
+after the deploy; **medium** → T+0; **low** → deploy as usual. Pass the tier
+into the check as `INV_TIER=<tier>` — it gates the `deep_check()` set below.
 
 ## Invariant check — verify the database after deploying
 
@@ -74,5 +75,20 @@ model and encode the real rule in `invariant_local.py` instead.
 `scripts/invariant_local.py` is **project-owned** (edit it, keep your version on
 `copier update`). It is appended after the core script on the same stdin
 (`cat core local | odoo shell …`), so `sql()` / `report()` / `check()` /
-`SINCE` are already defined. Encode the guarantees specific to your modules —
-the checks that would page you if they ever went false.
+`deep_check()` / `SINCE` are already defined. Encode the guarantees specific to
+your modules — the checks that would page you if they ever went false.
+
+Two levels of registration:
+
+- `check(name, fn)` — runs on every invocation.
+- `deep_check(name, fn)` — runs only when the invocation is tagged
+  `INV_TIER=high` (unset or empty counts as high), otherwise prints a `SKIP`
+  line naming the tier. Put behind it the scans too expensive for every deploy,
+  and the checks reading a back-end that needs its own cron to catch up before
+  the answer means anything.
+
+Prod carries chronic breakage in most reporting tools, so a check that counts
+findings should grade them against the **equal-length window before**
+`INV_SINCE`: at the usual rate that is a `WARN`, and only a rate past the
+baseline is the deploy's `FAIL`. A count with no baseline fires on every
+deploy and trains everyone to ignore the line.
