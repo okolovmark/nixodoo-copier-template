@@ -24,3 +24,7 @@ src/*/
 **/*.egg-info
 
 result
+
+# Per-agent scratch state written by Claude Code. Never committed, and left
+# untracked it makes the working tree dirty, which blocks `copier update`.
+.claude/agent-memory/
