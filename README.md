@@ -125,9 +125,9 @@ uvx copier update --trust
 - `.mcp.json` points the `odoo` and `teams` MCP servers at
   [okolovmark's](https://github.com/okolovmark) forks — swap the URLs for your
   own if you prefer.
-- The `inspect-model` skill ships `lsp.py`, a daemon/CLI over
+- The `find-code` skill ships `lsp.py`, a daemon/CLI over
   [odoo-ls](https://github.com/odoo/odoo-ls) reading the generated `odools.toml`. Install
-  the server once with `python3 .claude/skills/inspect-model/lsp.py bump <version>` (use
+  the server once with `python3 .claude/skills/find-code/lsp.py bump <version>` (use
   1.5.1 or newer — earlier find-usages misses `with_company()` chains and XML `<field>`
   usages); it lands in `~/.local/share/odoo-ls/<version>` behind a `current` symlink, so
   an editor pointed at that symlink runs the same server as the CLI.

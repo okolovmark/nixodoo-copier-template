@@ -103,7 +103,7 @@ For a method call like `self.env["model.name"]._some_method(...)`:
    - `Grep "_some_method" src/odoo/addons/` (Odoo CE)
    - `Grep "_some_method"` (full repo, last resort)
 2. **Check inheritance chains:** the method may be defined on a parent model, a mixin,
-   or via `_inherit` in another module. Use the `inspect-model` skill or grep for
+   or via `_inherit` in another module. Use the `find-code` skill or grep for
    `_inherit = "model.name"` then read those files.
 3. **Check OCA addons:** `src/` contains many OCA repos (`queue/`, `connector/`, `web/`,
    `stock-logistics-*`, etc.) that add methods to core models.

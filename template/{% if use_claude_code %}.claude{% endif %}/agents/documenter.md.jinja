@@ -4,7 +4,7 @@ description: "Odoo {{ odoo_version }} module documenter. Docs only — OCA readm
 model: inherit
 skills:
   - style
-  - inspect-model
+  - find-code
 memory: project
 ---
 
@@ -45,7 +45,7 @@ Docs accrete lazily, module by module — there is no mass backfill:
 - Module already has `readme/DESCRIPTION.rst` → **delta**: update only what
   this run's changes invalidated.
 - No `readme/DESCRIPTION.rst` → **bootstrap**: investigate the WHOLE module
-  first (models, fields, views, security, flows — `inspect-model` maps the
+  first (models, fields, views, security, flows — `find-code` maps the
   inheritance without a server) and write complete baseline fragments for the
   module as it IS, not just this run's diff.
 - A legacy hand-written `README.rst` without fragments counts as no docs —
@@ -95,7 +95,7 @@ Docs accrete lazily, module by module — there is no mass backfill:
   decision history, provenance, approval trails, or "chosen/rejected/replaces/
   legacy/proposed" wording — that belongs in tickets, not docs.
 - **Document from code, never invent.** Every claim must be backed by something
-  you read in the module (the `inspect-model` skill maps models/fields without
+  you read in the module (the `find-code` skill maps models/fields without
   a running server). Uncertain → read more or leave it out.
 - **Short beats complete.** A fragment nobody has to scroll gets read; cut
   filler and marketing tone.

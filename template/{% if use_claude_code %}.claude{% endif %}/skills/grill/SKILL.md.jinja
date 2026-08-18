@@ -12,7 +12,7 @@ Interview the user about the change until shared understanding is reached, then 
 
 - **One question at a time.** Wait for the answer before the next. A questionnaire dump is bewildering.
 - **Recommend an answer with every question** — your best guess plus why, so the user can just say "yes".
-- **Facts are looked up, decisions are asked.** Anything the environment can answer — code (`inspect-model`, grep), read-only DB/MCP queries, git history, memory journals — look it up and say what you checked. Only genuine decisions go to a human.
+- **Facts are looked up, decisions are asked.** Anything the environment can answer — code (`find-code`, grep), read-only DB/MCP queries, git history, memory journals — look it up and say what you checked. Only genuine decisions go to a human.
 - **Order by blast radius.** Ask first the questions whose wrong answer rebuilds the engine: the domain model itself, timing/anchoring of money and goods, data ownership, scope boundaries. Naming and UI come last. Walk each branch of the decision tree, resolving dependencies before going deeper.
 - **Stress-test with concrete scenarios.** For each mechanism, invent a specific case and narrate it end to end ("a component arrives by sea in 28 days — when does manufacturing start? when is the supplier paid?"). A fuzzy answer to a concrete scenario is the misalignment signal.
 - **The happy path is not enough.** Probe boundaries with every scenario; the systematic pass is the NFR sweep below.
