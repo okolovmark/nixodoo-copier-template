@@ -1,6 +1,6 @@
 ---
 name: find-code
-description: "Answers: where is this DEFINED, who USES it, who OVERRIDES it, what does super() actually call, which modules EXTEND this model, where does this XML id/model string live, what fields does a model have. Semantic (Odoo Language Server + AST), whole tree (core + OCA + custom), MRO-aware. Reach here BEFORE grep whenever the target is a symbol — model, field, method, XML id. grep is for plain strings: comments, logs, data, error-message text."
+description: "Answers: where is this DEFINED, who USES it, who OVERRIDES it, what does super() actually call, which modules EXTEND this model, where does this XML id/model string live, what fields does a model have. Semantic (Odoo Language Server + AST), whole tree (core + OCA + custom), MRO-aware. Reach here BEFORE grep whenever the target is a symbol — model, field, method, XML id. Concretely: a `grep -rn 'some_method(' src/` or `grep -rn 'a_field\\|b_field' src/` IS this skill's question, and scoping such a grep to one directory by hand misses the repos left out of the command. grep is for plain strings: comments, logs, data, error-message text."
 argument-hint: "[def|refs|hover|sym|model <args> | model.name]"
 ---
 
