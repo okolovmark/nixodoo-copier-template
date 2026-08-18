@@ -20,7 +20,9 @@ locked with uv/uv2nix.
 - Python deps imported straight from Odoo's own `requirements.txt` and locked with `uv`
 - **Claude Code integration** (optional): `CLAUDE.md`, guard hooks (read-only OCA/core,
   dangerous-command blocker, ruff auto-format), Odoo dev skills (code patterns, style,
-  testing, commit conventions, pre-PR checklist, model inspector, pdb debugging,
+  testing, commit conventions, pre-PR checklist, **semantic code navigation** over the
+  official Odoo Language Server (`super()` chains across `_inherit`, XML `ref`/model
+  targets, find-usages, model inheritance maps), pdb debugging,
   isolated worktree envs, a **grill** requirements interview — one question at a
   time, decisions routed to their owner, explicit assumptions — and
   **domain-modeling**: a `CONTEXT.md` glossary of canonical terms mapped to Odoo
@@ -123,6 +125,14 @@ uvx copier update --trust
 - `.mcp.json` points the `odoo` and `teams` MCP servers at
   [okolovmark's](https://github.com/okolovmark) forks — swap the URLs for your
   own if you prefer.
+- The `inspect-model` skill ships `lsp.py`, a daemon/CLI over
+  [odoo-ls](https://github.com/odoo/odoo-ls) reading the generated `odools.toml`. Install
+  the server once with `python3 .claude/skills/inspect-model/lsp.py bump <version>` (use
+  1.5.1 or newer — earlier find-usages misses `with_company()` chains and XML `<field>`
+  usages); it lands in `~/.local/share/odoo-ls/<version>` behind a `current` symlink, so
+  an editor pointed at that symlink runs the same server as the CLI.
+- `odools.toml` is generated once (`_skip_if_exists`) because `addons_paths` is
+  hand-tuned per project — template updates never overwrite it.
 - `postgres-mcp` in `.mcp.json` runs with `--access-mode=unrestricted` — it
   targets the **local dev database** only (`DATABASE_URI` from `.env`).
 - `postgres-mcp` and `mcp-pdb` run with `--with 'mcp<2'`: both import
