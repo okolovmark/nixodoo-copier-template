@@ -9,6 +9,10 @@ _envops:
   trim_blocks: true
   lstrip_blocks: true
 
+# Generated once, then owned by the project (hand-tuned addons_paths list).
+_skip_if_exists:
+  - odools.toml
+
 _tasks:
   - "[ -d .git ] || git init -q"
   # Empty-but-valid uv.lock so the flake evaluates before bootstrap-deps runs.
@@ -94,7 +98,7 @@ db_password:
 
 editor:
   type: str
-  help: Editor configuration to generate (vscode = .vscode settings; zed = odools.toml + .zed debug config for OdooLS)
+  help: Editor configuration to generate (vscode = .vscode settings; zed = .zed debug config; odools.toml is always shipped with use_claude_code — the inspect-model skill's LSP client needs it)
   default: none
   choices:
     - none

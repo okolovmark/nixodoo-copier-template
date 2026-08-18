@@ -106,7 +106,7 @@ uvx copier update --trust
 | `db_name` / `db_user` / `db_password` | `develop` / `odoo` / `odoo` |
 | `project_dir_var` (project-root env var; make unique to run two projects on one Odoo version) | `ODOO<major>_PROJECT_DIR` |
 | `use_queue_job` | `false` |
-| `editor` | `none` (or `vscode` → settings generator; `zed` → `odools.toml` + debug config) |
+| `editor` | `none` (or `vscode` → settings generator; `zed` → debug config; `odools.toml` ships with `use_claude_code` or `zed`) |
 | `default_repo_pattern` | `https://github.com/OCA/{}.git` |
 | `custom_repo_pattern` / `custom_repo_name` | empty → no custom addons repo |
 | `use_claude_code` | `true` — CLAUDE.md, hooks, skills, agents, MCP config |
