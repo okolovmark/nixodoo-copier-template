@@ -131,6 +131,10 @@ uvx copier update --trust
   1.5.1 or newer — earlier find-usages misses `with_company()` chains and XML `<field>`
   usages); it lands in `~/.local/share/odoo-ls/<version>` behind a `current` symlink, so
   an editor pointed at that symlink runs the same server as the CLI.
+- `nudge-find-code.py` (PreToolUse) bounces a recursive grep whose pattern is an
+  identifier and points at `lsp.py` instead; re-running the same grep passes. Budget:
+  three bounces per session, one per distinct pattern; `FINDCODE_NUDGE=0` disables.
+  Regression corpus: `python3 tests/test_nudge_find_code.py`.
 - `odools.toml` is generated once (`_skip_if_exists`) because `addons_paths` is
   hand-tuned per project — template updates never overwrite it.
 - `postgres-mcp` in `.mcp.json` runs with `--access-mode=unrestricted` — it
