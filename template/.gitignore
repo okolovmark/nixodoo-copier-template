@@ -22,6 +22,8 @@ src/*/
 
 .odoo_inspect
 **/*.egg-info
+__pycache__/
+*.py[cod]
 
 result
 
