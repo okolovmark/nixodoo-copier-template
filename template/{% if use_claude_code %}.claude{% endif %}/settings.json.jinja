@@ -16,6 +16,19 @@
           {
             "type": "command",
             "command": "bash ${{ project_dir_var }}/.claude/hooks/guard-bash.sh"
+          },
+          {
+            "type": "command",
+            "command": "python3 ${{ project_dir_var }}/.claude/hooks/nudge-find-code.py"
+          }
+        ]
+      },
+      {
+        "matcher": "Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${{ project_dir_var }}/.claude/hooks/nudge-find-code.py"
           }
         ]
       }
