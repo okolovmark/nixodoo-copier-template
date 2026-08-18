@@ -4,7 +4,7 @@
 # run Odoo's native neutralization (`odoo neutralize` — every installed module's
 # data/neutralize.sql: mail blocked, crons off, O2O backend deactivated, banner
 # on), then the shared $PROJ/nix/scripts/dev-fixup.sql (admin/admin, requeue
-# stuck queue jobs). Needs the session odoo.conf — wt-start writes it first.
+# stuck queue jobs, bump the document sequences past the dump's imported names). Needs the session odoo.conf — wt-start writes it first.
 # Idempotent: if wt_<slug> already exists it is reused (re-run wt-start is cheap).
 #
 # Usage: wt-restore.sh <slug>

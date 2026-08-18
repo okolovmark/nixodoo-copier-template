@@ -74,7 +74,9 @@ the newest file is used. If `wt-start` reports no dump, ask the user to drop one
   blocked by a dummy SMTP server, fetchmail off, crons off except autovacuum,
   payment/IAP disabled, `database.is_neutralized` flag +
   visible banner), then the shared `nix/scripts/dev-fixup.sql` (admin → `admin`/`admin`,
-  requeue stuck queue jobs){% if backup_s3_bucket %} — same pair `nix run .#download-backup` uses{% endif %}.
+  requeue stuck queue jobs, bump the document sequences past the names the dump
+  already carries — imported picking/MO names sit above the sequence, so the Nth
+  create would collide on `stock_picking_name_uniq`){% if backup_s3_bucket %} — same pair `nix run .#download-backup` uses{% endif %}.
 - **Concurrency:** port allocation + `git worktree add` run under `flock`
   (`.worktrees/.wt.lock`); the slow `pg_restore` runs outside the lock so parallel
   starts overlap. DBs/ports/worktrees are per-slug, so sessions never collide.

@@ -1,7 +1,8 @@
 # shellcheck shell=bash
 # Download the latest prod backup from S3 and restore it into a local database,
 # then neutralize it (native `odoo neutralize` — runs every installed module's
-# data/neutralize.sql) and apply dev fixups (admin/admin, requeue stuck jobs).
+# data/neutralize.sql) and apply dev fixups (admin/admin, requeue stuck jobs,
+# bump the document sequences past the dump's imported names).
 # Requires on PATH: aws, psql, pg_ctl, pg_restore, odoo; DEV_FIXUP_SQL - path
 # to dev-fixup.sql (all injected by flake.nix).
 set -e
