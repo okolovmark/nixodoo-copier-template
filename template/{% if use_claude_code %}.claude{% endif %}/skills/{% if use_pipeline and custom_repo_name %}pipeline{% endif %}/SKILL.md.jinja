@@ -676,6 +676,17 @@ Spawn a **general-purpose** subagent:
 >    Tags: `[IMP]` / `[FIX]` / `[ADD]` / etc. Imperative mood, header
 >    under 50 chars, task key in the BODY (never the header).
 > 4. Push: `git push -u origin <slug>`
+>
+>    If this project layers a commit-provenance tool on top of git (a hook that
+>    stamps a trailer, a session recorder, an audit signer), verify it actually
+>    fired on this commit and report the outcome:
+>    `git -C <WT> log -1 --format=%B | tail -5`
+>    The addons repo is a **repo nested inside the project**, and such tools
+>    routinely bind to the outer repo only: the commit succeeds, the stamp is
+>    missing, and the hook is usually installed so that it swallows its own
+>    errors, so nothing warns. Whatever the outcome, say it in the phase report -
+>    a provenance gap found weeks later, on the one commit somebody needed to
+>    explain, is the expensive version of this.
 > 5. Create PR (title = the commit header; body = the documenter's
 >    PR_DESCRIPTION below, verify the {{ ticket_prefix }} key is in it):
 >    ```
