@@ -221,9 +221,8 @@ Flush checklist:
 1. Write a `## Session N` block to `$JOURNAL/$TODAY.md` if any substantive
    work happened (per "When Claude writes a journal entry" above).
 2. Update `$STATE`: close done items by ID, file open threads / WIP
-   with fresh IDs from `$COUNTER`.
+   with fresh IDs from `scripts/next_id.sh`.
 3. Save any pending feedback / user / project nodes, update `$INDEX`.
-4. Write back the incremented `$COUNTER` if IDs were assigned.
 
 Rationale: once the user ends the conversation, any pending memory is
 lost. Deferring ("I'll write it later") is unreliable. The close signal
@@ -258,23 +257,26 @@ Example:
 ### ID generation
 
 IDs are **monotonic integers**, never reused, never recycled. Next ID
-lives in the `state_counter` file as a single integer. Read it, use it,
-write back `id + 1`:
+lives in the `state_counter` file as a single integer. **Never read or write
+that file by hand** — allocate through the script, which does the read and
+the increment under one lock:
 
 ```bash
-MEM="__MEMORY_DIR__"
-COUNTER="$MEM/state_counter"
-
-# Read next ID (default to 1 if file is missing or empty)
-next_id=$(cat "$COUNTER" 2>/dev/null | grep -oE '^[0-9]+$' || echo 1)
-
-# Use $next_id in the state.md line you're adding...
-# e.g. echo "- [$next_id] $TODAY: description — see journal/$TODAY" >> "$STATE"
-
-# Then increment the counter
-echo $((next_id + 1)) > "$COUNTER"
-echo "Assigned ID: $next_id, next will be $((next_id + 1))"
+# one ID
+bash "__MEMORY_DIR__/scripts/next_id.sh"
+# three consecutive IDs, one per line (a session filing several open threads)
+bash "__MEMORY_DIR__/scripts/next_id.sh" 3
 ```
+
+The script prints the ID(s) and has already written the new counter value, so
+there is nothing to write back afterwards.
+
+**Why the script and not `cat` + `echo`:** that pair is a read-then-write with
+a gap, and two Claude Code sessions open on the same project fall into it —
+both read the same number and both file an item under it, so one has to be
+renumbered by hand afterwards. `next_id.sh` holds `flock` (or a `mkdir` lock
+where `flock` is absent) across the read and the increment, so a concurrent
+caller waits and gets the next number.
 
 **Why a separate counter file instead of `max(state.md)`:** if the user
 (or Claude) removes the max-ID item from state.md, `max(state.md)` would
@@ -282,8 +284,9 @@ reassign that same ID to the next new item — re-using an ID that still
 lives in journal history under a different meaning. The counter file
 survives state.md edits and guarantees true monotonicity.
 
-**Counter recovery:** if `state_counter` is missing or corrupted, rebuild
-it from max observed across state.md and all journal files (see
+**Counter recovery is automatic:** a missing or corrupted `state_counter`
+makes `next_id.sh` rebuild it from the max ID observed across state.md and all
+journal files, print a note on stderr, and carry on (see
 "Recovery procedures → Lost ID counter" below).
 
 IDs survive section moves: if an item moves from `## WIP` to
@@ -506,8 +509,9 @@ respects whatever is in it.
 
 ### Lost ID counter
 
-If `state_counter` is missing, corrupted, or you start fresh, rebuild it
-by scanning all live sources for the maximum ID ever seen, then adding 1:
+`next_id.sh` already does this on its own — it rebuilds from the live sources
+when the counter is unusable and says so on stderr, so a lost counter needs no
+manual step. Do it by hand only to inspect or repair the value:
 
 ```bash
 MEM="__MEMORY_DIR__"
