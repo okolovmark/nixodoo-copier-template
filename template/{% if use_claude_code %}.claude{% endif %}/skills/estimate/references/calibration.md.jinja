@@ -1,0 +1,50 @@
+# Calibration table — estimate vs actual
+
+**This file is project-owned.** It ships as a seed prior and is meant to be
+overwritten by your own measurements; `copier update` will not touch it once it
+exists. `SKILL.md` holds the method, this file holds the numbers.
+
+Actual = focused time to done (journal sessions; fallback ticket-create →
+PR-created, both UTC), review-wait excluded. Ratio = estimate / actual.
+
+## Unit anchors
+
+Every range should be the measured spread of the actuals behind it, so a shape
+with one data point is marked — treat those as provisional, not as precision.
+
+Until this project has rows of its own, the ranges below are a **prior** carried
+over from the Odoo project this skill came from (Claude-assisted delivery, small
+custom-module changes on a live ERP). They are a starting bet, not a
+measurement of *your* work: replace each one with your own spread, and its
+`Behind it` cell with your own ticket keys, as the table below fills up.
+
+| Shape | Focused hours | Behind it |
+|---|---|---|
+| View-only change (hide/show/reorder fields, labels) | 0.3–0.5 | prior |
+| Fix, root cause already known (traceback / user points at it) | 0.3–0.5 | prior |
+| Fix needing diagnosis (reproduce, locate the seam) | 0.5–1 | prior |
+| Small feature: field/button + tests, one module | 0.5–1 | prior |
+| Retire a model/feature incl. dependent cleanup + migration | 1–1.5 | prior |
+| Mechanical repo-wide sweep (lint, warnings, renames) | 1–2 | prior |
+| Audit a repo-wide problem, decide how to stage it, ship one half | 2–3 | prior |
+| Prod data repair + live verification | 3–4 | prior |
+| Multi-item batch through the full gate (QC, docs, PR, deploy) | 5–6 | prior |
+
+Fixed adder to measure for yourself and record here: the constant tail of every
+delivery — deploy, announcement, post-deploy invariant check.
+
+## Rows
+
+| {{ ticket_prefix }} | Shape | Est h | Actual h | Ratio | Evidence |
+|---|---|---|---|---|---|
+| | | | | | |
+
+Notes:
+- (nothing measured yet — the first rows will be gut-feel; tag the first row
+  estimated *from* the anchor table as **anchor-based**, because the calibration
+  loop in SKILL.md reads only those)
+
+## Appending
+
+One row per done task, same columns. Keep newest at the bottom; prune to the
+~20 most representative rows when the table outgrows one screen.
