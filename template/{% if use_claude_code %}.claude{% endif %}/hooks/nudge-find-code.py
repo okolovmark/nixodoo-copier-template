@@ -17,6 +17,16 @@ Parsing rules, each one a v0.17.1 misfire:
   common real case and used to pass untouched;
 - a lone lowercase word ('warehouse', 'tests') is NOT a symbol: an identifier
   must carry `_`, `.` or a call paren, or hunt a definition.
+
+Two more, from a session that spent the whole budget and then got a wrong answer:
+- the marker was `sha1(raw pattern)`, so `_name = "hr.employee.leave`,
+  `hr.employee.leave\\b` and `hr.employee.leave` each took a slot and ONE
+  question exhausted the session in four minutes; every symbol grep after that
+  passed unnudged. The key is now the normalised identifier (`dedup_key`);
+- a symbol grep piped into `head`/`tail` answers a completeness question with a
+  truncated answer, and that is where a silent miss becomes a wrong conclusion
+  (`grep -rn leave_rendered ... | head -20` dropped the two references that
+  mattered). Those bypass the budget: worth an interruption every time.
 """
 
 import hashlib
@@ -26,7 +36,7 @@ import re
 import shlex
 import sys
 
-MAX_NUDGES = 3
+MAX_NUDGES = 6
 
 if os.environ.get("FINDCODE_NUDGE") == "0":
     sys.exit(0)
@@ -36,11 +46,15 @@ tool = d.get("tool_name", "")
 ti = d.get("tool_input") or {}
 
 GREPS = {"grep", "egrep", "fgrep", "rg", "ggrep"}
+# A who-uses-X search cut short by one of these is a lower bound presented as an
+# answer; nudging those is worth a slot every time.
+TRUNCATORS = {"head", "tail"}
 OPERATORS = {"|", "||", "&&", ";", "&", ">", ">>", "<", "|&"}
 # flags whose VALUE is the next token, so that token is never the pattern
 VALUE_FLAGS = {"-e", "-f", "-m", "-A", "-B", "-C", "--include", "--exclude", "-g", "-t", "--max-count"}
 
 IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*\(?$")
+CORE = re.compile(r"[A-Za-z_][A-Za-z0-9_.]{2,}")
 DEFN_HUNT = re.compile(r"_inherit\b|_name\s*=|\b(?:def|class)\s+\w")
 NOISE = re.compile(r"^[-<>\[\]^$.*?+|\\()\s]*$")
 
@@ -61,6 +75,23 @@ def symbol_shaped(pat):
         if IDENT.match(alt) and (alt.endswith("(") or "_" in alt or "." in alt):
             return True
     return False
+
+
+def dedup_key(pat):
+    """One key per QUESTION, not per spelling.
+
+    `_name = "hr.employee.leave`, `hr.employee.leave\\b` and `hr.employee.leave`
+    are the same lookup; hashing the raw pattern let one question eat the whole
+    session budget. Prefer the first identifier-shaped alternative, else the
+    longest identifier anywhere in the pattern (`_name = "x.y"` -> `x.y`).
+    """
+    for alt in _alternatives(pat):
+        if IDENT.match(alt):
+            return alt.rstrip("(").lower()
+    found = CORE.findall(pat or "")
+    if found:
+        return max(found, key=len).lower()
+    return (pat or "").strip().lower()
 
 
 def invocations(tokens):
@@ -117,15 +148,18 @@ def pattern_of(prog, args):
 
 
 hits = []
+truncated = False
 if tool == "Grep":
     path = str(ti.get("path") or "")
     if not re.search(r"\.\w+$", path) and symbol_shaped(ti.get("pattern")):
         hits.append(str(ti.get("pattern")))
+    truncated = bool(ti.get("head_limit"))
 elif tool == "Bash":
     try:
         tokens = shlex.split(ti.get("command") or "", posix=True)
     except ValueError:  # unbalanced quotes: nothing reliable to inspect
         sys.exit(0)
+    truncated = "|" in tokens and any(os.path.basename(tok) in TRUNCATORS for tok in tokens)
     for prog, args in invocations(tokens):
         pattern, recursive = pattern_of(prog, args)
         if recursive and symbol_shaped(pattern):
@@ -138,14 +172,19 @@ pattern = hits[0]
 sid = re.sub(r"[^A-Za-z0-9-]", "", str(d.get("session_id") or "nosid"))
 marker_dir = "/tmp/.findcode-nudge-" + sid
 os.makedirs(marker_dir, exist_ok=True)
-marker = os.path.join(marker_dir, hashlib.sha1(pattern.encode()).hexdigest()[:16])
-if os.path.exists(marker) or len(os.listdir(marker_dir)) >= MAX_NUDGES:
+marker = os.path.join(marker_dir, hashlib.sha1(dedup_key(pattern).encode()).hexdigest()[:16])
+# The per-question marker always wins, so the documented "just re-run it" escape
+# hatch keeps working. The session budget does not apply to a truncated search:
+# that one is answered wrong, not merely answered the slow way.
+if os.path.exists(marker):
+    sys.exit(0)
+if len(os.listdir(marker_dir)) >= MAX_NUDGES and not truncated:
     sys.exit(0)
 open(marker, "w").close()
 
 symbol = next((alt for alt in _alternatives(pattern) if IDENT.match(alt)), pattern).rstrip("(")
 sys.stderr.write(
-    "find-code nudge (not a block; this pattern is never nudged twice): '{sym}' is a symbol, "
+    "find-code nudge (not a block; this question is never nudged twice): '{sym}' is a symbol, "
     "so who-defines / who-calls / who-overrides it is answered MRO-aware and over the WHOLE "
     "tree (core + third-party + custom) by the find-code skill — a hand-scoped grep silently "
     "misses the repos you did not list:\n"
@@ -153,4 +192,10 @@ sys.stderr.write(
     "  python3 .claude/skills/find-code/lsp.py refs <file> <def-line> {sym}\n"
     "If this grep is really about plain text, just re-run it — it will pass now.\n".format(sym=symbol)
 )
+if truncated:
+    sys.stderr.write(
+        "This one also pipes into head/tail: a 'who uses {sym}' answer cut to the first N lines "
+        "is a lower bound. Drop the truncation or ask lsp.py, and never conclude 'nothing else "
+        "uses it' from a truncated search.\n".format(sym=symbol)
+    )
 sys.exit(2)
