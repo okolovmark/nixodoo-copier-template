@@ -1,0 +1,55 @@
+# deploy scripts
+
+The prod **WRITE** steps of the deploy skill, each as a single argv so an
+auto-mode classifier judges one named script with validated arguments instead of
+a fresh multi-line remote command every deploy. Anything that writes to prod
+belongs here, not inline in `SKILL.md`.
+
+| Script | Deploy step | Writes | Success marker |
+|---|---|---|---|
+| `prod-deploy-modules.sh` | Step 2, every deploy | pulls `{{ odoo_version }}`, updates modules, restarts the service | `DEPLOY_EXIT=0` |
+{% if use_queue_job %}| `prod-requeue-jobs.sh` | Step 6, after a clean deploy | `queue.job` enqueued/started → pending | `REQUEUED <n>` |
+{% endif %}
+Every script here takes the host alias as its first argument (`prod` / `test`),
+refuses any other host, and **exits non-zero when its marker is missing**, so a
+silent no-op cannot read as success.
+
+Call them with the host spelled out — that is the form the permission rules
+match:
+
+```bash
+bash "${{ project_dir_var }}/.claude/skills/deploy/scripts/prod-deploy-modules.sh" prod -u <modules>
+{% if use_queue_job %}bash "${{ project_dir_var }}/.claude/skills/deploy/scripts/prod-requeue-jobs.sh" prod
+{% endif %}```
+
+## Permissions
+
+Keep the call form byte-identical to whatever `.claude/settings.local.json`
+authorizes — an extra flag or a missing host argument does not match the rule
+and falls back to the classifier, mid-deploy, with the start announcement
+already out.
+
+Two rule shapes, and the difference matters:
+
+- **`permissions.allow`** entries are argument-exact strings, so a
+  `Bash(bash "…/prod-deploy-modules.sh" prod -u sale)` rule covers exactly that
+  module list and nothing else. Fine for the requeue script (its arguments never
+  change), useless for the deploy script.
+- **`autoMode.allow`** entries are prose the classifier judges, so one entry can
+  authorize *this script with any valid module list* — that is the entry the
+  deploy script needs, and the script validates its own arguments (host,
+  `-u`/`-i`, `^[a-z0-9_,]+$` module list) so the prose can describe a closed set.
+
+**Claude cannot write its own permission file** — by any tool, and the refusal
+is not negotiable. Compose the entry, hand it to the user, and let them paste
+it. Do that *before* the first deploy of a new module, not after the deploy
+stalls halfway.
+
+## Project write steps
+
+A project that needs another write before the invariant check (refreshing a
+reporting table whose cron will not fire inside the check window, for example)
+adds its own script here and documents it as a numbered step in the project's
+`SKILL.md`, the same way `deploy-checks/scripts/invariant_local.py` extends the
+read-only check. Same contract: one argv, host as the first argument, a printed
+success marker, non-zero exit when the marker is missing.

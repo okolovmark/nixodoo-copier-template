@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+# Requeue queue.job rows left in enqueued/started -> pending (the OCA "Requeue"
+# button). After a deploy restart, `started` jobs are orphaned (their runner
+# died) and `enqueued` ones can be stranded.
+#
+# Deploy skill Step 6. Runs as ONE argv for the same reason as
+# prod-deploy-modules.sh beside it: the inline
+# `ssh prod '… echo "<python>" | odoo-bin shell …'` form is a piped remote
+# script an auto-mode classifier has to judge on every deploy, and there is
+# usually no RPC fallback — a service account outside Job Queue Manager cannot
+# read queue.job at all.
+#
+# Usage: prod-requeue-jobs.sh [prod|test]     (default: prod)
+# Prints: REQUEUED <n>   — exits non-zero if that marker never appears, so a
+#                          silent no-op cannot read as success.
+set -euo pipefail
+
+HOST="${1:-prod}"
+case "$HOST" in prod|test) ;; *) echo "refusing unknown host: $HOST" >&2; exit 2 ;; esac
+
+PROJECT_DIR="${{ project_dir_var }}"
+[ -n "$PROJECT_DIR" ] || PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
+SSH_CONFIG="$PROJECT_DIR/.ssh/config"
+[ -f "$SSH_CONFIG" ] || { echo "no ssh config at $SSH_CONFIG (run: nix run .#setup-ssh-access)" >&2; exit 2; }
+
+# --no-http is mandatory: the live service holds the HTTP port, without it the
+# shell dies with EADDRINUSE. odoo shell rolls back on exit, so the explicit
+# commit is what makes the requeue stick.
+REMOTE='export PATH="$HOME/.nix-profile/bin:$PATH"; python {{ prod_remote_project_dir }}/src/odoo/odoo-bin shell -c {{ prod_remote_odoo_conf }} -d {{ prod_db_name }} --no-http'
+
+output=$(ssh -A -F "$SSH_CONFIG" "$HOST" "$REMOTE" <<'PY' 2>&1
+jobs = env["queue.job"].search([("state", "in", ["enqueued", "started"])])
+n = len(jobs)
+try:
+    jobs.requeue()
+except AttributeError:
+    # Older queue_job: no requeue() on the model.
+    jobs.write({"state": "pending"})
+env.cr.commit()
+print("REQUEUED %d" % n)
+PY
+)
+
+echo "$output"
+grep -q '^REQUEUED ' <<<"$output" || {
+    echo "prod-requeue-jobs: no REQUEUED marker in the output — the requeue did NOT run" >&2
+    exit 1
+}
