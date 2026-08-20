@@ -9,9 +9,12 @@ _envops:
   trim_blocks: true
   lstrip_blocks: true
 
-# Generated once, then owned by the project (hand-tuned addons_paths list).
+# Generated once, then owned by the project: odools.toml carries a hand-tuned
+# addons_paths list, and the estimate calibration table carries measured actuals
+# that must survive every template update.
 _skip_if_exists:
   - odools.toml
+  - .claude/skills/estimate/references/calibration.md
 
 _tasks:
   - "[ -d .git ] || git init -q"
@@ -203,6 +206,32 @@ prod_web_url:
   help: Production web URL (shown by the prod-server helper)
   default: ""
   when: "{{ prod_ssh_host != '' }}"
+
+# The layout of the generated env ON the prod/test box — what the deploy skill
+# pulls, updates and restarts there. Asked only when that skill ships.
+prod_remote_project_dir:
+  type: str
+  help: Path of the project checkout on the prod/test box
+  default: "~/nixod/odoo-{{ odoo_version | replace('.0', '') }}"
+  when: "{{ prod_ssh_host != '' and use_claude_code and custom_repo_name }}"
+
+prod_remote_odoo_conf:
+  type: str
+  help: Odoo config file on the prod/test box
+  default: "~/odoo.conf"
+  when: "{{ prod_ssh_host != '' and use_claude_code and custom_repo_name }}"
+
+prod_db_name:
+  type: str
+  help: Database name on the prod/test box
+  default: odoo
+  when: "{{ prod_ssh_host != '' and use_claude_code and custom_repo_name }}"
+
+prod_link_addons_cmd:
+  type: str
+  help: Command run from the box's project dir to re-link addon symlinks (deploy --link-addons)
+  default: "nix run .#update-repos"
+  when: "{{ prod_ssh_host != '' and use_claude_code and custom_repo_name }}"
 
 test_ssh_host:
   type: str

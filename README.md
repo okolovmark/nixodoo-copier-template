@@ -32,10 +32,15 @@ locked with uv/uv2nix.
   the **pipeline** orchestrator (task → dev → QC gate → docs → demo GIF → PR), **my-status**
   (status posting, Teams), **teams-message** (readable Teams messages: markdown Teams
   actually renders, recipient verified by email, draft before send),
-  **odoo-tickets** (ticket tracking in a prod Odoo) and
+  **odoo-tickets** (ticket tracking in a prod Odoo),
   **deploy-checks** (blast-radius classification of a change set + read-only
   post-deploy invariant check: unbalanced postings, failed queue jobs, stuck
-  crons, negative stock)
+  crons, negative stock), **deploy** (the prod runbook itself: resolve the merged
+  PR, derive the `-u` list from what the pull actually lands, approval gate, one
+  named write script per prod step, T+0/T+60 invariant checks — with the
+  announcement and ticket-note beats gated on your `status_mcp`/`tickets_mcp`
+  answers) and **estimate** (effort estimates priced from a calibration table of
+  your own closed tickets, not from gut feel)
 - Optional (asked during generation): custom addons repo wiring, S3 production-backup
   restore with **native Odoo neutralization** (`odoo neutralize` + dev fixups),
   SSH helpers for prod/test servers, OCA `queue_job` wiring
@@ -119,6 +124,7 @@ uvx copier update --trust
 | `use_pipeline` | `true` (asked when a custom addons repo is set) |
 | `backup_s3_bucket` | empty → no backup tooling |
 | `prod_ssh_host` (+user/url), `test_ssh_host` (+user/port/forward/url) | empty → no SSH helpers |
+| `prod_remote_project_dir` / `prod_remote_odoo_conf` / `prod_db_name` / `prod_link_addons_cmd` (the box's layout, for the deploy skill) | `~/nixod/odoo-<major>` / `~/odoo.conf` / `odoo` / `nix run .#update-repos` |
 
 ## Notes
 
@@ -135,8 +141,17 @@ uvx copier update --trust
   identifier and points at `lsp.py` instead; re-running the same grep passes. Budget:
   three bounces per session, one per distinct pattern; `FINDCODE_NUDGE=0` disables.
   Regression corpus: `python3 tests/test_nudge_find_code.py`.
-- `odools.toml` is generated once (`_skip_if_exists`) because `addons_paths` is
-  hand-tuned per project — template updates never overwrite it.
+- `odools.toml` and `.claude/skills/estimate/references/calibration.md` are
+  generated once (`_skip_if_exists`): the first because `addons_paths` is
+  hand-tuned per project, the second because it holds measured actuals. Template
+  updates never overwrite either. The estimate anchors ship as a **prior** from
+  the project this skill came from — replace them with your own spread once the
+  table has rows.
+- The `deploy` skill writes to production, so its write steps are named scripts
+  under `skills/deploy/scripts/` with validated arguments, never inline remote
+  commands: that is one permission decision instead of a fresh judgement call
+  every deploy. Nothing there runs before the skill's approval gate, and Claude
+  cannot grant itself the permission entry — it composes it and you paste it.
 - `postgres-mcp` in `.mcp.json` runs with `--access-mode=unrestricted` — it
   targets the **local dev database** only (`DATABASE_URI` from `.env`).
 - `postgres-mcp` and `mcp-pdb` run with `--with 'mcp<2'`: both import

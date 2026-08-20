@@ -59,6 +59,8 @@ occurrence with that absolute path (`grep -rl __MEMORY_DIR__`).
 - `journal/` — chronological session logs (one file per day).
 - `scripts/`
   - `standup.sh` — daily continuity render (idempotent; GNU + BSD/macOS `date`/`stat`).
+  - `next_id.sh` — allocate the next `state.md` item ID under a lock (two
+    parallel sessions must not hand out the same one); rebuilds a lost counter.
   - `digest.sh` — list unprocessed `raw/` drops.
   - `raw-drop.sh` — quick capture into `raw/` from a shell alias.
   - `init-memory.sh` — this installer (not copied into live memory).

@@ -1,0 +1,93 @@
+---
+name: estimate
+description: "Estimate a task's effort calibrated on this project's own closed tickets — gut-feel estimates read as human-dev denominations and run several times over actual in a Claude-assisted flow, so price from the measured anchor table in references/calibration.md and do not scale the result again. Produces focused hours via three internal estimates (reference match, decomposition, skeptic) reconciled to one number. Use before creating a ticket, when taking work into scope{% if status_mcp == 'teams' %}, when my-status estimates or rebalances{% endif %}, or when asked 'how long will this take'."
+argument-hint: "[{{ ticket_prefix }} key or short task description]"
+---
+
+# Estimate
+
+## What the number means
+
+**Focused working time to done**: dev + tests + QC + docs + PR + deploy +
+verification. It excludes waiting on other people (review, merge approval, user
+decisions, post-deploy rechecks) — waits move *dates*, never *hours*. Never pad
+hours for calendar; scheduling{% if status_mcp == 'teams' %} (`my-status`, planned dates){% endif %} handles calendar
+separately.
+
+**The numbers live in `references/calibration.md`, not here.** That file is
+project-owned: the anchor table (shape → hours), the row-per-task history behind
+it, and the notes recording why a range moved. This file is the method.
+
+Two facts the calibration file will keep proving:
+
+- **Gut-feel estimates run several times over actual.** The t-shirt buckets a
+  team carries in its head are human-dev denominations, and delivery here is
+  Claude-assisted. On the project this skill came from the median was ×3.
+- **That ratio is a fact about gut-feel estimating, not a correction to apply
+  on top of the table.** Price from the anchors and stop; do not scale the
+  result down again.
+
+An estimate above the largest actual in the table is a signal the ticket holds
+several deliverables, not a signal that this one is hard.
+
+## Procedure
+
+1. **Classify the shape** — pick the nearest 2–3 rows from
+   `references/calibration.md`.
+2. **Three estimates, made independently** (internal, don't show the debate):
+   - **Reference**: nearest-neighbour from the table.
+   - **Decomposition**: list the concrete steps, price each from the anchors,
+     sum.
+   - **Skeptic**: argue the blow-up — which multiplier fires, what is unknown,
+     what broke last time on a similar task.
+3. **Reconcile.** max/min ≤ 2 → take the middle. Otherwise the gap names an
+   unknown — resolve it (5-min code/data scout), re-estimate.
+4. **Output**: hours + one-line basis (e.g. "ref {{ ticket_prefix }}-1387, + migration ×1.5").
+   Round to 0.5h under 2h, to 1h above.
+5. **Past the table's largest actual → split the ticket.** A bigger number means
+   the ticket holds several deliverables; estimate each.
+
+## Multipliers
+
+×1.5–2 each, **multiply at most two**:
+
+- no reproduction yet, in an unfamiliar core/OCA seam
+- data migration over live rows
+- multi-company / multi-step-route edge cases
+- UI needs browser verification
+- first time in this module
+
+Fixed adders belong in the calibration file too — anything that runs every time
+(a deploy, an announcement, a post-deploy check) is a measured constant, not a
+judgement call.
+
+{% if tickets_mcp == 'odoo' -%}
+## Writing to the ticket
+
+- `planned_hours` = the estimate — **never a bucket value**.
+- A t-shirt field, where the project has one, is the nearest bucket to that
+  number: ≤2h `xs`, ≤6h `s`, ≤12h `m`, ≤32h `l`, ≤60h `xl`, else `xxl` (and
+  split long before that).
+
+{% endif -%}
+## Calibration loop
+
+This is what makes the skill worth having — an uncalibrated estimate is a guess
+with a table in front of it.
+
+On done: actual = journal session time on the task; fallback = ticket create →
+PR created (work usually starts at ticket creation), excluding review-wait.
+Append a row to `references/calibration.md`, marking whether the estimate was
+**anchor-based** or gut-feel.
+
+**Adjust the anchors when the median ratio of the last 5 _anchor-based_ rows
+leaves [0.7, 1.5]** — anchor-based only. Reading all rows would keep reporting
+the pre-anchor window's ratio forever and demand a downward adjustment that has
+already been applied, shrinking the anchors on every pass. Fewer than 5
+anchor-based rows: adjust a single shape row only when a new actual falls
+outside its printed range, and re-derive that range from its own actuals.
+
+When adjusting, **re-derive each range from the actuals behind it** rather than
+scaling the table — the ranges are measurements, and the `Behind it` column is
+there so the derivation is checkable. Say what moved and why, in the table's
+note.
