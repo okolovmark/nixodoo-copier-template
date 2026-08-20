@@ -207,18 +207,20 @@ prod_web_url:
   default: ""
   when: "{{ prod_ssh_host != '' }}"
 
-# The layout of the generated env ON the prod/test box — what the deploy skill
-# pulls, updates and restarts there. Asked only when that skill ships.
+# Where THIS project lives on the prod/test box — the same generated env, checked
+# out there, which is what the deploy skill pulls, updates and restarts. Asked
+# only when that skill ships; the questions exist because a box that predates the
+# project (or serves several) can lay things out differently.
 prod_remote_project_dir:
   type: str
-  help: Path of the project checkout on the prod/test box
-  default: "~/nixod/odoo-{{ odoo_version | replace('.0', '') }}"
+  help: Path of this project's checkout on the prod/test box
+  default: "~/{{ project_name }}"
   when: "{{ prod_ssh_host != '' and use_claude_code and custom_repo_name }}"
 
 prod_remote_odoo_conf:
   type: str
   help: Odoo config file on the prod/test box
-  default: "~/odoo.conf"
+  default: "{{ prod_remote_project_dir }}/odoo.conf"
   when: "{{ prod_ssh_host != '' and use_claude_code and custom_repo_name }}"
 
 prod_db_name:

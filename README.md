@@ -124,7 +124,7 @@ uvx copier update --trust
 | `use_pipeline` | `true` (asked when a custom addons repo is set) |
 | `backup_s3_bucket` | empty → no backup tooling |
 | `prod_ssh_host` (+user/url), `test_ssh_host` (+user/port/forward/url) | empty → no SSH helpers |
-| `prod_remote_project_dir` / `prod_remote_odoo_conf` / `prod_db_name` / `prod_link_addons_cmd` (the box's layout, for the deploy skill) | `~/nixod/odoo-<major>` / `~/odoo.conf` / `odoo` / `nix run .#update-repos` |
+| `prod_remote_project_dir` / `prod_remote_odoo_conf` / `prod_db_name` / `prod_link_addons_cmd` (where this same project sits on the box, for the deploy skill) | `~/<project_name>` / `<that dir>/odoo.conf` / `odoo` / `nix run .#update-repos` |
 
 ## Notes
 
