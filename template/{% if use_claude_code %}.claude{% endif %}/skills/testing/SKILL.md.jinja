@@ -292,6 +292,14 @@ class TestMyFeatureTour(HttpCase):
                         step_delay=100, login="admin")
 ```
 
+**A browser test that "passes" may not have run.** `start_tour` and
+`browser_js` need `websocket-client`; without it Odoo **skips** them, and a skip
+counts as neither a failure nor an error, so the run still reads
+`0 failed, 0 error(s)`. The dependency is declared in `pyproject.toml`, but a
+project generated before it was added will not have it. Grep the log for
+`skipped .* websocket-client` before believing a browser test covers anything,
+and confirm a new one fails when you break the code it covers.
+
 ## Gotchas
 
 ### Function descriptor binding when captured as class attribute
