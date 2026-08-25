@@ -7,4 +7,11 @@ requires-python = ">={{ python_version }},<3.{{ (python_version.split('.')[1] | 
 dependencies = [
     # Populated from src/odoo/requirements.txt by `nix run .#bootstrap-deps`
     # (run `nix run .#update-repos` first to clone src/odoo).
+
+    # Not in Odoo's requirements.txt, and not optional once the project has a
+    # browser test. HttpCase.browser_js and start_tour need websocket-client to
+    # drive Chrome; without it Odoo SKIPS those tests, and a skip is reported as
+    # neither a failure nor an error. The run then reads "0 failed, 0 error(s)"
+    # with the browser tests never having executed.
+    "websocket-client",
 ]
