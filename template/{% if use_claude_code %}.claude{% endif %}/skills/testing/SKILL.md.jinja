@@ -292,44 +292,30 @@ class TestMyFeatureTour(HttpCase):
                         step_delay=100, login="admin")
 ```
 
-**A browser test that "passes" may not have run.** `start_tour` and
-`browser_js` need `websocket-client`; without it Odoo **skips** them, and a skip
-counts as neither a failure nor an error, so the run still reads
-`0 failed, 0 error(s)`. The dependency is declared in `pyproject.toml`, but a
-project generated before it was added will not have it. Grep the log for
-`skipped .* websocket-client` before believing a browser test covers anything,
-and confirm a new one fails when you break the code it covers.
+**A browser test that "passes" may not have run** — see
+[references/gotchas.md](references/gotchas.md), "Browser tests".
 
 ## Gotchas
 
-### Function descriptor binding when captured as class attribute
+Measured failure modes live in [references/gotchas.md](references/gotchas.md) —
+read it before debugging a failing, flaky or suspiciously green test:
 
-Capturing a plain function (e.g. an Odoo registry method) as a **class attribute** on a test case for later restoration: wrap it in `staticmethod(...)`. Otherwise reading it back via `self.attr` triggers Python's descriptor protocol and returns a method bound to the test case, not the original function.
-
-```python
-# WRONG — `self._original_name_search` returns a method bound to the TEST CASE,
-# not the recordset. setattr(target_cls, "name_search", self._original_name_search)
-# installs a bound-to-test-case method on the wrong class.
-cls._original_name_search = cls._partner_cls.name_search
-
-# RIGHT — staticmethod prevents the descriptor binding on attribute lookup.
-cls._original_name_search = staticmethod(cls._partner_cls.name_search)
-```
-
-Local-variable storage inside a function body is safe (local reads aren't
-descriptor lookups). Only class-attribute storage triggers this. Symptom of
-getting it wrong: `AttributeError` deep in framework call stacks, with `self`
-mysteriously being the test case.
-
-### Magic numbers — assertion RHS only
-
-"No magic numbers in tests" applies to **assertion expected-values**, not setup literals.
-
-- **Assertion RHS** (`assertEqual(actual, 5)`): always derive from setup data — `assertEqual(deleted, len(old_logs))`, `assertEqual(deleted, limit)`. A bare `5` becomes opaque later; worse, a parallel literal-bump can pass silently.
-- **Setup-side literal** (`_make_aged_logs(5, ...)`): fine inline. The assertion that follows derives from `len(...)` — any positive count works, no drift risk.
-- The test: "if production logic changed, would this number need to change in lockstep, and would the test silently pass if it didn't?" Setup-only literals fail that test — they're inert.
+- `cr.savepoint()` around `assertRaises` — only when SQL was already emitted
+- `mute_logger("odoo.sql_db")` — only for psycopg2-level errors, never plain `ValidationError`
+- CacheMiss in a traceback = an AccessError the cache was hiding (flaky-test shape; assert with a cold cache)
+- Function descriptor binding when a function is captured as a class attribute (`staticmethod(...)`)
+- Magic numbers — assertion RHS only, derive from setup
+- Multi-company: a fixture granting the acting user both companies proves nothing
+- Restored-prod-dump traps: currency-factor diffs, portal 404 without `authenticate(None, None)`, lagging sequences, reused live records, fiscal-year locks
+- Believing a run: test COUNT ≠ 0, grep for `skipped`, `Address already in use`
+- Browser tests: silent skip without websocket-client, boolean `_wait_ready`, `--test-tags /module:Class` selector
 
 ## Running Tests
+
+Before believing a result: the test COUNT must be non-zero (`-u` of an
+uninstalled module runs 0 tests and exits green — use `-i`), grep for
+`skipped`, and check the log head for `Address already in use` (details:
+[references/gotchas.md](references/gotchas.md), "Believing a test run").
 
 ```bash
 # All tests for a module
@@ -349,5 +335,5 @@ odoo -c ${{ project_dir_var }}/odoo.conf -u {{ module_prefix }}_<module> \
 3. Don't test multiple things per method — one assertion focus per test
 4. Don't skip cleanup — `TransactionCase` rolls back automatically
 5. Don't ignore `multi` handling — test with recordsets of size > 1
-6. Don't hardcode assertion expected-values — derive from setup (see Gotchas → Magic numbers)
+6. Don't hardcode assertion expected-values — derive from setup (see references/gotchas.md → Magic numbers)
 7. Don't use a mixin pattern for shared setup — direct inheritance from `TransactionCase` (see Shared Setup)

@@ -1,0 +1,116 @@
+# Views — validator traps and runtime overrides
+
+Facts verified on Odoo 16 source; re-verify on later majors where marked.
+
+## Contents
+
+{% if odoo_version == '16.0' %}
+- Odoo 16 has no expression-valued `invisible`/`readonly`/`required`
+{% else %}
+- Odoo {{ odoo_version.split('.')[0] }} uses expression attributes, `attrs` is gone
+{% endif %}
+- View inheritance selectors: never xpath on `string`
+- A field's `domain` can't reference a stricter-`groups` field
+- `base.menu_custom` is developer-mode-only
+- Action `search_default_group_*` overrides the pivot arch's row axis
+- Hiding "New" in the m2m picker dialog
+
+{% if odoo_version == '16.0' %}
+## Odoo 16 has no expression-valued `invisible`/`readonly`/`required`
+
+`invisible="not method_name"` / `readonly="state == 'done'"` is **Odoo 17+**
+view syntax. On 16 those attributes accept only `"1"`/`"0"`; conditions go
+through `attrs` with a domain:
+
+```xml
+<!-- 17+ (fails to LOAD on 16) -->
+<field name="method_name" invisible="not method_name"/>
+<!-- 16 -->
+<field name="method_name" attrs="{'invisible': [('method_name', '=', False)]}"/>
+```
+
+The symptom is misleading: a `ParseError: while parsing <file> ... somewhere
+inside <record>` ending in `AttributeError: 'ValueError' object has no
+attribute 'context'` — nothing names the attribute. Recognise it by an
+`invisible=`/`readonly=`/`required=` with a non-`1`/`0` value in the quoted
+record. Find them all:
+
+```bash
+grep -rPn '\b(invisible|readonly|required|column_invisible)="(?!1")(?!0")[^"]' --include='*.xml' .
+```
+{% else %}
+## Odoo {{ odoo_version.split('.')[0] }} uses expression attributes, `attrs` is gone
+
+`attrs`/`states` were removed in 17.0 — conditions live directly in the
+attribute (`invisible="not method_name"`, `readonly="state == 'done'"`). Code
+ported from ≤16 that still carries `attrs=` fails view validation.
+{% endif %}
+
+## View inheritance selectors: never xpath on `string`
+
+- `<xpath expr="//button[@string='Locations']">` fails the view validator at
+  module update — *"View inheritance may not use attribute 'string' as a
+  selector"* (translatable, so the match would depend on loading language). The
+  registry fails to load until fixed.
+- **Anchor an action button on its xmlid reference**:
+  `<xpath expr="//button[@name='%(module.action_xmlid)d']">` works — the
+  `%(xmlid)d` substitution runs over the whole serialized arch, attribute
+  values included. It is the same expression core used to emit the node, so it
+  matches by construction, and if core retargets the button the update fails
+  loudly instead of silently skipping.
+- **An arch test reading `get_view()` cannot see `groups` or `attrs`** —
+  postprocessing consumes `groups` and rewrites `attrs` into `modifiers`. To
+  pin that a `position="replace"` kept the original gates, read
+  `view.get_combined_arch()` (raw inherited arch) or assert on `modifiers`.
+- A group grant in such a test can be a no-op when the group is implied by
+  `base.group_user` on that database — granting it proves nothing.
+
+## A field's `domain` can't reference a stricter-`groups` field
+
+View validation rejects a field whose `domain` references another field
+restricted to a stricter group than itself ("Field 'company_id' used in domain
+of field 'payment_term_id' ... is restricted to the group(s) ..."). Fix: make
+the referenced field at least as visible — drop its `groups=` on the view node,
+or add an ungrouped `<field name="company_id" invisible="1"/>` helper.
+
+Debugging gotcha: during `-u` the real error is buried under a `ParseError` and
+then a "cursor already closed" + `KeyError` cascade — do not chase the xmlid
+KeyError, it's collateral. Re-run with `--log-handler odoo.tools.convert:DEBUG`
+for the true root line. A normal service boot (cached views) loads fine, so
+"HTTP 200 but `-u` fails on views" points at strict view re-validation.
+
+## `base.menu_custom` is developer-mode-only
+
+`base.menu_custom` ("Custom" under Settings) is gated by `base.group_no_one`,
+active only in developer mode — any menu parented under it silently disappears
+in normal mode, for admins too. A menu is visible only if the user passes the
+group check on EVERY ancestor. Good parents for a custom tool menu: no parent
+(top-level), or `base.menu_administration` (admins only).
+
+Also: `load_menus` is ormcache'd — a separate `-u ... --stop-after-init`
+commits menu rows but does NOT invalidate the running server's cache. Restart
+the service after a menu change.
+
+## Action `search_default_group_*` overrides the pivot arch's row axis
+
+A `search_default_group_<filter>` context key passed by the action becomes the
+pivot's **row** groupby at runtime and overrides the arch's `type="row"` field
+(the `type="col"` axis survives). Symptom: the pivot opens grouped the "wrong"
+way despite a correct-looking view. Fix: make the action's
+`search_default_group_*` match the intended row axis, or drop it. Unit tests
+assert generated records, not the rendered groupby — only a browser check
+catches this.
+
+## Hiding "New" in the m2m picker dialog
+
+"Add a line" on a m2m opens `SelectCreateDialog`; hiding its "New" button is
+NOT `options="{'no_create': True}"` (autocomplete-only). The control path is
+the embedded tree's `create` flag:
+
+```xml
+<field name="field_ids" options="{'no_open': True}">
+    <tree create="false" edit="false">
+        <field name="name"/>
+    </tree>
+</field>
+```

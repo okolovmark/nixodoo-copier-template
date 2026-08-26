@@ -44,6 +44,9 @@ End with one line: `✓ N/N items pass · M flagged · K fixed inline · J need 
 - [ ] No `.search([...]).ids` immediately followed by `browse(ids)` — keep the recordset
 - [ ] No `search_read(...)` + manual `(id, name)` tuple normalisation — use `search()` and operate on records
 - [ ] `Command.set/link/clear/...` instead of `(6, 0, [...])` / `(4, id)` magic tuples
+- [ ] An override of a core field changes **behaviour only, never the computed schema** — no `required=`, `ondelete=`, `digits=` differing from the base declaration; move the invariant to a CHECK / `@api.ondelete` / create guard (`code-patterns` skill, references/migrations.md)
+- [ ] Overriding a core compute: `@api.depends` AND `@api.depends_context` copied from core and diffed (`code-patterns` skill, references/fields-computes.md)
+- [ ] Removing a field that more than one module declares: xid ownership verified on every target DB — otherwise the column is dropped where the surviving declarer isn't installed
 - [ ] External params (cron args, `ir.config_parameter`, REST payloads) validated on type and boundaries at method entry; negative values rejected with `ValidationError`, not silently accepted
 - [ ] **Single source of truth per param** — no const + class-const + `ir.config_parameter` + cron arg for the same value. Aim for one (cron arg with default in signature is usually best)
 
@@ -89,13 +92,13 @@ End with one line: `✓ N/N items pass · M flagged · K fixed inline · J need 
 - [ ] No asserts on values you set in `setUp` (`assertEqual(len(self.partners), 2)` when `self.partners` was created with 2 records is noise)
 - [ ] Compare with `len(self.partners)`, `len(self.logs)`, etc. — not magic numbers (`5`, `11`) on the assertion RHS
 - [ ] Common fixtures in `tests/common.py` with a shared base class (`{{ project_name }}Common(TransactionCase)`); HttpCase tests use their own base, don't duplicate `setUpClass` (see `testing` skill)
-- [ ] No `self.cr.savepoint()` inside `assertRaises` unless the failing call already emitted SQL (see memory: `reference_test_savepoint_when_needed`)
-- [ ] `mute_logger("odoo.sql_db")` **only** when expecting a psycopg2-level error (IntegrityError, ProgrammingError); not for `ValidationError` from `@api.constrains` (see memory: `reference_mute_logger_sql_db`)
+- [ ] No `self.cr.savepoint()` inside `assertRaises` unless the failing call already emitted SQL (`testing` skill, references/gotchas.md)
+- [ ] `mute_logger("odoo.sql_db")` **only** when expecting a psycopg2-level error (IntegrityError, ProgrammingError); not for `ValidationError` from `@api.constrains` (`testing` skill, references/gotchas.md)
 - [ ] After refactoring — delete now-unused helper functions (`_setup_*_refs`)
 
 ### Performance
 
-- [ ] No `ORDER BY id` in large chunked `DELETE ... WHERE ... LIMIT N` (sorting 100k+ rows is wasted when next tick cleans the next chunk; see memory: `reference_odoo_autovacuum_pattern`)
+- [ ] No `ORDER BY id` in large chunked `DELETE ... WHERE ... LIMIT N` (sorting 100k+ rows is wasted when next tick cleans the next chunk; `code-patterns` skill, references/background-jobs.md)
 - [ ] Long `if`-chains or repeated `if cond: action(label)` / early-return chains that vary only in `(condition, label)` or `(key, value)` → dict + loop / `.get()`. Threshold ~4+ branches with uniform action shape (see `style` skill "Many-branch validation / dispatch")
 - [ ] No `noqa: PLR0911 / PLR0912 / etc.` to suppress complexity warnings — that's a signal to refactor, not a fix
 
@@ -127,4 +130,4 @@ If everything passes: `Pre-PR check: ✓ 56/56 items pass.`
 ## Related
 
 - Why a rule exists: [style](../style/SKILL.md), [testing](../testing/SKILL.md), [code-patterns](../code-patterns/SKILL.md) skills.
-- Full rationale for cited items: memory nodes `reference_test_savepoint_when_needed`, `reference_mute_logger_sql_db`, `reference_odoo_autovacuum_pattern`.
+- Full rationale for cited items: `testing` skill references/gotchas.md, `code-patterns` skill references/.

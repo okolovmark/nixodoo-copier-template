@@ -75,6 +75,22 @@ When the user asks to commit (or the pipeline creates commits):
 5. Write a body explaining WHY if the change is non-trivial
 6. Add task references if known from context
 
+## Reformat Commits (hook reflow)
+
+The post-edit format hook runs `ruff format` on every touched file, so editing
+an old file wrapped at a narrower width reflows the WHOLE file — dozens of
+churn lines around the real change.
+
+- **Isolate it**: commit the pure reformat FIRST
+  (`[CLN] <module>: ruff format <file>`), then the functional change on top.
+  Both diffs stay reviewable; never fight the reformat back out of a mixed diff.
+- The hook does not always fire on Bash-made edits (`sed`, `python`) — before
+  pushing, run `git diff --name-only origin/{{ odoo_version }}...HEAD | grep '\.py$' | xargs ruff format --check`
+  rather than waiting for CI.
+- Zero-churn alternative (only when the file must stay as-is): `git restore
+  <file>`, write your change as a unified diff, `git apply --recount` — a Bash
+  `git` call does not trigger the edit hook.
+
 ## Examples
 
 ```

@@ -1,0 +1,122 @@
+---
+name: prod-ops
+description: "Working with the production Odoo server outside a deploy: access and layout (SSH, paths, service), choosing the right read channel (RPC vs local prod-dump DB vs live odoo shell), prod forensics (who/when/what changed a record), and running named odoo-shell scripts against prod (dry run -> commit -> read-back){% if tickets_mcp == 'odoo' %} with an audit trail on the task{% endif %}. Use when reading or fixing prod data, investigating a prod record's history, or running anything on the prod box. The deploy skill builds on this for access mechanics."
+argument-hint: "[read | forensics | run <script.py> [dry|commit]]"
+---
+
+# Prod ops
+
+Everything here touches **production**. Reads are cheap; anything that writes
+follows the script ladder below and never runs without showing the exact
+command and getting an explicit OK.
+
+## Access & layout
+
+- `ssh -F "${{ project_dir_var }}/.ssh/config" prod '<remote command>'` — the
+  same connection `nix run .#prod-server` uses interactively. Add `-A` only
+  when the remote command needs git (pull on the forwarded key).
+{% if test_ssh_host %}
+- `test` is a second host alias in the same config — same mechanics.
+{% endif %}
+- {% if prod_web_url %}Web {{ prod_web_url }} · {% endif %}DB `{{ prod_db_name }}` · config `{{ prod_remote_odoo_conf }}` ·
+  checkout `{{ prod_remote_project_dir }}` · odoo-bin
+  `{{ prod_remote_project_dir }}/src/odoo/odoo-bin`
+- Non-interactive SSH lacks the nix PATH — every remote command starts with
+  `export PATH="$HOME/.nix-profile/bin:$PATH"` or a bare `python` exits 127.
+- `--no-http` is **mandatory** on any `odoo shell` / CLI run next to the live
+  service — the service holds the HTTP port.
+
+## Reading prod — pick the channel
+
+| channel | use for | limits |
+|---|---|---|
+| **RPC** (odoo MCP, `env_profile: "prod"`) | quick reads, ticket plumbing | acts as a plain service user: `groups=`-restricted fields raise, model ACLs bar whole models, and record rules **silently narrow** reads — a `read_group` scoped to the account's companies looks complete and is not. No `sudo()` over RPC. |
+| **local prod-dump DB** (postgres-mcp / SQL) | finding the MECHANISM: history tables RPC is denied, heavy joins, forensics | a snapshot — check its age first (`select max(create_date) from <busy table>`); records newer than the dump are simply absent |
+| **live `odoo shell` over SSH** | the FIGURES: anything going to a stakeholder, a ticket or a decision | runs as superuser — read-only discipline is on you; pipe a named script, never an inline one-liner |
+
+Two rules that repeatedly save wrong conclusions:
+
+- **Cross-check any per-company or per-scope total against a whole-table
+  count** (shell or SQL) and chase the difference — record rules make a
+  narrowed answer look complete.
+- **Dump for the mechanism, live shell for the figures.** A days-old restore
+  gets the behaviour exactly right and every headline number wrong; re-derive
+  live anything that leaves the room.
+
+## Forensics — who/when/what changed a record
+
+- **Chatter tracking** holds field-level history:
+
+  ```sql
+  select m.date, t.field_desc, t.old_value_char, t.new_value_char
+  from mail_message m join mail_tracking_value t on t.mail_message_id = m.id
+  where m.model = '<model>' and m.res_id = <id> order by m.date;
+  ```
+
+- **`ir.logging` is the repair journal**: bulk repair scripts here write one
+  row per changed record (`name` = task key, `path` = table, `line` = record
+  id, message = old → new). Grep it before theorising — it answers "did the
+  sweep touch this record" definitively.
+- Pair every dump finding with an RPC/live read of the record's current state:
+  the dump answers "what was true then", never "what is true now".
+
+## Running a script against prod
+
+**Named script file, never an inline one-liner** — a named script with
+validated arguments is one reviewable permission decision; inline
+`ssh ... 'echo "<python>" | odoo-bin shell'` is refused by the auto-mode
+classifier and is unreviewable anyway.
+
+```bash
+bash "${{ project_dir_var }}/.claude/skills/prod-ops/scripts/prod-run-odoo-script.sh" <prod{% if test_ssh_host %}|test{% endif %}> <script.py> [dry|commit]
+```
+
+The runner pipes the file into `odoo-bin shell` on the box (superuser), passes
+the mode as `SCRIPT_MODE`, and **exits non-zero unless the script printed its
+`SCRIPT_DONE mode=<mode>` marker**, so a script that died mid-way cannot read
+as success.
+
+Script contract:
+
+```python
+import os
+MODE = os.environ.get("SCRIPT_MODE", "dry")
+# ...compute, PRINT the planned changes (ids, old -> new, counts)...
+if MODE == "commit":
+    env.cr.commit()
+print("SCRIPT_DONE mode=%s" % MODE)
+```
+
+The ladder, in order, no skipping:
+
+1. **dry on the local prod-dump DB** — logic and counts;
+2. **dry on prod** — same counts expected; a surprise here is a data drift
+   worth understanding before writing;
+3. **commit on prod** — after showing the dry output and getting an explicit
+   OK;
+4. **read-back in a fresh transaction** — verify the effect (a count of what
+   changed), never the exit code.
+
+Bulk-repair conventions: batch with per-batch `cr.savepoint()` so one bad
+record cannot commit a partial sweep; journal every changed record into
+`ir.logging` under the task key (see Forensics) so any row can be put back;
+never address a record by `name` alone in a script — names are not unique
+across companies; qualify by company or work from ids, and print what matched
+before writing.
+{% if tickets_mcp == 'odoo' %}
+
+## Audit trail
+
+Every script run against prod for a task — read-only included — is **attached
+to that task** when you run it, not at close, paired with an internal note:
+model, records affected, dry-run vs committed, counts. Mechanics (base64 →
+`ir.attachment` → `message_post`): `odoo-tickets` skill, Attachments.
+{% endif %}
+
+## Service ops
+
+- **Stop/start in SEPARATE ssh calls** — a single long ssh that stops the
+  service, works and starts it again can drop mid-way and leave the box down.
+- Long-running `-u` / migrations run **detached** (`setsid nohup ... >> log`,
+  then poll the log for the exit marker) — a dropped SSH connection must never
+  leave prod stopped. The full pattern: `deploy` skill, Step 2b.

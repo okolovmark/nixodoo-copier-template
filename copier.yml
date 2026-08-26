@@ -208,9 +208,10 @@ prod_web_url:
   when: "{{ prod_ssh_host != '' }}"
 
 # Where THIS project lives on the prod/test box — the same generated env, checked
-# out there, which is what the deploy skill pulls, updates and restarts. Asked
-# only when that skill ships; the questions exist because a box that predates the
-# project (or serves several) can lay things out differently.
+# out there, which is what the deploy and prod-ops skills pull, update, restart
+# and run shell scripts against. Asked only when those skills ship; the questions
+# exist because a box that predates the project (or serves several) can lay
+# things out differently.
 prod_remote_project_dir:
   type: str
   help: Path of this project's checkout on the prod/test box

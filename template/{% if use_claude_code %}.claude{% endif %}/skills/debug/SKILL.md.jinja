@@ -112,6 +112,44 @@ p self.env.company.name
 - **Computed field**: breakpoint on `_compute_*`, trigger by changing a dependency field, check `@api.depends` includes all necessary fields.
 - **Module install/update**: `--stop-after-init` in args, breakpoints in hooks.py or migration scripts. Main thread only — no `threading.settrace` needed.
 
+## Reading the traceback
+
+**Read it to the BOTTOM** — the first exception names the symptom, the last one
+the cause. Canonical shape:
+
+```
+odoo.exceptions.CacheMiss: 'ir.model.fields(8990,).name'
+   ...
+odoo.exceptions.AccessError: You are not allowed to access 'Fields' (...)
+```
+
+A bare `CacheMiss` is usually a hidden AccessError on a model the acting user
+cannot read: the DB read happens only on a cache miss, so a warm cache makes
+the code look correct and the failure looks intermittent — in production every
+request starts cold, so it is a permanent user-facing failure there. Core
+gives `base.group_user` zero access on `ir.model.fields`; anything resolving a
+field by name at runtime needs `sudo()`.
+
+## Shell verification traps (odoo shell)
+
+Self-inflicted false negatives when verifying from `odoo shell` — check these
+before believing "the code is broken":
+
+- **Company-scoped calls silently no-op under the wrong `env.company`.**
+  `mo.action_assign()` can reserve nothing and return quietly;
+  `mo.with_company(mo.company_id).action_assign()` works. When a scripted check
+  reports "nothing happened" with no traceback, suspect the company context
+  first: set BOTH `allowed_company_ids` in context AND `with_company(<record's
+  company>)` on the call.
+- **Guard ordering**: a model's `write` may run guard A before guard B —
+  testing guard B on a fixture that also trips guard A reads as "wrong error
+  text". Pick a fixture that isolates the guard under test.
+- **Writing a child record directly bypasses the parent's guards** — editing a
+  o2m line model does not run the parent's `write`; the form path only works
+  because saving sends the change inside the parent's vals.
+- **Float equality on UoM/currency round-trips**: `30.000000000000004 != 30.0`
+  — compare with `float_compare`/tolerance or a correct fix reads as broken.
+
 ## Tips
 
 - **RPC timeouts are expected** when breakpoint fires during an RPC call

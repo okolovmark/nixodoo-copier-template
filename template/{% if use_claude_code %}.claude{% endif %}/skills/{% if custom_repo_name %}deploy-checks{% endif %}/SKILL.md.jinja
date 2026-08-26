@@ -70,6 +70,38 @@ Callers grep `": FAIL"` / `": WARN"`. `INV_SKIP=name,name` disables checks —
 e.g. skip `negative_internal_stock` on projects with a custom availability
 model and encode the real rule in `invariant_local.py` instead.
 
+## Schema silence — a clean deploy emits no schema statements
+
+`-u` of an unchanged module must print **nothing** here; every line is a table
+rewrite you pay on every deploy (and, on a live service, a deadlock lottery
+ticket — the usual cause is an override changing a core field's computed
+schema, see `code-patterns` references/migrations.md):
+
+```bash
+odoo -c ${{ project_dir_var }}/odoo.conf -u <module> --workers 0 --stop-after-init \
+     --log-handler odoo.schema:DEBUG --logfile=/dev/stdout | grep -E "odoo.schema:"
+```
+
+Duplicate constraints already accumulated by such churn:
+
+```sql
+SELECT c.relname, a.attname, count(*) FROM pg_constraint fk
+JOIN pg_class c ON fk.conrelid = c.oid
+JOIN pg_attribute a ON a.attrelid = c.oid AND fk.conkey[1] = a.attnum
+WHERE fk.contype = 'f' AND array_length(fk.conkey, 1) = 1
+GROUP BY 1, 2 HAVING count(*) > 1 ORDER BY 3 DESC;
+```
+
+## Migrations: verify the effect, not the exit code
+
+A migration script can silently not run — on a first INSTALL (migrations fire
+on upgrade only), and occasionally on an upgrade (`MigrationManager` drops a
+version whose file glob came back empty at graph build). The deploy exits 0
+and the log looks clean either way. After any deploy that depends on a
+migration, count the rows it was supposed to change; keep a standalone twin of
+the migration body for manual runs. Details: `code-patterns`
+references/migrations.md.
+
 ## Project-local invariants
 
 `scripts/invariant_local.py` is **project-owned** (edit it, keep your version on

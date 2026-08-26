@@ -102,15 +102,11 @@ The `state_counter` file next to it holds the next ID to assign.
 - [Bootstrap questions](nodes/bootstrap_questions.md) — template for first-time onboarding
 
 ### Reference (Odoo framework facts)
-<!-- version-agnostic Odoo behaviors; verified on 17, mechanism holds on 16 -->
-- [field search= kwarg](nodes/reference_field_search_kwarg_stored.md) — `search=` fires only for non-stored fields; override `_search` for stored
-- [ir.cron trigger async pattern](nodes/reference_ir_cron_trigger_async_pattern.md) — action-triggered background work via `cron._trigger()` + cursor field, no queue_job
-- [m2m domain is UI-only](nodes/reference_m2m_domain_is_ui_only.md) — `domain=` is a widget hint; use `@api.constrains` for real enforcement
-- [m2m picker New button](nodes/reference_m2m_picker_new_button.md) — hide via embedded `<tree create="false">`, not field `no_create`
-- [mute_logger odoo.sql_db](nodes/reference_mute_logger_sql_db.md) — only for psycopg2-level errors, not ValidationError
-- [autovacuum chunked-delete](nodes/reference_odoo_autovacuum_pattern.md) — `GC_UNLINK_LIMIT` + re-trigger for high-volume cleanup
-- [o2m active_test](nodes/reference_odoo_x2many_active_test.md) — show archived rows via `context` on the MODEL field, not the view
-- [test savepoint when needed](nodes/reference_test_savepoint_when_needed.md) — wrap `assertRaises` in savepoint only if SQL was already emitted
+<!-- Framework knowledge belongs in the SKILLS (code-patterns/testing/debug/style
+     references), which every generated project shares — a memory node here is
+     for facts about THIS environment. Add framework nodes only for behavior not
+     yet folded into a skill, and migrate them there once they stop being a
+     surprise and become a step. -->
 
 ### User
 - [User role and preferences](nodes/user_role.md) — who the user is, how they work (stub — fill on bootstrap)
