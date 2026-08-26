@@ -32,8 +32,10 @@ you resolve it, so it is never guessed again); resolve by topic with
   (`ssh -A -F "${{ project_dir_var }}/.ssh/config" prod '<remote script>'`):
   the box's `origin` is a git SSH remote and the pull runs on your forwarded
   key. A stale deploy key in the box's `~/.ssh` is not the account that owns
-  the branch — do not use it.{% if test_ssh_host %}
-- If the 2nd argument is `test`, target the `test` alias instead of `prod`.{% endif %}
+  the branch — do not use it.
+{% if test_ssh_host %}
+- If the 2nd argument is `test`, target the `test` alias instead of `prod`.
+{% endif %}
 
 ## Step 1 — Resolve the PR
 
