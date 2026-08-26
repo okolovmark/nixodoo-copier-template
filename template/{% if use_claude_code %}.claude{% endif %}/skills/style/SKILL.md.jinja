@@ -75,6 +75,30 @@ description: "Odoo {{ odoo_version }} code style and conventions for {{ project_
   are expensive). Dict insertion order = iteration order in Py3.7+, so
   fail/dispatch order is preserved.
 
+## Translatable Messages
+
+Extraction reads the **source**: a msgid it cannot see literally in the file
+never lands in the .po, and the lookup misses silently — the English reader
+sees exactly what they expect, so it never surfaces as a bug report.
+
+| shape | why it breaks | fix |
+|---|---|---|
+| `_("Order %s locked" % name)` | `%` resolves first; gettext gets a msgid with live data | `_("Order %s locked") % name` — look up, then interpolate |
+| `_(MSG)`, `_(msg_var)`, `_(f"...")`, `_(e.name)` | the literal hides behind a name | literal inside the call, or declare with `_lt()` |
+
+Ruff covers only the first row (`INT001`/`INT002`/`INT003`); nothing upstream
+catches a msgid that is a name.
+
+`_lt()` for module-level messages defers the lookup to render time. Gotchas
+(measured on the Odoo 16 class): `__eq__`/`__lt__` raise `NotImplementedError`
+— never let a `_lt` reach `exc.args[0]`, a set/dict key or a comparison, wrap
+in `str()` at the boundary; there is **no `__mod__`** — `str(MSG) % {...}`,
+not `MSG % {...}`; tests importing such a constant must render it too
+(`str(MSG)`), including in helpers that slice or `re.escape` it.
+
+If no module ships an `i18n/` dir yet, fixing these changes nothing a user
+sees — say that plainly when the change is reviewed, or it reads as churn.
+
 ## Docstrings & Comments
 
 - **Comments answer *why*, code answers *what*.** The code must say *what* it
@@ -186,6 +210,7 @@ line change behavior?" If no, drop it.
 | f-string in `cr.execute()` | `%` for identifiers, `%s` for data (see Python Conventions) |
 | Numeric tuple `(6, 0, [...])` in x2many writes | `Command.set([...])` (see Python Conventions) |
 | Em-dash `—` in code/strings/labels | ASCII `-` (see General) |
+| `_("... %s" % arg)` / `_(msg_var)` | `_("... %s") % arg`; literal msgid (see Translatable Messages) |
 | Redundant default declaration | Drop (see Redundant Declarations) |
 | `self._cr.commit()` | Remove — let framework handle |
 | `rec`/`slf` loop var | `for record in self:` |

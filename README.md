@@ -35,7 +35,10 @@ locked with uv/uv2nix.
   **odoo-tickets** (ticket tracking in a prod Odoo),
   **deploy-checks** (blast-radius classification of a change set + read-only
   post-deploy invariant check: unbalanced postings, failed queue jobs, stuck
-  crons, negative stock), **deploy** (the prod runbook itself: resolve the merged
+  crons, negative stock), **prod-ops** (working with the prod box outside a
+  deploy: read-channel choice — RPC vs local prod-dump DB vs live odoo shell —
+  prod forensics, and a named-script runner with a dry → commit → read-back
+  ladder), **deploy** (the prod runbook itself: resolve the merged
   PR, derive the `-u` list from what the pull actually lands, approval gate, one
   named write script per prod step, T+0/T+60 invariant checks — with the
   announcement and ticket-note beats gated on your `status_mcp`/`tickets_mcp`
@@ -124,7 +127,7 @@ uvx copier update --trust
 | `use_pipeline` | `true` (asked when a custom addons repo is set) |
 | `backup_s3_bucket` | empty → no backup tooling |
 | `prod_ssh_host` (+user/url), `test_ssh_host` (+user/port/forward/url) | empty → no SSH helpers |
-| `prod_remote_project_dir` / `prod_remote_odoo_conf` / `prod_db_name` / `prod_link_addons_cmd` (where this same project sits on the box, for the deploy skill) | `~/<project_name>` / `<that dir>/odoo.conf` / `odoo` / `nix run .#update-repos` |
+| `prod_remote_project_dir` / `prod_remote_odoo_conf` / `prod_db_name` / `prod_link_addons_cmd` (where this same project sits on the box, for the deploy and prod-ops skills) | `~/<project_name>` / `<that dir>/odoo.conf` / `odoo` / `nix run .#update-repos` |
 
 ## Notes
 

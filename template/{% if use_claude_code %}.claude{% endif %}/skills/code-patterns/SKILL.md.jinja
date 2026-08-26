@@ -5,6 +5,24 @@ description: "Odoo {{ odoo_version }} code templates and ORM patterns. Use when 
 
 # Odoo {{ odoo_version }} Code Patterns & Templates
 
+## Deep references
+
+This file holds the templates. Framework behavior that the declarations don't
+show lives in `references/` — read the matching file before working in that
+area:
+
+- **Fields & computes** — stored computes that never run, `depends_context`
+  lost on override, `search=` vs stored, `active_test` on o2m, m2m `domain=`
+  is UI-only, `check_company` inertness, two-module field removal, `ormcache`,
+  multi-company scoping per field kind: [references/fields-computes.md](references/fields-computes.md)
+- **Views** — validator traps ({% if odoo_version == '16.0' %}`attrs` vs 17+ expressions, {% endif %}xpath selectors,
+  domain group restriction), dev-only menus, pivot `search_default` override,
+  m2m picker: [references/views.md](references/views.md)
+- **Background jobs** — `ir.cron.trigger` action-triggered chunked work,
+  autovacuum `_gc_*` chunked delete: [references/background-jobs.md](references/background-jobs.md)
+- **Migrations & schema** — first-install skip, silent non-runs, the
+  override-must-not-change-schema rule, model removal checklist: [references/migrations.md](references/migrations.md)
+
 ## Manifest Template
 
 See `style` skill for data file order convention.
@@ -246,6 +264,9 @@ class {{ project_name }}Wizard(models.TransientModel):
 ```
 
 ## Cron Template
+
+Action-triggered background work (button → immediate chunked job, no
+queue_job) and high-volume cleanup: [references/background-jobs.md](references/background-jobs.md).
 
 ```xml
 <record id="ir_cron_cleanup" model="ir.cron">
