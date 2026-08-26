@@ -9,6 +9,7 @@ Commands:
   def   <file> <line> <symbol|col>   definition (MRO-aware, XML ref/model-aware)
   refs  <file> <line> <symbol|col>   references (see SKILL.md for blind spots)
   hover <file> <line> <symbol|col>   type + owning modules + docstring
+  who   <identifier>                 one command: definition(s) + every reference
   sym   <query>                      workspace-wide symbol search
   model <model.name>                 every class defining/extending the model
   open  <file>                       push a file's current content to the server
@@ -483,6 +484,76 @@ def main():
             contents = result.get("contents")
             v = contents.get("value") if isinstance(contents, dict) else str(contents)
             print(clean_md(v))
+    elif cmd == "who":
+        # The one-command replacement for `grep -r <identifier> src/`: find the
+        # definition(s) by exact name, then run references at each. Exists
+        # because refs alone needs a file+line first — a two-step flow loses to
+        # the one-step grep reflex every time.
+        if len(rest) != 1:
+            sys.exit("usage: lsp.py who <identifier>   (definition(s) + every reference, one command)")
+        ident = rest[0].rstrip("(")
+        if "." in ident:
+            sys.exit(f"'{ident}' looks like a model name — use: lsp.py model {ident}")
+        ensure_daemon()
+        # Definition sites, two sources merged: workspace/symbol (knows methods
+        # and classes, but is fuzzy, capped and blind to FIELDS in odoo-ls
+        # 1.5.1) + a definition-shaped grep (`def x(` / `x = fields.`), which
+        # catches what the index does not. References themselves stay semantic.
+        resp = cli_send({"op": "query", "method": "workspace/symbol",
+                         "params": {"query": ident}, "timeout": 90})
+        defs, seen = [], set()
+        for h in resp.get("result") or []:
+            if h.get("name", "").strip("\"'") != ident:
+                continue
+            loc = fmt_loc(h.get("location", {}))
+            if loc not in seen:
+                seen.add(loc)
+                defs.append((loc, SYMBOL_KINDS.get(h.get("kind"), str(h.get("kind")))))
+        rg = subprocess.run(
+            ["grep", "-rn", "--include=*.py", "-E",
+             rf"(def {re.escape(ident)}\(|{re.escape(ident)} = fields\.)",
+             os.path.join(ROOT, "src")],
+            capture_output=True, text=True)
+        for hit in rg.stdout.splitlines():
+            path, line, text = hit.split(":", 2)
+            loc = f"{os.path.relpath(path, ROOT)}:{line}"
+            if loc not in seen:
+                seen.add(loc)
+                defs.append((loc, "field" if "fields." in text else "method"))
+        if not defs:
+            sys.exit(f"no definition of '{ident}' found — check the spelling, or search: lsp.py sym {ident}")
+        cap = 8  # a name defined in more places than this needs narrowing, not scrolling
+        total_refs = 0
+        printed = set()  # overrides of one method share their reference set; print each site once
+        for loc, kind in defs[:cap]:
+            print(f"def: {loc}  [{kind}]")
+            path, line = loc.rsplit(":", 1)
+            try:
+                result = positional_query("textDocument/references",
+                                          os.path.join(ROOT, path), int(line), ident,
+                                          extra={"context": {"includeDeclaration": False}},
+                                          timeout=180)
+            except SystemExit as e:
+                print(f"  (references failed here: {e})")
+                continue
+            locs = result if isinstance(result, list) else ([result] if result else [])
+            refs = []
+            for one in locs:
+                where = fmt_loc(one)
+                if where != loc and where not in printed and where not in refs:
+                    refs.append(where)
+            printed.update(refs)
+            for where in refs:
+                print(f"  {where}")
+            if not refs:
+                print("  (no new references)")
+            total_refs += len(refs)
+        if len(defs) > cap:
+            print(f"... +{len(defs) - cap} more definitions (narrow with: lsp.py sym {ident})")
+        print("(refs are a lower bound — dynamic call sites, lambdas in filtered()/mapped() and "
+              "attrs=/domain strings are invisible; cross-check with grep before claiming 'unused'. "
+              "Never pipe this into head/tail.)", file=sys.stderr)
+        sys.exit(0 if total_refs else 1)
     elif cmd in ("sym", "model"):
         if not rest:
             sys.exit(f"usage: lsp.py {cmd} <query>")
