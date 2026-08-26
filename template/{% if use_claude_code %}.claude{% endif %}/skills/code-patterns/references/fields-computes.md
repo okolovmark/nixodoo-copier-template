@@ -13,6 +13,7 @@ Facts verified on Odoo 16 source; re-verify on later majors where marked.
 - `check_company=True` is inert without `_check_company_auto`
 - Removing a field declared by two modules can drop the column
 - `ormcache` keyed off `res.company`
+- A LIST `_inherit` needs an explicit `_name`
 - Multi-company scoping: a different mechanism per field kind
 
 ## Stored compute without `@api.depends` never runs on `create()`
@@ -166,6 +167,28 @@ Before removing: check xid ownership (`ir_model_data` rows named
 the always-installed module; or a migration re-owning the xid
 (`UPDATE ir_model_data SET module='<survivor>' WHERE module='<removed>' AND name=...`);
 or accept the drop after verifying 0 rows and 0 consumers.
+
+## A LIST `_inherit` needs an explicit `_name`
+
+`_inherit = "purchase.order"` (single string) implies the model name, but the
+moment it becomes a **list** — the normal way to mix an AbstractModel into an
+existing model — `_build_model`'s fallback drops to the **class name** and the
+registry dies at `_auto_init` with `ValueError: The _name attribute
+PurchaseOrderExt is not valid` — reads like a naming complaint, is a missing
+`_name`:
+
+```python
+class PurchaseOrderExt(models.Model):
+    _name = "purchase.order"
+    _inherit = ["purchase.order", "my.mixin"]
+```
+
+When adding such a mixin: keep `@api.constrains` on the CONCRETE models with
+the body on the mixin (a constrains on the abstract referencing undeclared
+fields only warns, but stays confusing); keep `write`/`copy_data` plumbing that
+needs the module's own `super()` and context in the concrete model — only pure
+logic travels; a module referencing the mixin by name should declare the owning
+module in `depends` even when it already arrives transitively.
 
 ## `ormcache` keyed off `res.company`
 
