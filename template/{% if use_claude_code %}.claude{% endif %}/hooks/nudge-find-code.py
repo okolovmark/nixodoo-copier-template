@@ -187,15 +187,14 @@ sys.stderr.write(
     "find-code nudge (not a block; this question is never nudged twice): '{sym}' is a symbol, "
     "so who-defines / who-calls / who-overrides it is answered MRO-aware and over the WHOLE "
     "tree (core + third-party + custom) by the find-code skill — a hand-scoped grep silently "
-    "misses the repos you did not list:\n"
-    "  python3 .claude/skills/find-code/lsp.py sym {sym}\n"
-    "  python3 .claude/skills/find-code/lsp.py refs <file> <def-line> {sym}\n"
+    "misses the repos you did not list. One command answers it:\n"
+    "  python3 .claude/skills/find-code/lsp.py who {sym}\n"
     "If this grep is really about plain text, just re-run it — it will pass now.\n".format(sym=symbol)
 )
 if truncated:
     sys.stderr.write(
         "This one also pipes into head/tail: a 'who uses {sym}' answer cut to the first N lines "
-        "is a lower bound. Drop the truncation or ask lsp.py, and never conclude 'nothing else "
-        "uses it' from a truncated search.\n".format(sym=symbol)
+        "is a lower bound. Drop the truncation or ask `lsp.py who {sym}`, and never conclude "
+        "'nothing else uses it' from a truncated search.\n".format(sym=symbol)
     )
 sys.exit(2)
