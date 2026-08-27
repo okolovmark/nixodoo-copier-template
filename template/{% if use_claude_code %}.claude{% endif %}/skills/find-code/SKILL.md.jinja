@@ -1,6 +1,6 @@
 ---
 name: find-code
-description: "Answers: where is this DEFINED, who USES it, who OVERRIDES it, what does super() actually call, which modules EXTEND this model, what fields does a model have. Semantic (Odoo Language Server + AST), whole tree (core + OCA + custom), MRO-aware. The trigger is a TREE-WIDE search for a symbol: any `grep -r <identifier>` over src/ — who-uses, who-defines, who-extends — is this skill's question, and ONE command answers it (`lsp.py who <identifier>`, or `model <model.name>`), while a hand-scoped grep silently misses the repos left out of the command. NOT this skill's question: `grep -n` inside one already-known file to pin a line (that is this skill's own first step), and plain strings — comments, logs, data files, error-message text."
+description: "Answers: where is this DEFINED, who USES it, who OVERRIDES it, what does super() actually call, which modules EXTEND this model, what fields does a model have — and, via the database, whether a FIELD EXISTS at all, who owns it and how filled it is. Semantic (Odoo Language Server + AST), whole tree (core + OCA + custom), MRO-aware. The trigger is a TREE-WIDE search for a symbol: any `grep -r <identifier>` over src/ — who-uses, who-defines, who-extends — is this skill's question, and ONE command answers it (`lsp.py who <identifier>`, or `model <model.name>`), while a hand-scoped grep silently misses the repos left out of the command. NOT this skill's question: `grep -n` inside one already-known file to pin a line (that is this skill's own first step), and plain strings — comments, logs, data files, error-message text. Field existence/ownership/fill goes to `dbfields.py` (ir.model.fields), because the source index has NO field symbols and the tree cannot see Studio or data-created fields."
 argument-hint: "[who <identifier> | def|refs|hover|sym|model <args>]"
 ---
 
@@ -16,10 +16,11 @@ argument-hint: "[who <identifier> | def|refs|hover|sym|model <args>]"
   is right, and is this skill's own first step; add `def` / `hover` / `refs`
   when the question becomes MRO, type or callers.
 
-Two tools, no running Odoo needed:
+Three tools, no running Odoo needed:
 
 - `lsp.py` — client for the official **Odoo Language Server**. Point queries: definition, usages, hover, symbol search. Knows `_inherit`, MRO order, XML.
 - `inspect.py` — AST full-model map: every field/method from every inheriting module in one table.
+- `dbfields.py` — the DATABASE's view of fields: `ir.model.fields` + per-column fill rates against the DB `odoo.conf` points at. The only one of the three that sees Studio/manual/data-created fields, and the only one that says how populated a column is.
 
 ## Task
 
@@ -70,7 +71,8 @@ python3 $L who <field_name>
 | All definitions/extensions of a model | `lsp model` (or `inspect.py` for fields too) |
 | Usages of a symbol, location unknown | `lsp who` **then** grep to cross-check |
 | Usages from a known def site | `lsp refs` **then** grep to cross-check |
-| Full field inventory of a model | `inspect.py` |
+| Full field inventory of a model | `inspect.py` (source) / `dbfields.py` (database) |
+| Does field X exist, who owns it, how filled is it | `dbfields.py` — never `lsp sym`, which has no field symbols |
 | Plain text, comments, data files, logs | grep |
 
 ## Caveats
@@ -79,6 +81,22 @@ python3 $L who <field_name>
 - Daemon: cold start indexes the whole tree (~10-20s), then queries are ~1s. Auto-starts on first query, exits after 3h idle. `restart` after big git operations (checkout/rebase) — the daemon only sees fresh content of files you query or `open`.
 - Binary resolution: `ODOO_LS_BIN` env > `~/.local/share/odoo-ls/current/` symlink > highest version there > Zed extension dir > PATH. `lsp.py bump <version>` installs a release from https://github.com/odoo/odoo-ls/releases and repoints `current` — use at least 1.5.1 (1.4.0's GoToReferences misses `with_company()` chains and XML field usages). Zed users: point `lsp.odoo.binary.path` in Zed settings at the `current` symlink so the editor and this CLI run the same server.
 - Server config = `odools.toml` at project root (shared with the editor). Logs: `~/.cache/odoo-ls-cli/`.
+
+## Database fields (`dbfields.py`)
+
+```bash
+python3 .claude/skills/find-code/dbfields.py product.template          # every field + fill rates
+python3 .claude/skills/find-code/dbfields.py product.template "mpn"    # matching fields + fill
+python3 .claude/skills/find-code/dbfields.py part_number               # no dot = which models carry it
+```
+
+Answers from `ir.model.fields` + `count(column)` on the model's table, per the
+DB in the project root's `odoo.conf` (here: the local restore of the prod
+dump). Owner = the module(s) claiming the field in `ir_model_data`; `NO MODULE`
+means Studio, manual, or data-created — invisible to every source-tree tool.
+Reach here whenever the question is about a field's EXISTENCE, OWNER or DATA,
+not its code: `lsp.py sym` indexes functions and classes only, so a field
+assignment can hide 14 existing columns from a source-side search.
 
 ## Full model map (`inspect.py`)
 
