@@ -52,7 +52,12 @@ security / controllers / data / migrations), new dependencies, migrations needed
 - **ORM**: search/CRUD patterns, N+1, loops, batch operations.
 - **Fields**: types, computed fields, relational params (ondelete, currency_field,
   depends paths).
-- **Decorators**: `@api.depends` vs `@api.constrains`.
+- **Decorators**: `@api.depends` vs `@api.constrains`. A compute with NO
+  `@api.depends` is a finding on its own, non-stored included: nothing
+  invalidates it, so on a form it keeps its first value for the whole edit
+  session (an `attrs` or `parent.` domain reading it goes stale silently) and
+  stored it is written NULL on `create()`. An explicit empty `@api.depends()`
+  with a why is the accepted answer, never on a stored field.
 - **Performance**: ORM in loops, read_group, SQL parameterization.
 - **Transactions**: savepoints, parameterization.
 - **Views**: inheritance, xpath, XML IDs.
