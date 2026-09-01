@@ -4,6 +4,7 @@ Facts verified on Odoo 16 source; re-verify on later majors where marked.
 
 ## Contents
 
+- Non-stored compute without `@api.depends` is frozen inside the form
 - Stored compute without `@api.depends` never runs on `create()`
 - Repairing a stale stored compute
 - Overriding a core compute drops its `@api.depends_context`
@@ -15,6 +16,58 @@ Facts verified on Odoo 16 source; re-verify on later majors where marked.
 - `ormcache` keyed off `res.company`
 - A LIST `_inherit` needs an explicit `_name`
 - Multi-company scoping: a different mechanism per field kind
+
+## Non-stored compute without `@api.depends` is frozen inside the form
+
+Nothing invalidates it. `modified()` walks the dependency triggers, so a compute
+that declares none is never in anybody's trigger list: the value computed on the
+first read stays in cache for the rest of the transaction, and in a form for the
+whole edit session. The client's onchange round-trip diffs a snapshot of the
+view's fields, sees no change, and keeps what it had.
+
+The field is right on every read of a record built in one `create()` call, which
+is what makes this survive review AND tests. It only shows once the field is
+read while an input it derives from moves:
+
+```python
+# WRONG - the flag is right on create and stale ever after
+is_intercompany = fields.Boolean(compute="_compute_is_intercompany")
+
+def _compute_is_intercompany(self):
+    ic_partner_ids = set(self.env["res.partner"]._intercompany_partner_ids())
+    for order in self:
+        order.is_intercompany = order.partner_id.id in ic_partner_ids
+```
+
+On a form this is a live bug the moment anything reads the field - an `attrs`, a
+`column_invisible`, a widget, `<field ... invisible="1"/>` feeding a `parent.`
+domain. Picking a customer that flips the flag leaves the dependent columns and
+requireds as they were until the record is saved and reloaded.
+
+**Two dependency sets, and only one is expressible.** `partner_id` is; "the ids
+of the partners standing for one of our companies" is not - it is a set read
+from another model. A partial `@api.depends` is still the fix: it covers the
+input the user actually changes, and the inexpressible half degrades to
+transaction-scoped staleness. Core lives with the same limit and says so at
+`base/models/res_company.py:124` (`# TODO @api.depends(): currently now way to
+formulate the dependency on the partner's contact address`).
+
+**When there is genuinely nothing to name** - the value comes from the context,
+`env.user`, a config parameter, `id` (which `api.depends` refuses outright), or
+a search no field path reaches - write the empty decorator and say why:
+
+```python
+@api.depends()  # env.user only; no field of this record feeds it
+def _compute_can_edit(self):
+    ...
+```
+
+`@api.depends()` is legal and core uses it (`base/models/ir_model.py:211`). It
+is the difference between "asked and answered" and "never asked", which is what
+review and the CI check read. On a STORED field it is not an answer, though -
+see the next entry: it means the column is written NULL on `create()`.
+
+Verified on 16.0; the mechanism is unchanged in 17 and 18.
 
 ## Stored compute without `@api.depends` never runs on `create()`
 
