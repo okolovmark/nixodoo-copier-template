@@ -27,7 +27,7 @@ locked with uv/uv2nix.
   time, decisions routed to their owner, explicit assumptions — and
   **domain-modeling**: a `CONTEXT.md` glossary of canonical terms mapped to Odoo
   models + `docs/adr/` decision records, both maintained as design conversations
-  resolve), `dev`/`review`/`documenter` agents, MCP servers config, a persistent
+  resolve), `dev`/`review`/`verify`/`documenter` agents, MCP servers config, a persistent
   **memory template** (journal / state / standup), and optional workflow skills:
   the **pipeline** orchestrator (task → dev → QC gate → docs → demo GIF → PR), **my-status**
   (status posting, Teams), **teams-message** (readable Teams messages: markdown Teams
