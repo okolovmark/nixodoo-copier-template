@@ -28,7 +28,10 @@ before non-trivial work, or ask the user.
 FILES_CHANGED: <paths, or "none (read-only)">
 OPEN_THREADS: <list, or "none">
 DECISIONS: <scope expansions / severity calls, or "none">
+VERIFY: <one line per Critical / Major — "<C1|M1..> | <file:line> | <claim, one sentence> | <failure scenario> | <decisive files:lines>", or "none">
 ```
+
+`VERIFY` drives the pipeline's verification pass (one `verify` agent per line).
 
 Never write memory files (`state.md`, `journal/`, `nodes/`) — the orchestrator records.
 
@@ -64,6 +67,20 @@ security / controllers / data / migrations), new dependencies, migrations needed
 - **Security**: ACL, record rules, `sudo()` intentional (not a workaround),
   controller `auth=`, multi-company isolation.
 - **Tests**: coverage, proper cases, `@tagged('post_install', '-at_install')`.
+- **Test validity — does each new test guard the fix?** For every new or
+  changed test answer three questions; a "no" is a **Major** on its own:
+  1. *Reaches the branch*: trace the fixture into the code under test past every
+     gate on the way — company filters (`company_id in (...)`), state guards,
+     `active`, context keys, user groups. A fixture built on a default company
+     or a `search([], limit=1)` record often sits outside the gate; cite the
+     gate line.
+  2. *Fails on the pre-fix code*: name the fix line(s) whose revert makes the
+     test fail. None qualifies → the test passes on the old code too and guards
+     nothing.
+  3. *Assertions can fail*: an assert on a default nothing in the test changed
+     (`assertFalse(rec.flag)` when nothing set it True), on a value the fixture
+     wrote directly, or after a call that no-ops for that fixture (company
+     context — see the shell traps in the `debug` skill) is vacuous.
 - **Reuse**: does the diff reimplement a mechanism that already exists in core,
   a pinned OCA repo, or another custom module? A parallel implementation of an
   existing seam is a **Major** finding — cite the existing symbol (same
@@ -90,6 +107,11 @@ security / controllers / data / migrations), new dependencies, migrations needed
   design as a bug — it may be a recorded deliberate decision.
 - For each finding give: file path + line number, **severity** (Critical / Major /
   Minor) and **confidence** (high / medium / low). Group by severity, nits last.
+- Every **Critical / Major** carries a **failure scenario**: the concrete input or
+  state and the wrong output it produces (data loss, wrong amount, rejected save,
+  crash). No nameable scenario → it is a smell, not a bug: downgrade to Minor or
+  Nit. The orchestrator hands each Critical / Major to a `verify` agent, so
+  list the decisive lines a verifier must read.
 - Genuinely nothing to report after a thorough pass → say exactly "No findings".
 - Focus on **Odoo {{ odoo_major }}-specific** patterns, not generic Python advice.
 

@@ -40,6 +40,7 @@ Defined in `.claude/agents/`:
 |-------|---------|-------|-----------------|
 | `dev` | Development — writes code | All | style, code-patterns |
 | `review` | QC + code review — read-only analysis | Read, Grep, Glob, Bash | style, testing |
+| `verify` | Adversarial check of ONE Critical / Major review finding → CONFIRMED / PLAUSIBLE / REFUTED | Read, Grep, Glob, Bash | — |
 | `documenter` | Module docs — readme fragments, `readme/*.puml`, docstrings, manifest summary/description, PR description | All | style, find-code |
 
 Debugging is the **`debug` skill** (targeted test, odoo shell script, logs), run in-context — not a subagent.
@@ -53,6 +54,9 @@ Every `dev` / `review` / `documenter` subagent returns a structured closing bloc
     DECISIONS: <scope expansions or design calls, or "none">
 
 `documenter` additionally returns a `PR_DESCRIPTION:` block — hold it for Phase 6 (PR).
+`review` additionally returns a `VERIFY:` block — consumed by the Phase-3
+verification pass (Check 1b). `verify` agents return a one-word verdict line plus
+evidence, no closing block.
 
 Maintain running lists across ALL phases:
 
@@ -470,11 +474,31 @@ The quality gate. Two checks run here; either one failing sends the code back to
 > flag missing tests for computed fields, constraints, state transitions, access
 > rights, error branches, and the regression case (old behavior still works).
 > Do not self-filter; this orchestrator is the ranking/filter stage.
+> For every new or changed test answer the three test-validity questions
+> (reaches the branch / fails on the pre-fix code / assertions can fail).
+> Every CRITICAL / MAJOR carries a failure scenario and one VERIFY line —
+> the verification pass runs on those lines.
 > review is read-only; your FILES_CHANGED will be "none (read-only)".
 > Return OPEN_THREADS for anything worth filing separately, and DECISIONS for
 > any judgment calls on severity.
 
 The `review` agent has `style` + `testing` preloaded. It is read-only.
+
+**Check 1b — verification pass (Critical / Major only).** For every line of the
+review's `VERIFY:` block spawn one **`verify`** subagent — all in ONE message so
+they run in parallel (cap 6: verify Criticals first, carry the rest as
+PLAUSIBLE). Prompt = the VERIFY line verbatim (id, file:line, claim, failure
+scenario, decisive lines) + "the code is in the worktree `<WT>`". Read the
+first-line verdicts:
+
+- **REFUTED** → drop from the gate; list it in the gate report with the
+  refuting line, so the author sees why it is gone.
+- **PLAUSIBLE** → keep the severity, set confidence low, append the verifier's
+  precondition to the finding.
+- **CONFIRMED** → keep; the verifier's decisive lines go into the `dev` fix prompt.
+
+Minor findings and Nits are not verified. A `verify` agent is read-only and
+returns no closing block.
 
 **Check 2 — validation.** Run directly (NOT via subagent) — you need Chrome browser tools and this session's running Odoo. Everything here targets THIS session (`<CONF>` / `<DB>` / `<URL>`), never the main env or another session.
 
@@ -530,7 +554,8 @@ The `review` agent has `style` + `testing` preloaded. It is read-only.
 
 **Gate decision:**
 
-- **BLOCKING** — any CRITICAL review finding, OR a test/validation failure, OR a
+- **BLOCKING** — any CONFIRMED or PLAUSIBLE CRITICAL review finding (a REFUTED
+  one never blocks), OR a test/validation failure, OR a
   failed test case: report to the user, spawn the `dev` agent to fix (inject
   `<PROJECT_RULES_BLOB>` **and the "work in `<WT>`" instruction** at the start of
   the fix prompt, append its returns to the running lists), post a `Bug Fix`
@@ -539,7 +564,7 @@ The `review` agent has `style` + `testing` preloaded. It is read-only.
   them, file MINOR or low-confidence items as OPEN_THREADS (post-MVP backlog)
   instead of fixing them now. Proceed.
 
-Report: "QC gate: review <summary> · tests <N> · test cases <X/Y> — PASS (after <k> fix loops)."
+Report: "QC gate: review <summary> · verified <n> (<c> confirmed / <p> plausible / <r> refuted) · tests <N> · test cases <X/Y> — PASS (after <k> fix loops)."
 
 ---
 
