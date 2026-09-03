@@ -1,116 +1,71 @@
 ---
 name: debug
-description: "Interactively debug the running Odoo {{ odoo_version }} server with mcp-pdb — breakpoints, stepping, runtime ORM state inspection. Use when a bug isn't obvious from reading the code and you need live state. Requires the mcp-pdb tools."
+description: "Debug an Odoo {{ odoo_version }} bug that is not obvious from reading the code: read the traceback to the bottom, reproduce with a targeted test or an odoo shell script, inspect live ORM state from the shell, then fix. Use when a bug needs runtime state, not just code reading."
 ---
 
-# Debug Odoo {{ odoo_version }} with mcp-pdb
+# Debug Odoo {{ odoo_version }}
 
-Interactively debug the Odoo server process via **mcp-pdb**: breakpoints, stepping,
-variable/ORM inspection at runtime. Requires the `mcp-pdb` tools. Use Glob/Grep to
-explore module dependencies.
+No interactive debugger. Runtime state comes from three reproducible channels;
+each leaves an artifact (a test, a script, a log excerpt) that goes to the ticket.
 
-## Phase 0: Stop the running Odoo service
+## Order of work
 
-**CRITICAL**: before a debug session you MUST stop the running Odoo service.
+1. Read the code path first — `find-code` (`lsp.py who <symbol>`) for callers,
+   overrides and the real `super()` chain. Never debug cold.
+2. Read the traceback to the BOTTOM (section below).
+3. Reproduce with runtime state: a failing test (preferred — it ships with the
+   fix) or an `odoo shell` script that prints the wrong state.
+4. Narrow, fix, keep the reproduction as the regression test.
+
+## Channel 1 — targeted test (preferred)
 
 ```bash
-systemctl --user stop odoo.service
-systemctl --user status odoo.service
+odoo -c ${{ project_dir_var }}/odoo.conf --workers 0 --stop-after-init --logfile=/dev/stdout \
+    --http-port <free port> --test-enable --test-tags /{{ module_prefix }}_<module>:TestX.test_y
 ```
 
-## Phase 1: Problem assessment
+- **No `-u` for a Python-only change**: `--test-tags` without `-u` re-runs the
+  tests of installed modules after a ~3 s registry load (vs ~30 s+ for the
+  `-u` cascade). `-u <module>` is needed when the manifest, XML/CSV data,
+  views, field definitions or migrations changed, or the module is new.
+- Test mode always spawns HTTP: beside the running service pass a free
+  `--http-port`, or the run dies in 1 s with `Address already in use`.
+- If the registry load fails on a tests import (`ModuleNotFoundError` from
+  some installed module's `tests/`), fall back to `-u <module>` or
+  `--test-file <path>` (one file, no `-u`, no other module's tests imported;
+  the file must be imported in `tests/__init__.py` or it runs 0 tests).
+- Believe a run only with a non-zero test count (testing skill, gotchas).
 
-1. Read error messages, stack traces, log entries (`odoo.log`)
-2. Query data state via Odoo MCP tools (`search_read`, `read`) if needed
-3. Identify the relevant module(s) and model(s)
-4. Search for the code path using Grep/Glob
+## Channel 2 — odoo shell script
 
-## Phase 2: Start debug session
-
-`mcp-pdb` `start_debug`:
-
-```
-file_path: ${{ project_dir_var }}/src/odoo/odoo-bin
-args: --config=${{ project_dir_var }}/odoo.conf --dev=reload,qweb,werkzeug,xml --workers=0
-```
-
-- `--workers=0` — **mandatory** for debugging (single-process, no forking)
-- `--dev=reload,qweb,werkzeug,xml` — auto-reload, better tracebacks
-- **NEVER** use `--logfile` — it conflicts with PDB's stdin/stdout
-
-For module update debugging, add `-u` flag:
-```
-args: --config=${{ project_dir_var }}/odoo.conf -u {{ module_prefix }}_sale --workers=0 --stop-after-init
+```bash
+odoo shell -c ${{ project_dir_var }}/odoo.conf --workers 0 --stop-after-init < probe.py
 ```
 
-## Phase 3: Enable multi-thread tracing (CRITICAL)
+- Print, don't reason from memory: `record.read([...])`, `record.mapped(...)`,
+  `Model._fields["x"].depends`, `env["ir.model.data"]` for xmlids,
+  `env.cr.execute(...)` when the ORM view of a row is the thing in doubt.
+- End with `env.cr.rollback()` unless the script is meant to write; a write
+  is an explicit `env.cr.commit()` after a dry-run pass.
+- Company context is the first suspect when a call "does nothing": set BOTH
+  `allowed_company_ids` in the context AND `.with_company(record.company_id)`.
+- Access errors: `record.with_user(user)` reproduces the acting user; a cold
+  cache is `env.invalidate_all()` before the read (see CacheMiss below).
+- A script that ran against prod is attached to the ticket (prod-ops skill).
 
-MUST enable PDB tracing on all threads BEFORE the first `c` (continue) — Odoo handles HTTP requests in worker threads, so breakpoints won't fire without this:
+## Channel 3 — logs
 
-```
-send_pdb_command("!import sys, threading; threading.settrace(sys.gettrace())")
-```
+- `odoo.log` of the dev service; a one-off run with `--logfile=/dev/stdout`.
+- `--log-level=debug_sql` for the exact queries; `--log-handler=odoo.addons.<module>:DEBUG`
+  to raise one module; `--dev=reload,qweb,werkzeug,xml` for the dev server
+  (auto-reload, full werkzeug tracebacks).
+- A temporary `_logger.info(...)` is fine while narrowing; it does not ship.
 
-## Phase 4: Set breakpoints
+## Last resort — `breakpoint()`
 
-**CRITICAL**: use the **symlink path**, not the source path:
-
-```
-# CORRECT — symlink path:
-set_breakpoint("${{ project_dir_var }}/.local/share/Odoo/addons/{{ odoo_version }}/{{ module_prefix }}_sale/models/sale_order.py", 42)
-
-# WRONG — source path won't match:
-set_breakpoint("${{ project_dir_var }}/src/{{ custom_repo_name }}/{{ module_prefix }}_sale/models/sale_order.py", 42)
-```
-
-For **Odoo core** use their actual paths under `src/`.
-
-## Phase 5: Continue and trigger
-
-```
-send_pdb_command("c")
-```
-
-- Trigger the bug via Odoo MCP `execute` tool RPC calls.
-- The RPC call will **timeout** while PDB is paused — expected.
-
-## Phase 6: Interactive debugging
-
-| Command | Purpose |
-|---------|---------|
-| `n` | Next line (step over) |
-| `s` | Step into function call |
-| `c` | Continue to next breakpoint |
-| `r` | Run until current function returns |
-| `l` / `ll` | List source code |
-| `a` | Print current function arguments |
-| `w` | Print stack trace |
-| `u` / `d` | Move up/down in stack |
-| `p expr` | Print expression |
-| `pp expr` | Pretty-print expression |
-
-**Inspecting Odoo state:**
-```
-p self.name
-p self.state
-pp self.read(['name', 'state', 'partner_id'])
-p self.env.user.name
-p self.env.context
-p self.env.company.name
-```
-
-## Phase 7: Fix & verify
-
-1. `end_debug()` before making code changes
-2. Implement the fix
-3. Verify with module update or new debug session
-4. Restart Odoo service: `systemctl --user start odoo.service`
-
-## Common scenarios
-
-- **Model method**: stop service -> start_debug -> enable thread tracing -> breakpoint on symlink path -> continue -> trigger via RPC or browser -> step, examine `self`.
-- **Computed field**: breakpoint on `_compute_*`, trigger by changing a dependency field, check `@api.depends` includes all necessary fields.
-- **Module install/update**: `--stop-after-init` in args, breakpoints in hooks.py or migration scripts. Main thread only — no `threading.settrace` needed.
+A `breakpoint()` in code with `odoo -c <conf> --workers 0` in the USER's
+terminal (pdb is interactive; the assistant cannot drive it). Remove it before
+committing; the guard hooks do not catch it.
 
 ## Reading the traceback
 
@@ -130,7 +85,7 @@ request starts cold, so it is a permanent user-facing failure there. Core
 gives `base.group_user` zero access on `ir.model.fields`; anything resolving a
 field by name at runtime needs `sudo()`.
 
-## Shell verification traps (odoo shell)
+## Shell verification traps
 
 Self-inflicted false negatives when verifying from `odoo shell` — check these
 before believing "the code is broken":
@@ -149,11 +104,5 @@ before believing "the code is broken":
   because saving sends the change inside the parent's vals.
 - **Float equality on UoM/currency round-trips**: `30.000000000000004 != 30.0`
   — compare with `float_compare`/tolerance or a correct fix reads as broken.
-
-## Tips
-
-- **RPC timeouts are expected** when breakpoint fires during an RPC call
-- Use `!` prefix to execute Python statements: `!x = 42`
-- Use `interact` to drop into a full Python REPL
-- Use conditional breakpoints: `send_pdb_command("b file:line, condition")`
-- Python executable: `$HOME/.nix-profile/bin/python3`
+- **Triggering over RPC** (odoo MCP `execute`) runs as the MCP user with its
+  companies — not the user who reported the bug.

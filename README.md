@@ -22,7 +22,7 @@ locked with uv/uv2nix.
   dangerous-command blocker, ruff auto-format), Odoo dev skills (code patterns, style,
   testing, commit conventions, pre-PR checklist, **semantic code navigation** over the
   official Odoo Language Server (`super()` chains across `_inherit`, XML `ref`/model
-  targets, find-usages, model inheritance maps), pdb debugging,
+  targets, find-usages, model inheritance maps), a debug recipe,
   isolated worktree envs, a **grill** requirements interview — one question at a
   time, decisions routed to their owner, explicit assumptions — and
   **domain-modeling**: a `CONTEXT.md` glossary of canonical terms mapped to Odoo
@@ -157,8 +157,8 @@ uvx copier update --trust
   cannot grant itself the permission entry — it composes it and you paste it.
 - `postgres-mcp` in `.mcp.json` runs with `--access-mode=unrestricted` — it
   targets the **local dev database** only (`DATABASE_URI` from `.env`).
-- `postgres-mcp` and `mcp-pdb` run with `--with 'mcp<2'`: both import
-  `mcp.server.fastmcp`, which the `mcp` SDK dropped in 2.0.0, and neither caps
+- `postgres-mcp` runs with `--with 'mcp<2'`: it imports
+  `mcp.server.fastmcp`, which the `mcp` SDK dropped in 2.0.0, and does not cap
   its own dependency. The `odoo` server needs no pin — it goes through the
   `fastmcp` package, which caps `mcp` itself.
 
