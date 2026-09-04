@@ -26,7 +26,7 @@ SSH_CONFIG="$PROJECT_DIR/.ssh/config"
 # --no-http is mandatory: the live service holds the HTTP port, without it the
 # shell dies with EADDRINUSE. odoo shell rolls back on exit, so the explicit
 # commit is what makes the requeue stick.
-REMOTE='export PATH="$HOME/.nix-profile/bin:$PATH"; python {{ prod_remote_project_dir }}/src/odoo/odoo-bin shell -c {{ prod_remote_odoo_conf }} -d {{ prod_db_name }} --no-http'
+REMOTE='export PATH="$HOME/{{ nix_profile_rel }}/bin:$PATH"; python {{ prod_remote_project_dir }}/src/odoo/odoo-bin shell -c {{ prod_remote_odoo_conf }} -d {{ prod_db_name }} --no-http'
 
 output=$(ssh -A -F "$SSH_CONFIG" "$HOST" "$REMOTE" <<'PY' 2>&1
 jobs = env["queue.job"].search([("state", "in", ["enqueued", "started"])])

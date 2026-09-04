@@ -1,6 +1,6 @@
 ---
 name: prod-ops
-description: "Working with the production Odoo server outside a deploy: access and layout (SSH, paths, service), choosing the right read channel (RPC vs local prod-dump DB vs live odoo shell), prod forensics (who/when/what changed a record), and running named odoo-shell scripts against prod (dry run -> commit -> read-back){% if tickets_mcp == 'odoo' %} with an audit trail on the task{% endif %}. Use when reading or fixing prod data, investigating a prod record's history, or running anything on the prod box. The deploy skill builds on this for access mechanics."
+description: "Working with the production Odoo server outside a deploy: access and layout (SSH, paths, service), choosing the right read channel (RPC vs local prod-dump DB vs live {{ odoo_cmd }} shell), prod forensics (who/when/what changed a record), and running named odoo-shell scripts against prod (dry run -> commit -> read-back){% if tickets_mcp == 'odoo' %} with an audit trail on the task{% endif %}. Use when reading or fixing prod data, investigating a prod record's history, or running anything on the prod box. The deploy skill builds on this for access mechanics."
 argument-hint: "[read | forensics | run <script.py> [dry|commit]]"
 ---
 
@@ -22,8 +22,8 @@ command and getting an explicit OK.
   checkout `{{ prod_remote_project_dir }}` · odoo-bin
   `{{ prod_remote_project_dir }}/src/odoo/odoo-bin`
 - Non-interactive SSH lacks the nix PATH — every remote command starts with
-  `export PATH="$HOME/.nix-profile/bin:$PATH"` or a bare `python` exits 127.
-- `--no-http` is **mandatory** on any `odoo shell` / CLI run next to the live
+  `export PATH="$HOME/{{ nix_profile_rel }}/bin:$PATH"` or a bare `python` exits 127.
+- `--no-http` is **mandatory** on any `{{ odoo_cmd }} shell` / CLI run next to the live
   service — the service holds the HTTP port.
 
 ## Reading prod — pick the channel
@@ -32,7 +32,7 @@ command and getting an explicit OK.
 |---|---|---|
 | **RPC** (odoo MCP, `env_profile: "prod"`) | quick reads, ticket plumbing | acts as a plain service user: `groups=`-restricted fields raise, model ACLs bar whole models, and record rules **silently narrow** reads — a `read_group` scoped to the account's companies looks complete and is not. No `sudo()` over RPC. |
 | **local prod-dump DB** (postgres-mcp / SQL) | finding the MECHANISM: history tables RPC is denied, heavy joins, forensics | a snapshot — check its age first (`select max(create_date) from <busy table>`); records newer than the dump are simply absent |
-| **live `odoo shell` over SSH** | the FIGURES: anything going to a stakeholder, a ticket or a decision | runs as superuser — read-only discipline is on you; pipe a named script, never an inline one-liner |
+| **live `{{ odoo_cmd }} shell` over SSH** | the FIGURES: anything going to a stakeholder, a ticket or a decision | runs as superuser — read-only discipline is on you; pipe a named script, never an inline one-liner |
 
 Two rules that repeatedly save wrong conclusions:
 

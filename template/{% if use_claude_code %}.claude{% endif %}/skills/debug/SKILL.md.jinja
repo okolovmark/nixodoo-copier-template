@@ -1,6 +1,6 @@
 ---
 name: debug
-description: "Debug an Odoo {{ odoo_version }} bug that is not obvious from reading the code: read the traceback to the bottom, reproduce with a targeted test or an odoo shell script, inspect live ORM state from the shell, then fix. Use when a bug needs runtime state, not just code reading."
+description: "Debug an Odoo {{ odoo_version }} bug that is not obvious from reading the code: read the traceback to the bottom, reproduce with a targeted test or an {{ odoo_cmd }} shell script, inspect live ORM state from the shell, then fix. Use when a bug needs runtime state, not just code reading."
 ---
 
 # Debug Odoo {{ odoo_version }}
@@ -14,13 +14,13 @@ each leaves an artifact (a test, a script, a log excerpt) that goes to the ticke
    overrides and the real `super()` chain. Never debug cold.
 2. Read the traceback to the BOTTOM (section below).
 3. Reproduce with runtime state: a failing test (preferred — it ships with the
-   fix) or an `odoo shell` script that prints the wrong state.
+   fix) or an `{{ odoo_cmd }} shell` script that prints the wrong state.
 4. Narrow, fix, keep the reproduction as the regression test.
 
 ## Channel 1 — targeted test (preferred)
 
 ```bash
-odoo -c ${{ project_dir_var }}/odoo.conf --workers 0 --stop-after-init --logfile=/dev/stdout \
+{{ odoo_cmd }} -c ${{ project_dir_var }}/odoo.conf --workers 0 --stop-after-init --logfile=/dev/stdout \
     --http-port <free port> --test-enable --test-tags /{{ module_prefix }}_<module>:TestX.test_y
 ```
 
@@ -36,10 +36,10 @@ odoo -c ${{ project_dir_var }}/odoo.conf --workers 0 --stop-after-init --logfile
   the file must be imported in `tests/__init__.py` or it runs 0 tests).
 - Believe a run only with a non-zero test count (testing skill, gotchas).
 
-## Channel 2 — odoo shell script
+## Channel 2 — {{ odoo_cmd }} shell script
 
 ```bash
-odoo shell -c ${{ project_dir_var }}/odoo.conf --workers 0 --stop-after-init < probe.py
+{{ odoo_cmd }} shell -c ${{ project_dir_var }}/odoo.conf --workers 0 --stop-after-init < probe.py
 ```
 
 - Print, don't reason from memory: `record.read([...])`, `record.mapped(...)`,
@@ -63,7 +63,7 @@ odoo shell -c ${{ project_dir_var }}/odoo.conf --workers 0 --stop-after-init < p
 
 ## Last resort — `breakpoint()`
 
-A `breakpoint()` in code with `odoo -c <conf> --workers 0` in the USER's
+A `breakpoint()` in code with `{{ odoo_cmd }} -c <conf> --workers 0` in the USER's
 terminal (pdb is interactive; the assistant cannot drive it). Remove it before
 committing; the guard hooks do not catch it.
 
@@ -87,7 +87,7 @@ field by name at runtime needs `sudo()`.
 
 ## Shell verification traps
 
-Self-inflicted false negatives when verifying from `odoo shell` — check these
+Self-inflicted false negatives when verifying from `{{ odoo_cmd }} shell` — check these
 before believing "the code is broken":
 
 - **Company-scoped calls silently no-op under the wrong `env.company`.**

@@ -3,7 +3,7 @@
 set -e
 VSCODE_DIR="$PWD/.vscode"
 SETTINGS_FILE="$VSCODE_DIR/settings.json"
-PYTHON_PATH="$HOME/.nix-profile/bin/python"
+PYTHON_PATH="$HOME/{{ nix_profile_rel }}/bin/python"
 mkdir -p "$VSCODE_DIR"
 if [ -f "$SETTINGS_FILE" ]; then
     echo "You already have existing VS Code settings, skipping..."

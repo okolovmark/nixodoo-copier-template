@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One-time (idempotent) infra for per-session worktree envs. LIGHT — no DB work,
-# does NOT touch develop / odoo.service:
-#   - installs the systemd TEMPLATE unit odoo-wt@.service
+# does NOT touch develop / odoo{{ service_suffix }}.service:
+#   - installs the systemd TEMPLATE unit odoo{{ service_suffix }}-wt@.service
 #   - checks the prod seed dump is present (sessions restore from it)
 # wt-start.sh calls this; cheap no-op after the first run.
 set -euo pipefail
@@ -9,7 +9,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/wt-common.sh"
 
 mkdir -p "$WT_ROOT" "$WT_ENVROOT"
 
-UNIT="$HOME/.config/systemd/user/odoo-wt@.service"
+UNIT="$HOME/.config/systemd/user/odoo{{ service_suffix }}-wt@.service"
 mkdir -p "$(dirname "$UNIT")"
 cat > "$UNIT" <<EOF
 [Unit]
@@ -18,9 +18,9 @@ After=network.target
 
 [Service]
 Type=simple
-Environment="PATH=%h/.nix-profile/bin:\$PATH"
+Environment="PATH=%h/{{ nix_profile_rel }}/bin:\$PATH"
 Environment={{ project_dir_var }}=$PROJ
-ExecStart=%h/.nix-profile/bin/odoo -c $WT_ENVROOT/%i/odoo.conf
+ExecStart=%h/{{ nix_profile_rel }}/bin/odoo -c $WT_ENVROOT/%i/odoo.conf
 Restart=always
 RestartSec=10
 StandardOutput=journal+console

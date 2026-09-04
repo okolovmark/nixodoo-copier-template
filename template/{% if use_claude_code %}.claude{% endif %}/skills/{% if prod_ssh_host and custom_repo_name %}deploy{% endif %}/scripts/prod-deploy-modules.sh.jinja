@@ -41,12 +41,12 @@ link_step=""
 # forwarded key, not on a deploy key sitting in the box's ~/.ssh.
 set +e
 ssh -A -F "$SSH_CONFIG" "$HOST" "set -euo pipefail
-export PATH=\"\$HOME/.nix-profile/bin:\$PATH\"
+export PATH=\"\$HOME/{{ nix_profile_rel }}/bin:\$PATH\"
 cd {{ prod_remote_project_dir }}/src/{{ custom_repo_name }}
 git pull origin {{ odoo_version }}
 $link_step
 python {{ prod_remote_project_dir }}/src/odoo/odoo-bin -c {{ prod_remote_odoo_conf }} --workers 0 -d {{ prod_db_name }} $FLAG $MODULES --stop-after-init --logfile=/dev/stdout
-systemctl --user restart odoo.service"
+systemctl --user restart odoo{{ service_suffix }}.service"
 status=$?
 set -e
 

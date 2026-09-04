@@ -26,7 +26,7 @@ case "$MODE" in dry|commit) ;; *) usage ;; esac
 
 set +e
 OUT=$(ssh -F "${{ project_dir_var }}/.ssh/config" "$HOST" \
-  "export PATH=\"\$HOME/.nix-profile/bin:\$PATH\"; SCRIPT_MODE=$MODE python {{ prod_remote_project_dir }}/src/odoo/odoo-bin shell -c {{ prod_remote_odoo_conf }} -d {{ prod_db_name }} --no-http" \
+  "export PATH=\"\$HOME/{{ nix_profile_rel }}/bin:\$PATH\"; SCRIPT_MODE=$MODE python {{ prod_remote_project_dir }}/src/odoo/odoo-bin shell -c {{ prod_remote_odoo_conf }} -d {{ prod_db_name }} --no-http" \
   < "$SCRIPT" 2>&1)
 SSH_EXIT=$?
 set -e

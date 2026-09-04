@@ -1,6 +1,6 @@
 ---
 name: deploy-checks
-description: "Deploy risk tooling: blast-radius classification of an addons change set (high/medium/low risk to business documents) + post-deploy invariant check (read-only SQL via odoo shell: unbalanced postings, failed queue jobs, stuck crons, negative stock). Use before a deploy to tag its risk, after a deploy to verify invariants (T+0 and again ~T+60), or on demand to health-check a database."
+description: "Deploy risk tooling: blast-radius classification of an addons change set (high/medium/low risk to business documents) + post-deploy invariant check (read-only SQL via {{ odoo_cmd }} shell: unbalanced postings, failed queue jobs, stuck crons, negative stock). Use before a deploy to tag its risk, after a deploy to verify invariants (T+0 and again ~T+60), or on demand to health-check a database."
 argument-hint: "[blast-radius <git-range> | invariants [since-timestamp]]"
 ---
 
@@ -35,12 +35,12 @@ into the check as `INV_TIER=<tier>` — it gates the `deep_check()` set below.
 
 ## Invariant check — verify the database after deploying
 
-Read-only. Runs inside `odoo shell`, so it needs no ports or credentials beyond
+Read-only. Runs inside `{{ odoo_cmd }} shell`, so it needs no ports or credentials beyond
 a config file. Local database:
 
 ```bash
 INV_SINCE="<deploy time UTC, YYYY-MM-DD HH:MM:SS>" \
-  odoo shell -c ${{ project_dir_var }}/odoo.conf --no-http \
+  {{ odoo_cmd }} shell -c ${{ project_dir_var }}/odoo.conf --no-http \
   < .../scripts/invariant-check.py
 ```
 {% if prod_ssh_host %}
@@ -78,7 +78,7 @@ ticket — the usual cause is an override changing a core field's computed
 schema, see `code-patterns` references/migrations.md):
 
 ```bash
-odoo -c ${{ project_dir_var }}/odoo.conf -u <module> --workers 0 --stop-after-init \
+{{ odoo_cmd }} -c ${{ project_dir_var }}/odoo.conf -u <module> --workers 0 --stop-after-init \
      --log-handler odoo.schema:DEBUG --logfile=/dev/stdout | grep -E "odoo.schema:"
 ```
 
@@ -106,7 +106,7 @@ references/migrations.md.
 
 `scripts/invariant_local.py` is **project-owned** (edit it, keep your version on
 `copier update`). It is appended after the core script on the same stdin
-(`cat core local | odoo shell …`), so `sql()` / `report()` / `check()` /
+(`cat core local | {{ odoo_cmd }} shell …`), so `sql()` / `report()` / `check()` /
 `deep_check()` / `SINCE` are already defined. Encode the guarantees specific to
 your modules — the checks that would page you if they ever went false.
 

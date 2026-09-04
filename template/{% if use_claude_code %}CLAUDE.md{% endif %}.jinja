@@ -16,16 +16,16 @@
 
 ```bash
 # Services
-systemctl --user {start|stop|restart|status} odoo.service postgres.service nginx.service
+systemctl --user {start|stop|restart|status} odoo{{ service_suffix }}.service postgres{{ service_suffix }}.service nginx{{ service_suffix }}.service
 
 # Update/install module (stop running odoo first)
-odoo -c ${{ project_dir_var }}/odoo.conf -u module_name --workers 0 --stop-after-init --logfile=/dev/stdout
+{{ odoo_cmd }} -c ${{ project_dir_var }}/odoo.conf -u module_name --workers 0 --stop-after-init --logfile=/dev/stdout
 
 # Interactive shell
-odoo shell -c ${{ project_dir_var }}/odoo.conf --workers 0 --stop-after-init
+{{ odoo_cmd }} shell -c ${{ project_dir_var }}/odoo.conf --workers 0 --stop-after-init
 
 # Run a specific test class/method
-odoo -c ${{ project_dir_var }}/odoo.conf -u module_name --workers 0 --test-enable --test-tags module_name.test_file_name --stop-after-init --logfile=/dev/stdout
+{{ odoo_cmd }} -c ${{ project_dir_var }}/odoo.conf -u module_name --workers 0 --test-enable --test-tags module_name.test_file_name --stop-after-init --logfile=/dev/stdout
 
 # Clone/update repos and regenerate addon symlinks
 nix run .#update-repos

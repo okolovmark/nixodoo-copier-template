@@ -8,13 +8,13 @@ argument-hint: "[start|stop|list] [slug]"
 
 Per-session isolated Odoo envs. Each run is keyed by a task `<slug>` and gets its
 own worktree + port + DB + data_dir + systemd unit. Many can run in parallel; none
-touch the user's main env (`src/{{ custom_repo_name }}` / `{{ db_name }}` / `odoo.service` / 1669).
+touch the user's main env (`src/{{ custom_repo_name }}` / `{{ db_name }}` / `odoo{{ service_suffix }}.service` / 1669).
 
 | | Main (user's) | Session `<slug>` |
 |---|---|---|
 | Code | `src/{{ custom_repo_name }}` | `.worktrees/<slug>` (branch off `origin/{{ odoo_version }}`) |
 | Runtime | `odoo.conf` | `.worktrees/_env/<slug>/{odoo.conf,data,port}` |
-| Service | `odoo.service` | `odoo-wt@<slug>.service` |
+| Service | `odoo{{ service_suffix }}.service` | `odoo{{ service_suffix }}-wt@<slug>.service` |
 | DB | `{{ db_name }}` | `wt_<slug>` (own restore of the prod dump) |
 | HTTP | nginx {{ nginx_port }} → {{ odoo_http_port }} | auto-allocated in **{{ (odoo_major | int + 11) * 100 }}–{{ (odoo_major | int + 11) * 100 + 99 }}** (direct, no nginx) |
 
@@ -25,15 +25,15 @@ Invoke by absolute path under `${{ project_dir_var }}/.claude/skills/worktree-en
 - **`wt-start.sh <slug>`** — bring the env up: add the worktree off `origin/{{ odoo_version }}` as
   branch `<slug>`, allocate a free port, build the session addons farm, restore
   `wt_<slug>` from the prod seed dump (+ `odoo neutralize` + dev fixups), start
-  `odoo-wt@<slug>.service`.
+  `odoo{{ service_suffix }}-wt@<slug>.service`.
   **Idempotent — re-run to refresh** (e.g. after adding a new module dir). Prints
   `WORKTREE:` / `BRANCH:` / `URL:` / `CONF:` / `DB:` / `PORT:` — capture these.
 - **`wt-stop.sh <slug>`** — stop the env's Odoo; if the worktree is clean, remove it,
   drop `wt_<slug>`, delete the runtime dir (the branch stays on origin). A **dirty**
   worktree is kept (worktree + env + DB) and reported so no work is lost.
 - **`wt-list.sh`** — table of all active envs (slug / port / DB / service / dirty).
-- `wt-bootstrap.sh` — one-time, light: installs the `odoo-wt@.service` template unit
-  and checks the seed dump is present. **No DB work; never stops `odoo.service`.**
+- `wt-bootstrap.sh` — one-time, light: installs the `odoo{{ service_suffix }}-wt@.service` template unit
+  and checks the seed dump is present. **No DB work; never stops `odoo{{ service_suffix }}.service`.**
   `wt-start.sh` calls it automatically.
 - `wt-link.sh <tree> <farm>` / `wt-restore.sh <slug>` — internals used by `wt-start`.
 

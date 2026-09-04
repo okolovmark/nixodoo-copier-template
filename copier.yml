@@ -272,7 +272,35 @@ project_dir_var:
   default: "ODOO{{ odoo_version | replace('.0', '') }}_PROJECT_DIR"
   validator: "{% if not (project_dir_var | regex_search('^[A-Z][A-Z0-9_]*$')) %}Use an UPPER_SNAKE_CASE shell variable name{% endif %}"
 
+service_suffix:
+  type: str
+  help: "Suffix for the systemd unit names and the nix profile, so two generated projects can coexist on one machine. Empty keeps the classic names (odoo.service, postgres.service, nginx.service, odoo-logrotate.*, odoo-wt@.service) and the user's default ~/.nix-profile. Set e.g. '-19' for odoo-19.service etc.; the project then also gets its own nix profile at ~/.local/state/nix/profiles/<project_name> (never on PATH: generated commands call odoo through it)"
+  default: ""
+  validator: "{% if service_suffix and not (service_suffix | regex_search('^-?[a-z0-9][a-z0-9-]*$')) %}Use lowercase letters, digits and dashes, e.g. -19{% endif %}"
+
 # === computed (hidden) ===
+
+# The nix profile this project's dev/test/prod-server package is installed into,
+# relative to $HOME: the user's default profile unless service_suffix asks for a
+# per-project one. Used as %h/{{ nix_profile_rel }} in units and $HOME/{{ nix_profile_rel }} in scripts.
+nix_profile_rel:
+  type: str
+  when: false
+  default: "{% if service_suffix %}.local/state/nix/profiles/{{ project_name }}{% else %}.nix-profile{% endif %}"
+
+# What goes between `nix profile add ` and `.#dev-server` (trailing space included, or empty).
+nix_profile_flag:
+  type: str
+  when: false
+  default: "{% if service_suffix %}--profile ~/{{ nix_profile_rel }} {% endif %}"
+
+# How generated docs and skills invoke Odoo: bare `odoo` from PATH with the default
+# profile, the per-project profile's wrapper otherwise (that profile is not on PATH).
+odoo_cmd:
+  type: str
+  when: false
+  default: "{% if service_suffix %}~/{{ nix_profile_rel }}/bin/odoo{% else %}odoo{% endif %}"
+
 
 odoo_major:
   type: str

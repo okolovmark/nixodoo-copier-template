@@ -20,7 +20,7 @@
 set -e
 VENV="$PWD/.venv"
 BASE_PYTHON=$("$PROJECT_PYTHON" -c 'import sys; print(sys.base_prefix + "/bin/python3")')
-PROFILE_PYTHON="$HOME/.nix-profile/bin/python"
+PROFILE_PYTHON="$HOME/{{ nix_profile_rel }}/bin/python"
 
 if ! "$VENV/bin/pip" --version >/dev/null 2>&1; then
     echo "Creating $VENV from $BASE_PYTHON..."

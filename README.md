@@ -115,6 +115,7 @@ uvx copier update --trust
 | ports (http / gevent / nginx / postgres) | derived from the Odoo major (`16.0` → 1669/1672/16069/16432) |
 | `db_name` / `db_user` / `db_password` | `develop` / `odoo` / `odoo` |
 | `project_dir_var` (project-root env var; make unique to run two projects on one Odoo version) | `ODOO<major>_PROJECT_DIR` |
+| `service_suffix` (systemd unit + nix profile suffix; set e.g. `-19` so a second generated project can coexist on one machine — `odoo-19.service`, own profile `~/.local/state/nix/profiles/<project>`) | empty = classic names + `~/.nix-profile` |
 | `use_queue_job` | `false` |
 | `editor` | `none` (or `vscode` → settings generator; `zed` → debug config; `odools.toml` ships with `use_claude_code` or `zed`) |
 | `default_repo_pattern` | `https://github.com/OCA/{}.git` |

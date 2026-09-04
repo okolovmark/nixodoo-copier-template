@@ -39,7 +39,7 @@ echo
 echo "Creating PostgreSQL systemd user service..."
 mkdir -p "$SYSTEMD_DIR"
 
-POSTGRES_SERVICE_FILE="$SYSTEMD_DIR/postgres.service"
+POSTGRES_SERVICE_FILE="$SYSTEMD_DIR/postgres{{ service_suffix }}.service"
 echo "Creating PostgreSQL service..."
 cat > "$POSTGRES_SERVICE_FILE" << EOF
 [Unit]
@@ -48,7 +48,7 @@ After=network.target
 
 [Service]
 Type=simple
-Environment="PATH=%h/.nix-profile/bin:\$PATH"
+Environment="PATH=%h/{{ nix_profile_rel }}/bin:\$PATH"
 Environment=PGDATA=$PGDATA
 Environment=PGHOST=$PGHOST
 Environment=PGPORT=$PGPORT
@@ -71,6 +71,6 @@ echo "Reloading systemd daemon..."
 systemctl --user daemon-reload
 echo
 echo "To enable and start the PostgreSQL service, run:"
-echo "  systemctl --user enable postgres.service"
-echo "  systemctl --user start postgres.service"
-echo "  systemctl --user status postgres.service"
+echo "  systemctl --user enable postgres{{ service_suffix }}.service"
+echo "  systemctl --user start postgres{{ service_suffix }}.service"
+echo "  systemctl --user status postgres{{ service_suffix }}.service"
