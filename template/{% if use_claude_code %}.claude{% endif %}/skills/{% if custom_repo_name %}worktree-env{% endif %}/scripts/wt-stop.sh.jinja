@@ -16,7 +16,7 @@ DB="$(db_name_for "$SLUG")"
 WT_PATH="$WT_ROOT/$SLUG"
 ENV_DIR="$WT_ENVROOT/$SLUG"
 
-systemctl --user stop "odoo-wt@$SLUG.service" 2>/dev/null || true
+systemctl --user stop "odoo{{ service_suffix }}-wt@$SLUG.service" 2>/dev/null || true
 
 if [ -d "$WT_PATH" ] && [ -n "$(git -C "$WT_PATH" status --porcelain 2>/dev/null)" ]; then
     echo "STATUS: DIRTY-kept ($WT_PATH) — uncommitted changes; env + DB $DB preserved"

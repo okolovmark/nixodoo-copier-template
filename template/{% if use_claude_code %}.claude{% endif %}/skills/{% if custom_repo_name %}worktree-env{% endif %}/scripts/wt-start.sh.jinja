@@ -82,7 +82,7 @@ bash "$WT_SCRIPT_DIR/wt-restore.sh" "$SLUG"
 mkdir -p "$DATA_DIR/filestore/$DB"
 cp -an "$SEED_FILESTORE/." "$DATA_DIR/filestore/$DB/" 2>/dev/null || true
 
-systemctl --user restart "odoo-wt@$SLUG.service"
+systemctl --user restart "odoo{{ service_suffix }}-wt@$SLUG.service"
 
 echo "WORKTREE: $WT_PATH"
 echo "BRANCH: $SLUG"

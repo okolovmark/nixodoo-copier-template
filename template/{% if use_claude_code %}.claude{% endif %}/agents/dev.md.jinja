@@ -67,7 +67,7 @@ tests, security (ACL/record rules), and error handling are never on it.
 4. Create views: Form -> Tree -> Search -> Kanban
 5. Add security: groups -> ACL -> record rules
 6. Update symlinks (if needed): `nix run .#update-repos`
-7. Install/update: `odoo -c ${{ project_dir_var }}/odoo.conf {-i|-u} {{ module_prefix }}_<feature> --workers 0 --stop-after-init --logfile=/dev/stdout`
+7. Install/update: `{{ odoo_cmd }} -c ${{ project_dir_var }}/odoo.conf {-i|-u} {{ module_prefix }}_<feature> --workers 0 --stop-after-init --logfile=/dev/stdout`
 8. Iterate: check logs, fix issues, repeat
 
 ## Rules

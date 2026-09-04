@@ -99,7 +99,7 @@ if [ "$(ls -A backup)" ]; then
         export PGDATA=$PWD/.postgres
         PG_CONN_HOST="$PGHOST_SOCKET"
         # Start the local cluster only if it isn't already running
-        # (postgres.service may hold it — restoring in place is fine and
+        # (postgres{{ service_suffix }}.service may hold it — restoring in place is fine and
         # doesn't disturb other databases / worktree sessions)
         if ! pg_isready -q -h "$PGHOST_SOCKET" -p "$PGPORT"; then
             pg_ctl start -o "-k $PGHOST_SOCKET -p $PGPORT"

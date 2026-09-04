@@ -7,9 +7,9 @@
 #   worktree  .worktrees/<slug>/            (git checkout, the code)
 #   runtime   .worktrees/_env/<slug>/       (odoo.conf, data_dir, port file)
 #   DB        wt_<slug>                      (independent restore of the prod dump)
-#   service   odoo-wt@<slug>.service         (own Odoo on its own port)
+#   service   odoo{{ service_suffix }}-wt@<slug>.service         (own Odoo on its own port)
 # Nothing is shared between sessions except the read-only seed dump and the
-# pinned OCA/CE module sources. The user's main env (develop / odoo.service /
+# pinned OCA/CE module sources. The user's main env (develop / odoo{{ service_suffix }}.service /
 # {{ odoo_http_port }}) is never touched.
 
 PROJ="${{ "{" }}{{ project_dir_var }}:-$HOME/{{ project_name }}}"
@@ -26,7 +26,7 @@ PORT_BASE={{ (odoo_major | int + 11) * 100 }}                                   
 PORT_MAX={{ (odoo_major | int + 11) * 100 + 99 }}
 
 # Local postgres (odoo.conf: localhost:{{ postgres_port }}, odoo/odoo). The shared cluster is
-# already up via postgres.service — we never pg_ctl it, only create/drop DBs.
+# already up via postgres{{ service_suffix }}.service — we never pg_ctl it, only create/drop DBs.
 export PGPASSWORD={{ db_password }}
 PSQL="psql -h localhost -p {{ postgres_port }} -U {{ db_user }}"
 

@@ -319,11 +319,11 @@ uninstalled module runs 0 tests and exits green — use `-i`), grep for
 
 ```bash
 # All tests for a module
-odoo -c ${{ project_dir_var }}/odoo.conf -u {{ module_prefix }}_<module> \
+{{ odoo_cmd }} -c ${{ project_dir_var }}/odoo.conf -u {{ module_prefix }}_<module> \
     --workers 0 --test-enable --stop-after-init --logfile=/dev/stdout
 
 # Specific test class
-odoo -c ${{ project_dir_var }}/odoo.conf -u {{ module_prefix }}_<module> \
+{{ odoo_cmd }} -c ${{ project_dir_var }}/odoo.conf -u {{ module_prefix }}_<module> \
     --workers 0 --test-enable --test-tags=/{{ module_prefix }}_<module>:TestClassName \
     --stop-after-init --logfile=/dev/stdout
 ```

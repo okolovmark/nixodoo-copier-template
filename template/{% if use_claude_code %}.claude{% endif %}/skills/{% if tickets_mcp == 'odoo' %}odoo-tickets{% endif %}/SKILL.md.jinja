@@ -220,7 +220,7 @@ execute("project.task", "message_post", [[<id>]],
 ### Always attach scripts you run against prod
 
 Ran a script as part of a task? Attach it. Covers any **Odoo shell**
-(`odoo shell` / `odoo-bin shell`, local or over SSH on prod) and any
+(`{{ odoo_cmd }} shell` / `odoo-bin shell`, local or over SSH on prod) and any
 **multi-record data-mutating RPC** (bulk `write`/`unlink`, `_merge`, mass state
 change). No silent prod mutation: if it changed data and isn't one trivial
 write, the script goes on the task as a record of what was run.

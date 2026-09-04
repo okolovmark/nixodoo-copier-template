@@ -357,21 +357,21 @@
 
                 # Scripts are also buildable directly: nix build .#<name>
                 packages = scripts // {
-                    # nix profile add .#prod-server / nix profile remove prod-server
+                    # nix profile add {{ nix_profile_flag }}.#prod-server / nix profile remove {{ nix_profile_flag }}prod-server
                     prod-server = mkServer {
                         suffix = "prod-server";
                         tools = productionTools;
                         odoo = odooWrapper;
                     };
 
-                    # nix profile add .#test-server / nix profile remove test-server
+                    # nix profile add {{ nix_profile_flag }}.#test-server / nix profile remove {{ nix_profile_flag }}test-server
                     test-server = mkServer {
                         suffix = "test-server";
                         tools = productionTools;
                         odoo = odooWrapper;
                     };
 
-                    # nix profile add .#dev-server / nix profile remove dev-server
+                    # nix profile add {{ nix_profile_flag }}.#dev-server / nix profile remove {{ nix_profile_flag }}dev-server
                     dev-server = mkServer {
                         suffix = "dev-server";
                         tools = productionTools ++ devTools;

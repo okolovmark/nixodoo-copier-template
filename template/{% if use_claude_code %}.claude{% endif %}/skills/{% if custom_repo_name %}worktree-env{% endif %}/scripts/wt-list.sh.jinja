@@ -10,7 +10,7 @@ for env_dir in "$WT_ENVROOT"/*/; do
     [ -d "$env_dir" ] || continue
     slug="$(basename "$env_dir")"
     port="$(cat "$env_dir/port" 2>/dev/null || echo '?')"
-    svc="$(systemctl --user is-active "odoo-wt@$slug.service" 2>/dev/null || echo inactive)"
+    svc="$(systemctl --user is-active "odoo{{ service_suffix }}-wt@$slug.service" 2>/dev/null || echo inactive)"
     wt="$WT_ROOT/$slug"
     if [ -d "$wt" ]; then
         [ -n "$(git -C "$wt" status --porcelain 2>/dev/null)" ] && state=dirty || state=clean

@@ -30,7 +30,7 @@ if [ -f "$HOME/.bashrc" ]; then
 fi
 
 # Create Odoo service
-ODOO_SERVICE_FILE="$SYSTEMD_DIR/odoo.service"
+ODOO_SERVICE_FILE="$SYSTEMD_DIR/odoo{{ service_suffix }}.service"
 echo "Creating Odoo service..."
 cat > "$ODOO_SERVICE_FILE" << EOF
 [Unit]
@@ -39,9 +39,9 @@ After=network.target
 
 [Service]
 Type=simple
-Environment="PATH=%h/.nix-profile/bin:\$PATH"
+Environment="PATH=%h/{{ nix_profile_rel }}/bin:\$PATH"
 Environment={{ project_dir_var }}=$PROJECT_DIR
-ExecStart=%h/.nix-profile/bin/odoo -c $PROJECT_DIR/odoo.conf
+ExecStart=%h/{{ nix_profile_rel }}/bin/odoo -c $PROJECT_DIR/odoo.conf
 Restart=always
 RestartSec=10
 StandardOutput=journal+console
@@ -53,7 +53,7 @@ EOF
 echo "  Created $ODOO_SERVICE_FILE"
 
 # Create Nginx service
-NGINX_SERVICE_FILE="$SYSTEMD_DIR/nginx.service"
+NGINX_SERVICE_FILE="$SYSTEMD_DIR/nginx{{ service_suffix }}.service"
 echo "Creating Nginx service..."
 cat > "$NGINX_SERVICE_FILE" << EOF
 [Unit]
@@ -62,7 +62,7 @@ After=network.target
 
 [Service]
 Type=forking
-Environment="PATH=%h/.nix-profile/bin:\$PATH"
+Environment="PATH=%h/{{ nix_profile_rel }}/bin:\$PATH"
 Environment={{ project_dir_var }}=$PROJECT_DIR
 ExecStartPre=$NGINX_BIN -c $PROJECT_DIR/.nginx/nginx.conf -p $PROJECT_DIR/.nginx -e $PROJECT_DIR/.nginx/logs/error.log -t
 ExecStart=$NGINX_BIN -c $PROJECT_DIR/.nginx/nginx.conf -p $PROJECT_DIR/.nginx -e $PROJECT_DIR/.nginx/logs/error.log
@@ -95,7 +95,7 @@ $PROJECT_DIR/odoo.log {
 EOF
 echo "  Created $LOGROTATE_CONF"
 
-LOGROTATE_SERVICE_FILE="$SYSTEMD_DIR/odoo-logrotate.service"
+LOGROTATE_SERVICE_FILE="$SYSTEMD_DIR/odoo{{ service_suffix }}-logrotate.service"
 cat > "$LOGROTATE_SERVICE_FILE" << EOF
 [Unit]
 Description=Rotate Odoo logs
@@ -106,7 +106,7 @@ ExecStart=$LOGROTATE_BIN --state $PROJECT_DIR/.logrotate.state $LOGROTATE_CONF
 EOF
 echo "  Created $LOGROTATE_SERVICE_FILE"
 
-LOGROTATE_TIMER_FILE="$SYSTEMD_DIR/odoo-logrotate.timer"
+LOGROTATE_TIMER_FILE="$SYSTEMD_DIR/odoo{{ service_suffix }}-logrotate.timer"
 cat > "$LOGROTATE_TIMER_FILE" << EOF
 [Unit]
 Description=Daily Odoo log rotation
@@ -125,9 +125,9 @@ echo "Reloading systemd daemon..."
 systemctl --user daemon-reload
 echo
 echo "To enable and start the services, run:"
-echo "  systemctl --user enable odoo.service nginx.service odoo-logrotate.timer"
-echo "  systemctl --user start odoo.service nginx.service odoo-logrotate.timer"
-echo "  systemctl --user status odoo.service nginx.service"
+echo "  systemctl --user enable odoo{{ service_suffix }}.service nginx{{ service_suffix }}.service odoo{{ service_suffix }}-logrotate.timer"
+echo "  systemctl --user start odoo{{ service_suffix }}.service nginx{{ service_suffix }}.service odoo{{ service_suffix }}-logrotate.timer"
+echo "  systemctl --user status odoo{{ service_suffix }}.service nginx{{ service_suffix }}.service"
 echo
 echo "(Optional) To run services even when not logged in:"
 echo "  sudo loginctl enable-linger \$USER"

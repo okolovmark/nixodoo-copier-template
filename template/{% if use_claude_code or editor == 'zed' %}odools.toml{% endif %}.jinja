@@ -14,7 +14,7 @@ name = "{{ project_name }}"
 odoo_path = "${workspaceFolder}/src/odoo"
 
 # Python interpreter — used to resolve stdlib and 3rd-party imports
-python_path = "${userHome}/.nix-profile/bin/python3"
+python_path = "${userHome}/{{ nix_profile_rel }}/bin/python3"
 
 # Module directories. Each entry is a folder that DIRECTLY contains modules.
 # Add one line per repo key from addons.yaml.

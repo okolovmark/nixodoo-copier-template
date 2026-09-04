@@ -119,12 +119,12 @@ bash "${{ project_dir_var }}/.claude/skills/deploy/scripts/prod-deploy-modules.s
 
 ```sh
 set -euo pipefail
-export PATH="$HOME/.nix-profile/bin:$PATH"   # non-interactive SSH lacks the nix PATH; bare `python` = exit 127
+export PATH="$HOME/{{ nix_profile_rel }}/bin:$PATH"   # non-interactive SSH lacks the nix PATH; bare `python` = exit 127
 cd {{ prod_remote_project_dir }}/src/{{ custom_repo_name }}
 git pull origin {{ odoo_version }}
 cd {{ prod_remote_project_dir }} && {{ prod_link_addons_cmd }}          # --link-addons only
 python {{ prod_remote_project_dir }}/src/odoo/odoo-bin -c {{ prod_remote_odoo_conf }} --workers 0 -d {{ prod_db_name }} <-u|-i> <modules> --stop-after-init --logfile=/dev/stdout
-systemctl --user restart odoo.service
+systemctl --user restart odoo{{ service_suffix }}.service
 ```
 
 `logfile=/dev/stdout` makes the box print `ERROR: couldn't create the logfile
@@ -150,18 +150,18 @@ detached — a dropped SSH connection must never leave prod stopped:
 ```bash
 # git pull first, service still up
 ssh -A -F "${{ project_dir_var }}/.ssh/config" prod 'set -euo pipefail
-export PATH="$HOME/.nix-profile/bin:$PATH"
+export PATH="$HOME/{{ nix_profile_rel }}/bin:$PATH"
 cd {{ prod_remote_project_dir }}/src/{{ custom_repo_name }} && git pull origin {{ odoo_version }}'
 
-ssh -A -F "${{ project_dir_var }}/.ssh/config" prod 'systemctl --user stop odoo.service'
+ssh -A -F "${{ project_dir_var }}/.ssh/config" prod 'systemctl --user stop odoo{{ service_suffix }}.service'
 
-ssh -A -F "${{ project_dir_var }}/.ssh/config" prod 'export PATH="$HOME/.nix-profile/bin:$PATH"; rm -f /tmp/deploy-pr<PR>.log; setsid nohup bash -c "python {{ prod_remote_project_dir }}/src/odoo/odoo-bin -c {{ prod_remote_odoo_conf }} --workers 0 -d {{ prod_db_name }} -u <modules> --stop-after-init --logfile=/tmp/deploy-pr<PR>.log; echo RETRY_EXIT=\$? >> /tmp/deploy-pr<PR>.log" > /dev/null 2>&1 < /dev/null & echo LAUNCHED'
+ssh -A -F "${{ project_dir_var }}/.ssh/config" prod 'export PATH="$HOME/{{ nix_profile_rel }}/bin:$PATH"; rm -f /tmp/deploy-pr<PR>.log; setsid nohup bash -c "python {{ prod_remote_project_dir }}/src/odoo/odoo-bin -c {{ prod_remote_odoo_conf }} --workers 0 -d {{ prod_db_name }} -u <modules> --stop-after-init --logfile=/tmp/deploy-pr<PR>.log; echo RETRY_EXIT=\$? >> /tmp/deploy-pr<PR>.log" > /dev/null 2>&1 < /dev/null & echo LAUNCHED'
 
 # poll until the marker lands, then read the result
 until ssh -A -F "${{ project_dir_var }}/.ssh/config" prod 'grep -q "RETRY_EXIT=" /tmp/deploy-pr<PR>.log 2>/dev/null'; do sleep 20; done
 ssh -A -F "${{ project_dir_var }}/.ssh/config" prod 'grep -aE "RETRY_EXIT=|Modules loaded" /tmp/deploy-pr<PR>.log; grep -acE " (ERROR|CRITICAL) " /tmp/deploy-pr<PR>.log'
 
-ssh -A -F "${{ project_dir_var }}/.ssh/config" prod 'systemctl --user start odoo.service'
+ssh -A -F "${{ project_dir_var }}/.ssh/config" prod 'systemctl --user start odoo{{ service_suffix }}.service'
 ```
 
 `RETRY_EXIT=0` + `Modules loaded.` is the success pair. **Non-zero → prod is
@@ -266,7 +266,7 @@ that it writes.
 ```bash
 CHECKS="${{ project_dir_var }}/.claude/skills/deploy-checks/scripts"
 cat "$CHECKS/invariant-check.py" "$CHECKS/invariant_local.py" | \
-  ssh -A -F "${{ project_dir_var }}/.ssh/config" prod 'export PATH="$HOME/.nix-profile/bin:$PATH"; INV_SINCE="<DEPLOY_TS>" INV_TIER="<BLAST_RADIUS>" python {{ prod_remote_project_dir }}/src/odoo/odoo-bin shell -c {{ prod_remote_odoo_conf }} -d {{ prod_db_name }} --no-http'
+  ssh -A -F "${{ project_dir_var }}/.ssh/config" prod 'export PATH="$HOME/{{ nix_profile_rel }}/bin:$PATH"; INV_SINCE="<DEPLOY_TS>" INV_TIER="<BLAST_RADIUS>" python {{ prod_remote_project_dir }}/src/odoo/odoo-bin shell -c {{ prod_remote_odoo_conf }} -d {{ prod_db_name }} --no-http'
 ```
 
 - Substitute `<DEPLOY_TS>` with the Step-5 value and `<BLAST_RADIUS>` with the

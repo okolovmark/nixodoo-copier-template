@@ -213,8 +213,8 @@ To update the server with the latest code and addons, run:
 cd ${{ project_dir_var }}
 git pull
 nix run .#update-repos
-odoo -c ${{ project_dir_var }}/odoo.conf -u module_name --workers 0 --stop-after-init --logfile=/dev/stdout
-systemctl --user restart odoo.service
+{{ odoo_cmd }} -c ${{ project_dir_var }}/odoo.conf -u module_name --workers 0 --stop-after-init --logfile=/dev/stdout
+systemctl --user restart odoo{{ service_suffix }}.service
 ```
 
 ## Local Server
@@ -248,26 +248,26 @@ nix run .#setup-dev
 nix run .#bootstrap-deps
 
 # INSTALL PERMANENTLY TO YOUR SYSTEM
-nix profile add .#dev-server
+{% if service_suffix %}mkdir -p ~/.local/state/nix/profiles && {% endif %}nix profile add {{ nix_profile_flag }}.#dev-server
 
 # Odoo, Postgres and Nginx services + log rotation
-systemctl --user enable odoo.service postgres.service nginx.service odoo-logrotate.timer
-systemctl --user start odoo.service postgres.service nginx.service odoo-logrotate.timer
-systemctl --user restart odoo.service postgres.service nginx.service
-systemctl --user stop odoo.service postgres.service nginx.service
-systemctl --user status odoo.service postgres.service nginx.service
+systemctl --user enable odoo{{ service_suffix }}.service postgres{{ service_suffix }}.service nginx{{ service_suffix }}.service odoo{{ service_suffix }}-logrotate.timer
+systemctl --user start odoo{{ service_suffix }}.service postgres{{ service_suffix }}.service nginx{{ service_suffix }}.service odoo{{ service_suffix }}-logrotate.timer
+systemctl --user restart odoo{{ service_suffix }}.service postgres{{ service_suffix }}.service nginx{{ service_suffix }}.service
+systemctl --user stop odoo{{ service_suffix }}.service postgres{{ service_suffix }}.service nginx{{ service_suffix }}.service
+systemctl --user status odoo{{ service_suffix }}.service postgres{{ service_suffix }}.service nginx{{ service_suffix }}.service
 
 # Logs:
 tail -f ${{ project_dir_var }}/.postgres/log/postgresql.log | ccze -A
-journalctl --user -u odoo.service -f | ccze -A
+journalctl --user -u odoo{{ service_suffix }}.service -f | ccze -A
 tail -f ${{ project_dir_var }}/odoo.log | ccze -A
-journalctl --user -u nginx.service -f | ccze -A
+journalctl --user -u nginx{{ service_suffix }}.service -f | ccze -A
 
 # Odoo update module:
-odoo -c ${{ project_dir_var }}/odoo.conf -u module_name --workers 0 --stop-after-init --logfile=/dev/stdout
+{{ odoo_cmd }} -c ${{ project_dir_var }}/odoo.conf -u module_name --workers 0 --stop-after-init --logfile=/dev/stdout
 
 # Odoo shell:
-odoo shell -c ${{ project_dir_var }}/odoo.conf --workers 0 --stop-after-init
+{{ odoo_cmd }} shell -c ${{ project_dir_var }}/odoo.conf --workers 0 --stop-after-init
 {% if prod_ssh_host %}
 
 # Connect to remote servers:
@@ -360,18 +360,18 @@ nix run .#setup-test
 nix run .#bootstrap-deps
 
 # Install test server profile (includes python, nginx, odoo)
-nix profile add .#test-server
+{% if service_suffix %}mkdir -p ~/.local/state/nix/profiles && {% endif %}nix profile add {{ nix_profile_flag }}.#test-server
 
 # Enable running when not logged in
 sudo loginctl enable-linger $USER
 
 # Odoo and Nginx services + log rotation
-systemctl --user enable odoo.service nginx.service odoo-logrotate.timer
-systemctl --user start odoo.service nginx.service odoo-logrotate.timer
-systemctl --user status odoo.service nginx.service
+systemctl --user enable odoo{{ service_suffix }}.service nginx{{ service_suffix }}.service odoo{{ service_suffix }}-logrotate.timer
+systemctl --user start odoo{{ service_suffix }}.service nginx{{ service_suffix }}.service odoo{{ service_suffix }}-logrotate.timer
+systemctl --user status odoo{{ service_suffix }}.service nginx{{ service_suffix }}.service
 
 # Odoo logs:
-journalctl --user -u odoo.service -f
+journalctl --user -u odoo{{ service_suffix }}.service -f
 tail -f ${{ project_dir_var }}/odoo.log
 {% if backup_s3_bucket %}
 
@@ -405,15 +405,15 @@ nix run .#setup-prod
 nix run .#bootstrap-deps
 
 # Install to user profile
-nix profile add .#prod-server
+{% if service_suffix %}mkdir -p ~/.local/state/nix/profiles && {% endif %}nix profile add {{ nix_profile_flag }}.#prod-server
 
 # Enable running when not logged in
 sudo loginctl enable-linger $USER
 
 # Odoo and Nginx services + log rotation
-systemctl --user enable odoo.service nginx.service odoo-logrotate.timer
-systemctl --user start odoo.service nginx.service odoo-logrotate.timer
-systemctl --user status odoo.service nginx.service
+systemctl --user enable odoo{{ service_suffix }}.service nginx{{ service_suffix }}.service odoo{{ service_suffix }}-logrotate.timer
+systemctl --user start odoo{{ service_suffix }}.service nginx{{ service_suffix }}.service odoo{{ service_suffix }}-logrotate.timer
+systemctl --user status odoo{{ service_suffix }}.service nginx{{ service_suffix }}.service
 ```
 
 ### Tools Included For Production

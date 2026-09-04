@@ -43,7 +43,7 @@ Defined in `.claude/agents/`:
 | `verify` | Adversarial check of ONE Critical / Major review finding → CONFIRMED / PLAUSIBLE / REFUTED | Read, Grep, Glob, Bash | — |
 | `documenter` | Module docs — readme fragments, `readme/*.puml`, docstrings, manifest summary/description, PR description | All | style, find-code |
 
-Debugging is the **`debug` skill** (targeted test, odoo shell script, logs), run in-context — not a subagent.
+Debugging is the **`debug` skill** (targeted test, {{ odoo_cmd }} shell script, logs), run in-context — not a subagent.
 
 ## Collecting subagent returns
 
@@ -119,14 +119,14 @@ report and the Phase-7 memory closure (journal + state.md).
 
 Every run executes in its own isolated env — own worktree + port + DB + Odoo — so
 parallel pipeline sessions never collide and the user's main env
-(`src/{{ custom_repo_name }}` / `develop` / `odoo.service` / 1669) is untouched. **The model,
+(`src/{{ custom_repo_name }}` / `develop` / `odoo{{ service_suffix }}.service` / 1669) is untouched. **The model,
 scripts and gotchas live in the `worktree-env` skill — read it.** What the pipeline
 needs from it:
 
 - **Phase 1** runs `wt-start.sh <slug>` and captures its output as `<WT>` (worktree
   path), `<CONF>` (session `odoo.conf`), `<URL>` (browser URL), `<DB>`, `<PORT>`.
   Re-running `wt-start.sh <slug>` refreshes the env (idempotent).
-- **Phases 2–6** edit/test/PR using those: `git -C <WT> …`, `odoo -c <CONF> …`,
+- **Phases 2–6** edit/test/PR using those: `git -C <WT> …`, `{{ odoo_cmd }} -c <CONF> …`,
   browser `<URL>`. All code/git happens in `<WT>`, never in `src/{{ custom_repo_name }}`.
 - **Phase 7** does NOT tear the env down on its own — the worktree is kept so
   the task can continue. `wt-stop.sh <slug>` runs ONLY when the user says the
@@ -424,7 +424,7 @@ Before spawning any subagent:
    ```
    It adds a worktree off `origin/{{ odoo_version }}` as branch `<slug>`, allocates a free port,
    builds the session farm, restores `wt_<slug>` from the prod seed dump, and starts
-   `odoo-wt@<slug>.service`. **Capture the printed `WORKTREE:`/`CONF:`/`URL:`/`DB:`/
+   `odoo{{ service_suffix }}-wt@<slug>.service`. **Capture the printed `WORKTREE:`/`CONF:`/`URL:`/`DB:`/
    `PORT:` as `<WT>`/`<CONF>`/`<URL>`/`<DB>`/`<PORT>`** — every later phase uses them.
    All code/git for this run happens in `<WT>`; the user's `src/{{ custom_repo_name }}` and
    `develop` are never touched. (Prereq: a seed dump in `backup/` — if `wt-start`
@@ -511,13 +511,13 @@ returns no closing block.
 1. Refresh the env (picks up any module added during dev) and stop its Odoo:
    ```bash
    bash "${{ project_dir_var }}/.claude/skills/worktree-env/scripts/wt-start.sh" <slug>
-   systemctl --user stop odoo-wt@<slug>.service
+   systemctl --user stop odoo{{ service_suffix }}-wt@<slug>.service
    ```
-   (only THIS session's Odoo stops; the user's `odoo.service` and other sessions
+   (only THIS session's Odoo stops; the user's `odoo{{ service_suffix }}.service` and other sessions
    keep running)
 2. Update and run tests against this session:
    ```bash
-   odoo -c <CONF> -u <MODULE_NAME> \
+   {{ odoo_cmd }} -c <CONF> -u <MODULE_NAME> \
        --workers 0 --test-enable --test-tags /<MODULE_NAME> \
        --stop-after-init --logfile=/dev/stdout 2>&1
    ```
@@ -526,7 +526,7 @@ returns no closing block.
    Confirm the log reports a **non-zero test count** (`odoo.tests.result:
    … of N tests`).
 3. Check for ERROR, CRITICAL, test failures, tracebacks.
-4. Start this session's Odoo: `systemctl --user start odoo-wt@<slug>.service`
+4. Start this session's Odoo: `systemctl --user start odoo{{ service_suffix }}-wt@<slug>.service`
 5. **Browser UI testing**: navigate to `<URL>` (login `admin`/`admin`) → affected
    module/menu → verify new fields visible, test buttons, check flows →
    `read_console_messages` for JS errors.
@@ -540,7 +540,7 @@ returns no closing block.
      fields `["id", "name", "state", "passed", "steps_to_execute", "expected_results"]`
    - **Execute each**: backend via the odoo MCP connected to the session
      (`connect host="localhost" port=<PORT> database="<DB>"`), the Odoo shell
-     (`odoo shell -c <CONF>`), or Python tests; UI via Chrome on `<URL>`; access
+     (`{{ odoo_cmd }} shell -c <CONF>`), or Python tests; UI via Chrome on `<URL>`; access
      control via `with_user()` in shell or by switching users in browser.
    - **Mark over MCP** (per `odoo-tickets`): passed → `write {"passed": true,
      "state": "done"}`; failed → keep `todo`, add details to `comments`.
@@ -737,7 +737,7 @@ After the pipeline completes — success, abort, or user-interrupted — close o
 
 **Do NOT run `wt-stop.sh`.** The task may not be finished (review fixes,
 follow-ups, more iterations), so keep the worktree + env + DB and leave
-`odoo-wt@<slug>.service` running. Report that the env is kept at `<WT>`
+`odoo{{ service_suffix }}-wt@<slug>.service` running. Report that the env is kept at `<WT>`
 (`wt-start.sh <slug>` re-attaches the same branch if a later session needs it).
 
 Teardown is **user-gated**: only when the user explicitly says the session /
@@ -869,8 +869,8 @@ append AFTER existing content.
 
 - If a subagent fails, report the error and ask whether to retry or abort
 - Max 3 fix-and-retry loops in the Phase 3 gate
-- Always restart this session's service (`odoo-wt@<slug>.service`) after validation;
-  the user's `odoo.service` and other sessions are never stopped
+- Always restart this session's service (`odoo{{ service_suffix }}-wt@<slug>.service`) after validation;
+  the user's `odoo{{ service_suffix }}.service` and other sessions are never stopped
 - On abort, do Phase 7 memory closure but **keep the worktree** — do NOT run
   `wt-stop.sh`; the env stays so work can resume, and teardown waits for the
   user's explicit go (Phase 7 Step 0)
