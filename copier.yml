@@ -43,7 +43,7 @@ odoo_version:
 
 python_version:
   type: str
-  help: Python for the Odoo env (16 needs 3.10; 17 runs on 3.10/3.11; 18/19 default to 3.12; 19 also pins its requirements for 3.13 and 3.14, so the newest interpreter is a fine choice there)
+  help: Python for the Odoo env (16 needs 3.10; 17 runs on 3.10/3.11; 18/19 default to 3.12; 19 also pins its requirements for 3.13 and 3.14, so the newest interpreter is a fine choice there; pyproject then carries uv overrides for the two pins that ship no wheel for it)
   default: "{% if odoo_version == '16.0' %}3.10{% elif odoo_version == '17.0' %}3.11{% else %}3.12{% endif %}"
   choices:
     - "3.10"

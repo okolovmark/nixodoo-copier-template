@@ -15,3 +15,21 @@ dependencies = [
     # with the browser tests never having executed.
     "websocket-client",
 ]
+{% if python_version in ['3.13', '3.14'] %}
+
+[tool.uv]
+# Odoo's requirements.txt pins a few C-extension packages at releases that predate
+# this interpreter and ship no wheel for it, so the nix build would compile them from
+# the sdist — and fail, because the isolated build env has no setuptools. Override
+# them to the release the matching Ubuntu (25.10 "Resolute" for 3.14) ships, which
+# is the version Odoo itself runs on that interpreter. An override beats the
+# imported requirement line and survives `nix run .#bootstrap-deps` re-imports.
+override-dependencies = [
+    # MarkupSafe 2.1.5 (Odoo's pin for >= 3.12) has no cp313/cp314 wheel; Jinja2 needs only >= 2.0
+    "markupsafe==3.0.3 ; python_full_version >= '3.13'",
+{% if python_version == '3.14' %}
+    # gevent 24.11.1 (Odoo's pin for >= 3.13) has no cp314 wheel
+    "gevent==26.8.0 ; python_full_version >= '3.14' and sys_platform != 'win32'",
+{% endif %}
+]
+{% endif %}

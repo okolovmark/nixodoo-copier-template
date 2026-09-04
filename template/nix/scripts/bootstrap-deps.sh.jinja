@@ -7,6 +7,13 @@ if [ ! -f src/odoo/requirements.txt ]; then
     echo "ERROR: src/odoo/requirements.txt not found — run 'nix run .#update-repos' first" >&2
     exit 1
 fi
+# An incremental `uv lock` keeps the previous interpreter's resolutions when only
+# requires-python changed (seen switching 3.12 -> 3.14: greenlet 3.0.3 stayed although
+# the >= 3.14 pin says 3.3.2). A lock made for another interpreter is re-resolved from scratch.
+if [ -f uv.lock ] && ! grep -q '^requires-python = "=={{ python_version }}\.\*"' uv.lock; then
+    echo "uv.lock was resolved for a different interpreter — re-locking from scratch for Python {{ python_version }}"
+    rm -f uv.lock
+fi
 echo "Importing src/odoo/requirements.txt into pyproject.toml..."
 uv add --no-sync -r src/odoo/requirements.txt
 uv lock
