@@ -1,6 +1,6 @@
 ---
 name: teams-message
-description: "Compose and send a readable Microsoft Teams message as the user — DM, group chat or channel: markdown that Teams actually renders, recipient verified by email, English body, draft shown before sending. Use whenever something goes out to a person or a chat in Teams (a finding, a handover, an answer, a heads-up), and as the formatting authority for any skill that posts to Teams."
+description: "Compose and send a readable Microsoft Teams message as the user — DM, group chat or channel: HTML that Teams actually renders, recipient verified by email, English body, draft shown before sending. Use whenever something goes out to a person or a chat in Teams (a finding, a handover, an answer, a heads-up), and as the formatting authority for any skill that posts to Teams."
 argument-hint: "[recipient name/email or chat topic] [what to say]"
 ---
 
@@ -11,15 +11,25 @@ formatting authority for every other skill that posts to Teams (`my-status`,
 deploy/pipeline notifications): those own *what* is sent, this owns *how* it is
 shaped and sent.
 
+Transport is the **claude.ai Microsoft 365 connector**
+(`mcp__claude_ai_Microsoft_365__teams_*`), which the user connects in their
+claude.ai settings. There is no project-level Teams MCP server to install.
+
 ## Hard rules
 
-- **`format: "markdown"` on every send and every update.** The tool default is
-  `text`, which Graph posts as `contentType: text` and Teams renders as ONE
-  paragraph: newlines, blank lines and `-` bullets all collapse into a wall of
-  prose. This is the single most common way a message comes out unreadable.
+- **Write HTML and pass `bodyType: "html"`.** The connector does **no markdown
+  pass at all** — it takes text or HTML and sanitizes the HTML. Markdown syntax
+  posted as a body lands **literally**: `**Modules:**` renders as asterisks,
+  `- item` as a hyphen, `[label](url)` as brackets. This is the single most
+  common way a message comes out unreadable. `bodyType: "text"` (the default)
+  is for a genuinely one-paragraph message and nothing else.
+- **A sent message cannot be edited or deleted.** The connector exposes no
+  update or delete tool. There is no read-back-and-fix loop any more: the draft
+  gate below is the *only* correction opportunity. Re-read the recipient and
+  the body before sending.
 - **English body, always** — whatever language the session runs in. The draft
   shown to the user is English too.
-- **DM recipient resolved fresh:** `search_users` by name, match the **email**
+- **DM recipient resolved fresh:** `search_people` by name, match the **email**
   in the result, and only then take/create the chat. Never reuse a chat id
   carried in context — the id encodes an opaque GUID, so a wrong recipient is
   invisible in the call and in the success response. Watch for duplicate
@@ -36,82 +46,93 @@ shaped and sent.
 - **Draft first, send on the go.** Show the exact text and wait. A request that
   already dictates the content ("send him: ...") is itself the go.
 - **One message per go.** Never split into a burst of follow-ups.
+- Body cap is **27000 bytes**, and sends are rate-limited per user; a batch of
+  messages needs pacing and a retry after a short delay.
 
 ## Layout
 
-1. **Line 1 is the point** — what happened, or what is needed. `<Name>, <point>`
-   is fine; a greeting-only first line is not.
-2. **Blank line between blocks.** A single newline renders as `<br>` (line break
-   inside a block), a blank line starts a new paragraph. Use blank lines between
-   blocks so the message has air.
-3. **Section labels are `**Label:**` on their own line.** Not `#` headings:
-   `h1`/`h2` render as oversized chat text.
-4. **`-` bullets for sets, `1.` for ordered steps or numbered asks.** Max ~7
-   items per list, one line each. More than that: split under two labels, or
+Written as HTML, so each block is an explicit tag.
+
+1. **Line 1 is the point** — what happened, or what is needed, in the first
+   `<p>`. `<Name>, <point>` is fine; a greeting-only first line is not.
+2. **One `<p>` per block.** Do not try to space blocks with newlines: the
+   paragraph tag is what gives the message air. `<br>` is a line break *inside*
+   a block.
+3. **Section labels are `<p><strong>Label:</strong></p>`** or a `<strong>` lead
+   on the block's own paragraph. Not `<h1>`/`<h2>`: headings render as
+   oversized chat text.
+4. **`<ul>` for sets, `<ol>` for ordered steps or numbered asks.** Max ~7
+   `<li>` per list, one line each. More than that: split under two labels, or
    move the detail out and link it.
-5. **Every link is named:** `[label](url)`. A bare URL is autolinked but prints
-   its full self, wraps over three lines and pushes the text apart. Link rows
-   read `- **SMT BOM:** [MRP/2631](url)`.
-6. **Backticks around identifiers** — model/field/module names, paths, part
-   numbers, single commands. Multi-line commands go in a fenced block.
-7. **Numbers that compare go in a table** (2-3 columns, ~6 rows max); tables
-   render properly. Prose with five inline counts does not.
-8. **Asks last**, under `**Need from you:**`, numbered, one decision per line.
+5. **Every link is named:** `<a href="url">label</a>`. A bare URL is autolinked
+   but prints its full self, wraps over three lines and pushes the text apart.
+6. **`<code>` around identifiers** — model/field/module names, paths, part
+   numbers, single commands.
+7. **Numbers that compare go in a `<table>`** (2-3 columns, ~6 rows max);
+   tables render properly. Prose with five inline counts does not.
+8. **Asks last**, under `<strong>Need from you:</strong>`, in an `<ol>`, one
+   decision per line.
 9. **~15 rendered lines.** Anything longer belongs in the ticket or document,
    with a named link to it.
 10. **At most one emoji**, leading a status line. Never as a bullet.
 
-## What survives the renderer
+## What survives the sanitizer
 
-`format: "markdown"` runs the text through `marked` (GFM, `breaks: true`) and
-then a strict sanitizer. Allowed through: `b/strong`, `i/em`, `u`, `s/del`, `a`,
-`ul/ol/li` (nested lists included), `h1`-`h6`, `blockquote`, `code`, `pre`,
-`hr`, `table/thead/tbody/tr/th/td`, `img`, `br`, `p`. Everything else is
-dropped, and no CSS or colors survive.
+Verified live against the connector on 2026-09-07 by posting a probe and
+reading it back with `read_resource`.
 
-Traps, all verified against that pipeline:
+Kept: `p`, `strong`/`b`, `em`/`i`, `u`, `s`/`del`, `a href`, `ul`/`ol`/`li`
+(nested included), `h1`-`h6`, `blockquote`, `code`, `table`/`thead`/`tbody`/
+`tr`/`th`/`td`, `br`, `hr`. No CSS or colors survive.
 
 | Written | What lands | Do this |
 | --- | --- | --- |
-| `<field name="x"/>` or any tag-shaped text | **silently deleted** — the sanitizer drops unknown tags with their contents | backticks or a fenced block |
-| hand-written `<span style=...>`, `<script>` | tag stripped (text may survive), styles never apply | do not hand-write HTML |
-| `__init__.py`, any dunder | `**init**.py`, bolded | backticks |
-| `2*3*4`, two or more `*` in a line | `2<em>3</em>4` | backticks |
-| `qty < 5`, `a -> b` | escaped correctly, renders as typed | fine as is |
-| `module_name`, `_compute_x` | intact (single intra-word underscores) | fine as is |
+| `<pre>cmd</pre>` | **tag dropped, text survives unformatted** — despite the tool doc listing `pre` as allowed | one `<code>` per line, or accept plain lines |
+| `<span style=...>` | tag dropped, inner text survives, style never applies | do not hand-write styling |
+| `<img src=...>` | dropped entirely | link the image, or attach it to the ticket |
+| `<script>`, `<iframe>`, `onclick=` | dropped entirely | never |
+| raw `<field name="x"/>` in the body | parsed as an unknown tag and dropped | escape it: `&lt;field name="x"/&gt;` |
+| `&lt;field name="x"/&gt;` | renders as the literal tag text | correct form |
+| `2*3*4`, `__init__.py` | survive verbatim — there is no markdown pass to mangle them | plain text is fine; `<code>` only for clarity |
+| `**bold**`, `- item`, `[a](b)` | **literal asterisks, hyphens, brackets** | write the HTML tag instead |
 
-`scripts/preview.sh <draft.md>` prints the exact HTML Graph will receive — run
-it when a draft carries tag-shaped text, asterisks or dunder names.
+Escape `&` as `&amp;` and `<` as `&lt;` in any body text that is not a tag you
+intend.
 
 ## Send
 
-1. **Auth:** `mcp__teams__auth_status` must be the identity node's account. Not
-   authenticated → run the re-auth yourself (do not hand the command to the
-   user): `npx -y git+https://github.com/okolovmark/teams-mcp.git#stable authenticate`
-   (add `--device-code` when the box has no browser), tell the user their
-   browser is waiting for the passkey, then re-check.
-2. **Target:** DM → `search_users` + email match → `create_chat` (or the
-   verified existing chat). Group chat / channel → id from the identity node,
-   else `list_chats` / `list_channels` by topic.
+1. **Identity:** `get_me` must be the identity node's account. The connector's
+   auth is managed on the claude.ai side, so there is no command to re-run: if
+   it is the wrong account or the call errors on auth, tell the user to
+   reconnect the Microsoft 365 connector in their claude.ai settings, and wait.
+2. **Target:** DM → `search_people` + email match → `teams_create_chat` (or the
+   verified existing chat). Group chat → id from the identity node, else
+   `teams_list_chats` by topic. Channel → `teams_list_channels`.
 3. **Draft** → user's go.
-4. **Send:** `mcp__teams__send_chat_message` / `mcp__teams__send_channel_message`
-   with `format: "markdown"`.
-5. **Read back:** `get_chat_messages` with `contentFormat: "raw"`, newest
-   message — the content must be HTML (`<p>`, `<ul>`). Plain text means the
-   format flag did not take: `delete_chat_message`, then resend.
+4. **Send:** `teams_send_chat_message` / `teams_send_channel_message` with
+   `bodyType: "html"`.
+5. **Read back:** the send result carries a `resource:` URI
+   (`teams:///chats/<urlencoded chatId>/messages/<id>`). Pass it to
+   `read_resource`; `body.contentType` must be `html`. There is no fix if it is
+   not, so this is a check on the *next* message, not a repair of this one.
 6. Report the message id and who it went to.
 
 ## Mentions
 
-Write `@Full Name` in the text and pass
-`mentions: [{mention: "Full Name", userId: "<AAD guid>"}]`. The `<at>` rewrite
-happens after sanitizing, so it survives; Teams pings the person. `@"Full Name"`
-also matches. Resolve `userId` via `search_users` / `search_users_for_mentions`
-with the same email check as any recipient.
+Pass `mentions: [{id: "<AAD guid>", displayName: "Full Name"}]`. Resolve the
+guid via `search_people`, with the same email check as any recipient.
+
+**The mention is appended to the end of the body, not placed inline** — the
+connector renders each one as a trailing `<at>` block, and supplying mentions
+forces the body to HTML. So do not write `@Name` into the text expecting it to
+become the ping: it would leave a dead `@Name` in the prose plus a stray name
+at the bottom. Either let the trailing mention do the pinging on its own, or
+end the body with a line that reads naturally ahead of it, such as
+`<p>Over to:</p>`.
 
 ## Fixing a sent message
 
-- Wrong content → `update_chat_message` with `format: "markdown"` (same
-  default-`text` trap applies).
-- Wrong recipient → `delete_chat_message` in that chat, resend to the verified
-  one, and tell the user it happened.
+You cannot. Nothing edits or deletes a sent message through the connector.
+Send a short correcting follow-up in the same chat, and tell the user it
+happened. If the message went to the *wrong chat*, say so explicitly — the
+wrong recipients keep it.

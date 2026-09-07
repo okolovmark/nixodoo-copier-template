@@ -30,7 +30,7 @@ locked with uv/uv2nix.
   resolve), `dev`/`review`/`verify`/`documenter` agents, MCP servers config, a persistent
   **memory template** (journal / state / standup), and optional workflow skills:
   the **pipeline** orchestrator (task → dev → QC gate → docs → demo GIF → PR), **my-status**
-  (status posting, Teams), **teams-message** (readable Teams messages: markdown Teams
+  (status posting, Teams), **teams-message** (readable Teams messages: HTML Teams
   actually renders, recipient verified by email, draft before send),
   **odoo-tickets** (ticket tracking in a prod Odoo),
   **deploy-checks** (blast-radius classification of a change set + read-only
@@ -122,7 +122,7 @@ uvx copier update --trust
 | `custom_repo_pattern` / `custom_repo_name` | empty → no custom addons repo |
 | `use_claude_code` | `true` — CLAUDE.md, hooks, skills, agents, MCP config |
 | `module_prefix` / `ticket_prefix` | first word of project name / `TASK` |
-| `status_mcp` | `none` (or `teams` → my-status + teams-message skills, Teams MCP + bootstrap questions) |
+| `status_mcp` | `none` (or `teams` → my-status + teams-message skills + bootstrap questions; Teams write goes through the claude.ai Microsoft 365 connector, nothing installed) |
 | `tickets_mcp` | `none` (or `odoo` → odoo-tickets skill, ticket links, `ODOO_*_PROD` in `.env`) |
 | `odoo_prod_url` | asked when `tickets_mcp=odoo` |
 | `use_pipeline` | `true` (asked when a custom addons repo is set) |
@@ -132,9 +132,9 @@ uvx copier update --trust
 
 ## Notes
 
-- `.mcp.json` points the `odoo` and `teams` MCP servers at
-  [okolovmark's](https://github.com/okolovmark) forks — swap the URLs for your
-  own if you prefer.
+- `.mcp.json` points the `odoo` MCP server at
+  [okolovmark/odoo-fast-mcp](https://github.com/okolovmark/odoo-fast-mcp) —
+  swap the URL for your own if you prefer.
 - The `find-code` skill ships `lsp.py`, a daemon/CLI over
   [odoo-ls](https://github.com/odoo/odoo-ls) reading the generated `odools.toml`. Install
   the server once with `python3 .claude/skills/find-code/lsp.py bump <version>` (use

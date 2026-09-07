@@ -282,12 +282,13 @@ Before spawning any subagent:
    - **Send the Teams status — and treat it as a HARD GATE: do NOT start
      Phase 2 until the status is actually sent.** Run the `my-status` `send`
      flow (current ticket + ETA + next up, draft → explicit user go → IT team
-     chat). **If Teams is not authenticated** (`mcp__teams__auth_status` is not
-     the identity-node account, or the send errors on auth): **PAUSE the
-     pipeline here.** Show the ready-to-send draft and **run the re-auth
-     yourself** — see the `teams-message` skill, Send step 1; never hand the
-     command to the user, only the passkey prompt in their browser is theirs.
-     Then re-check `auth_status`, send the status, and
+     chat). **If Teams is not reachable**
+     (`mcp__claude_ai_Microsoft_365__get_me` is not the identity-node account,
+     or the send errors on auth): **PAUSE the pipeline here.** The Microsoft
+     365 connector's auth is managed on the claude.ai side, so there is no
+     command you can run — show the ready-to-send draft and ask the user to
+     reconnect the connector in their claude.ai settings. Then re-check
+     `get_me`, send the status, and
      only **after the send succeeds** proceed to Phase 2. The stage move + the
      *sent* status are a mandatory pair — an unsent status blocks the run.
 {% endif %}

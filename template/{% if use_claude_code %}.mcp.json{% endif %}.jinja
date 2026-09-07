@@ -15,14 +15,6 @@
         "-c",
         "source .env && uvx --with 'mcp<2' postgres-mcp --access-mode=unrestricted $DATABASE_URI"
       ]
-    }{% if status_mcp == 'teams' %},
-    "teams": {
-      "type": "stdio",
-      "command": "npx",
-      "args": [
-        "-y",
-        "git+https://github.com/okolovmark/teams-mcp.git#stable"
-      ]
-    }{% endif %}
+    }
   }
 }
