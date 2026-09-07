@@ -108,7 +108,8 @@ overrides the node (list mode only).
    names.
 7. Check `mcp__claude_ai_Microsoft_365__get_me` matches the identity node's
    "Teams account must be"; on a mismatch or an auth error the Microsoft 365
-   connector needs reconnecting in claude.ai settings — stop and tell the user
+   connector needs reconnecting in claude.ai under Customize → Connectors —
+   stop and tell the user
    (`teams-message` skill, Send step 1). Send via
    `mcp__claude_ai_Microsoft_365__teams_send_chat_message` to the identity
    node's status chatId, `bodyType: "html"`. ChatId errors → re-resolve by topic via
@@ -239,7 +240,8 @@ PY
    tracked variant, one `<li>` per planned item with estimate, no links.
 4. Check `mcp__claude_ai_Microsoft_365__get_me` matches the identity node's
    "Teams account must be"; on a mismatch or an auth error the Microsoft 365
-   connector needs reconnecting in claude.ai settings — stop and tell the user
+   connector needs reconnecting in claude.ai under Customize → Connectors —
+   stop and tell the user
    (`teams-message` skill, Send step 1). Send via
    `mcp__claude_ai_Microsoft_365__teams_send_chat_message` to the identity
    node's status chatId, `bodyType: "html"`. Report the message id.

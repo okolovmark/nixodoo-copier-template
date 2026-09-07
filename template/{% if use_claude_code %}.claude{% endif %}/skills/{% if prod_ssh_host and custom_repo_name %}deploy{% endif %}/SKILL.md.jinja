@@ -195,8 +195,8 @@ No approval -> do nothing. This gate is the only thing protecting prod.
 
 `mcp__claude_ai_Microsoft_365__get_me` must be the identity-node account; on a
 mismatch or an auth error the Microsoft 365 connector needs reconnecting in
-claude.ai settings — stop and tell the user (`teams-message` skill, Send
-step 1). Then send to the maintenance chat.
+claude.ai under Customize → Connectors — stop and tell the user
+(`teams-message` skill, Send step 1). Then send to the maintenance chat.
 
 Every template below is **HTML**, and `{...}` marks a placeholder to fill.
 HTML-escape `<` and `&` in the values you substitute in.

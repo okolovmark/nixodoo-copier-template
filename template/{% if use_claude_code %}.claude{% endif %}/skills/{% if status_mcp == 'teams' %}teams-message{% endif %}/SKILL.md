@@ -13,7 +13,8 @@ shaped and sent.
 
 Transport is the **claude.ai Microsoft 365 connector**
 (`mcp__claude_ai_Microsoft_365__teams_*`), which the user connects in their
-claude.ai settings. There is no project-level Teams MCP server to install.
+claude.ai under **Customize → Connectors**. There is no project-level Teams
+MCP server to install.
 
 ## Hard rules
 
@@ -104,7 +105,8 @@ intend.
 1. **Identity:** `get_me` must be the identity node's account. The connector's
    auth is managed on the claude.ai side, so there is no command to re-run: if
    it is the wrong account or the call errors on auth, tell the user to
-   reconnect the Microsoft 365 connector in their claude.ai settings, and wait.
+   reconnect the Microsoft 365 connector in claude.ai under **Customize →
+   Connectors**, and wait.
 2. **Target:** DM → `search_people` + email match → `teams_create_chat` (or the
    verified existing chat). Group chat → id from the identity node, else
    `teams_list_chats` by topic. Channel → `teams_list_channels`.
