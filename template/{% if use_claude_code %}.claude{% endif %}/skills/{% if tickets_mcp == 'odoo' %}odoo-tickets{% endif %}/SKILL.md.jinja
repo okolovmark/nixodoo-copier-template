@@ -132,7 +132,7 @@ author+sender also keep the email-less service account from raising:
 execute("project.task", "message_post", [[<task_id>]], {
   "body": "<p><b>Category</b> — text…</p>",
   "subtype_xmlid": "mail.mt_note",
-  "author_id": <user_identity → Odoo prod partner id>,   # e.g. 2161 (Mark)
+  "author_id": <user_identity → Odoo prod partner id>,   # e.g. 2161
   "email_from": "<Full name> <<odoo login email>>",      # e.g. Full Name <user@example.com>
   "context": {"mail_create_nosubscribe": true}
 })
