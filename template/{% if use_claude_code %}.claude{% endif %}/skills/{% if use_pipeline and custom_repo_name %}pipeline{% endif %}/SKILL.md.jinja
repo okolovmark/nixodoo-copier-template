@@ -287,7 +287,8 @@ Before spawning any subagent:
      or the send errors on auth): **PAUSE the pipeline here.** The Microsoft
      365 connector's auth is managed on the claude.ai side, so there is no
      command you can run — show the ready-to-send draft and ask the user to
-     reconnect the connector in their claude.ai settings. Then re-check
+     reconnect the connector in claude.ai under Customize → Connectors. Then
+     re-check
      `get_me`, send the status, and
      only **after the send succeeds** proceed to Phase 2. The stage move + the
      *sent* status are a mandatory pair — an unsent status blocks the run.
