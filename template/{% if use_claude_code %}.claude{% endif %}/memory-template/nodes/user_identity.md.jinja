@@ -23,8 +23,9 @@ integrations stay silently disabled{% if tickets_mcp == 'odoo' %} (the standup c
 {% endif %}
 {% if status_mcp == 'teams' %}
 - **Teams status chat:** `<CHAT TOPIC, e.g. IT team>` — chatId `<CHAT ID>`
-  (resolve by topic via `mcp__teams__list_chats`)
-- **Teams auth must be:** `<FULL NAME>` (`<EMAIL>`) — check `mcp__teams__auth_status`
+  (resolve by topic via `mcp__claude_ai_Microsoft_365__teams_list_chats`)
+- **Teams account must be:** `<FULL NAME>` (`<EMAIL>`) — check
+  `mcp__claude_ai_Microsoft_365__get_me`
 {% endif %}
 
 {% if tickets_mcp == 'odoo' %}

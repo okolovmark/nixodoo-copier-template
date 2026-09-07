@@ -89,26 +89,30 @@ overrides the node (list mode only).
    User confirms, or swaps ("do <other task> instead of <X>") — then estimate
    the swapped-in task and re-show both lists. Loop until an explicit go. The
    backlog is shown **only here**; it never enters the posted message.
-6. **Build the Teams message** (markdown) — **always in English**, regardless of
+6. **Build the Teams message** (HTML) — **always in English**, regardless of
    the conversation language — listing **only today's planned tasks**, each with
    estimate + link. No "Now / Next up / backlog" sections. **Do not include the
    user's name** (sent from their own account) and **do not label the estimates**
    (no "Claude's estimate" note):
 
+   ```html
+   <p>📋 <strong>Status {YYYY-MM-DD}</strong></p>
+   <p><strong>Planned for today:</strong></p>
+   <ol>
+   <li>{{ '{' }}{{ ticket_prefix }} key} {name} - {estimate} - <a href="{link}">{{ '{' }}{{ ticket_prefix }} key}</a></li>
+   </ol>
    ```
-   📋 **Status <YYYY-MM-DD>**
-   **Planned for today:**
-   1. <{{ ticket_prefix }} key> <name> — <estimate> — <link>
-   2. <{{ ticket_prefix }} key> <name> — <estimate> — <link>
-   ```
-   Nothing planned → `**Planned for today:** nothing planned`. Keep it tight
-   (≤ ~12 lines).
-7. Check `mcp__teams__auth_status` matches the identity node's "Teams auth
-   must be"; mismatch or not authenticated → run the re-auth yourself
+   Nothing planned → a single
+   `<p><strong>Planned for today:</strong> nothing planned</p>`. Keep it tight
+   (≤ ~12 lines). Braces mark a placeholder; HTML-escape `<` and `&` in task
+   names.
+7. Check `mcp__claude_ai_Microsoft_365__get_me` matches the identity node's
+   "Teams account must be"; on a mismatch or an auth error the Microsoft 365
+   connector needs reconnecting in claude.ai settings — stop and tell the user
    (`teams-message` skill, Send step 1). Send via
-   `mcp__teams__send_chat_message` to the identity node's status chatId,
-   `format: markdown`. ChatId errors → re-resolve by topic via
-   `mcp__teams__list_chats`, update the identity node.
+   `mcp__claude_ai_Microsoft_365__teams_send_chat_message` to the identity
+   node's status chatId, `bodyType: "html"`. ChatId errors → re-resolve by topic via
+   `mcp__claude_ai_Microsoft_365__teams_list_chats`, update the identity node.
 8. Restore the connection (list-mode step 5). Report the message id.
 
 ## Steps — rebalance mode
@@ -211,7 +215,7 @@ PY
   behavior protocol's "State ↔ Odoo tickets" section.)
 - Teams: **always English** (regardless of conversation language); exactly one
   message per explicit go, to the identity node's chat only. Shaping and sending
-  follow the `teams-message` skill (`format: "markdown"`, named links, read-back
+  follow the `teams-message` skill (`bodyType: "html"`, named links, read-back
   check).
 
 {% else %}
@@ -231,13 +235,14 @@ PY
 1. Build today's plan from `state.md` WIP items + the user's input; estimate
    each (~6 focused h/day budget). Thin evidence → "low confidence".
 2. Show the draft plan + the remaining items; loop swaps until an explicit go.
-3. Build the Teams message (markdown, **always English**) — same format as the
-   tracked variant, one numbered line per planned item with estimate, no links.
-4. Check `mcp__teams__auth_status` matches the identity node's "Teams auth
-   must be"; mismatch or not authenticated → run the re-auth yourself
+3. Build the Teams message (HTML, **always English**) — same format as the
+   tracked variant, one `<li>` per planned item with estimate, no links.
+4. Check `mcp__claude_ai_Microsoft_365__get_me` matches the identity node's
+   "Teams account must be"; on a mismatch or an auth error the Microsoft 365
+   connector needs reconnecting in claude.ai settings — stop and tell the user
    (`teams-message` skill, Send step 1). Send via
-   `mcp__teams__send_chat_message` to the identity node's status chatId,
-   `format: markdown`. Report the message id.
+   `mcp__claude_ai_Microsoft_365__teams_send_chat_message` to the identity
+   node's status chatId, `bodyType: "html"`. Report the message id.
 
 ## Write rules
 

@@ -38,7 +38,7 @@ skip those already adequately covered by existing nodes.
    Odoo{% endif %}? Your Odoo (prod) login? Which Odoo project is your default board
    and which stage means 'in development'{% endif %}?{% if status_mcp == 'teams' %} Which Teams chat should daily
    statuses go to?{% endif %}" → fill ALL placeholders in [[user_identity]] (resolve
-   {% if status_mcp == 'teams' %}the chatId via `mcp__teams__list_chats`{% endif %}{% if tickets_mcp == 'odoo' %}{% if status_mcp == 'teams' %}, {% endif %}the uid and project/stage ids
+   {% if status_mcp == 'teams' %}the chatId via `mcp__claude_ai_Microsoft_365__teams_list_chats`{% endif %}{% if tickets_mcp == 'odoo' %}{% if status_mcp == 'teams' %}, {% endif %}the uid and project/stage ids
    over prod RPC{% endif %}); integrations stay disabled until no placeholders remain.
 {% endif %}
 

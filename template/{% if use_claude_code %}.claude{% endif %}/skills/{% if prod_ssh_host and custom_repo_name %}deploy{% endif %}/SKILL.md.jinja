@@ -20,9 +20,11 @@ them means this project does not run that step.
 **Maintenance chat** — the group chat this project announces deploys in. Its
 `chatId` belongs in the memory node `user_identity` (add it there the first time
 you resolve it, so it is never guessed again); resolve by topic with
-`mcp__teams__list_chats` if the id errors because the chat was recreated.
-- Send via `mcp__teams__send_chat_message`, `format: markdown` — the
-  `teams-message` skill is the authority on message shape.
+`mcp__claude_ai_Microsoft_365__teams_list_chats` if the id errors because the
+chat was recreated.
+- Send via `mcp__claude_ai_Microsoft_365__teams_send_chat_message`,
+  `bodyType: "html"` — the `teams-message` skill is the authority on message
+  shape, and the connector does no markdown pass.
 - **Always write notifications in English**; this chat is team-visible.
 
 {% endif %}
@@ -191,17 +193,21 @@ No approval -> do nothing. This gate is the only thing protecting prod.
 
 ## Step 4 — Notify start
 
-`mcp__teams__auth_status` must be the identity-node account (else run the
-re-auth yourself — `teams-message` skill, Send step 1; only the passkey prompt
-is the user's). Then send to the maintenance chat:
+`mcp__claude_ai_Microsoft_365__get_me` must be the identity-node account; on a
+mismatch or an auth error the Microsoft 365 connector needs reconnecting in
+claude.ai settings — stop and tell the user (`teams-message` skill, Send
+step 1). Then send to the maintenance chat.
 
-```
-🟡 **Deploying — <PR title>**
-**Modules:** `<modules>`
-**Blast radius:** <high|medium|low>
-**PR:** <url>
-**What changed:** <plain 2-4 sentence summary, what + why>
-Starting deploy on <{% if test_ssh_host %}prod|test{% else %}prod{% endif %}>…
+Every template below is **HTML**, and `{...}` marks a placeholder to fill.
+HTML-escape `<` and `&` in the values you substitute in.
+
+```html
+<p>🟡 <strong>Deploying: {PR title}</strong></p>
+<p><strong>Modules:</strong> <code>{modules}</code><br>
+<strong>Blast radius:</strong> {high|medium|low}<br>
+<strong>PR:</strong> <a href="{pr url}">#{n}</a></p>
+<p><strong>What changed:</strong> {plain 2-4 sentence summary, what + why}</p>
+<p>Starting deploy on {% if test_ssh_host %}{prod|test}{% else %}prod{% endif %}.</p>
 ```
 {% endif %}
 
@@ -309,9 +315,10 @@ expected there and a finding at T+60.
 ## Step 7 — Notify the result (truthfully)
 
 - **Deploy exit 0** -> send:
-  ```
-  ✅ **Deployed — <PR title>**
-  `<modules>` updated on <{% if test_ssh_host %}prod|test{% else %}prod{% endif %}>.{% if prod_web_url %} {{ prod_web_url }}{% endif +%}
+  ```html
+  <p>✅ <strong>Deployed: {PR title}</strong></p>
+  <p><code>{modules}</code> updated on {% if test_ssh_host %}{prod|test}{% else %}prod{% endif %}.{% if prod_web_url %}
+  <a href="{{ prod_web_url }}">Odoo</a>{% endif %}</p>
   ```
 {% if use_queue_job %}  Tell the user (not the chat) the requeued count from Step 6.
 {% endif %}
@@ -321,11 +328,11 @@ expected there and a finding at T+60.
     user (not the chat) those lines as warnings.
 - **Non-zero deploy exit** -> name the failing step, paste the last error lines,
   STOP:
-  ```
-  ❌ **Deploy FAILED — <PR title>**
-  Step: <git pull | link-addons | module update | restart>
-  <last error lines>
-  Prod may be in a partial state — needs a manual look.
+  ```html
+  <p>❌ <strong>Deploy FAILED: {PR title}</strong></p>
+  <p><strong>Step:</strong> {git pull | link-addons | module update | restart}</p>
+  <p>{last error lines, HTML-escaped}</p>
+  <p>Prod may be in a partial state and needs a manual look.</p>
   ```
   **Never** post success on a non-zero exit. Show the user the full output too.
 {% else %}
@@ -382,15 +389,15 @@ delta is one hour of real traffic on the new code.
 
 {% if status_mcp == 'teams' %}
 - all PASS:
-  ```
-  🟢 **Post-deploy check — <PR title>**
-  Invariants verified 1h after deploy: <one line per check family, at baseline>.
+  ```html
+  <p>🟢 <strong>Post-deploy check: {PR title}</strong></p>
+  <p>Invariants verified 1h after deploy: {one line per check family, at baseline}.</p>
   ```
 - any FAIL (or WARN worth the team's eyes):
-  ```
-  🔴 **Post-deploy check — <PR title>**
-  <the FAIL/WARN lines verbatim>
-  Investigating.
+  ```html
+  <p>🔴 <strong>Post-deploy check: {PR title}</strong></p>
+  <p>{the FAIL/WARN lines verbatim, HTML-escaped}</p>
+  <p>Investigating.</p>
   ```
   …and show the user the full output.
 
