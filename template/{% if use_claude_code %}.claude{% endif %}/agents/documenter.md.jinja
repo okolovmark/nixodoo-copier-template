@@ -65,8 +65,11 @@ Docs accrete lazily, module by module — there is no mass backfill:
      worse than missing ones.
 2. **PlantUML schemas** — `readme/*.puml`: a data-model or flow diagram when the
    module has a non-trivial one; update existing diagrams when the change
-   touches depicted models/flows. The generator ignores `.puml` files — they are
-   sources for the PlantUML editor extension, not rendered into README.
+   touches depicted models/flows. A `.puml` is not rendered into README — it is
+   a source for the PlantUML editor extension — but its content **does** feed
+   the `!! source digest:` line, so a `.puml`-only edit still needs a README
+   regeneration or the generated file reads as stale. Measured: appending one
+   comment line to a `.puml` and re-running the generator moved the digest.
 3. **Docstrings** — fill missing docstrings on new/changed public methods
    (business intent, non-obvious params). Do not touch method bodies.
 4. **Manifest** — set a one-line `summary` and a short `description` in
