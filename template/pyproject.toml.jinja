@@ -14,6 +14,14 @@ dependencies = [
     # neither a failure nor an error. The run then reads "0 failed, 0 error(s)"
     # with the browser tests never having executed.
     "websocket-client",
+
+    # Also not in Odoo's requirements.txt, and also not optional. Several OCA
+    # modules import it at test-module import time, and Odoo's loader imports
+    # EVERY installed module's tests before --test-tags filters them - so a
+    # project that aggregates OCA repos cannot run ANY test without it, whatever
+    # tags are passed. It has to sit here rather than in the dev extras because
+    # flake.nix builds the interpreter from workspace.deps.default.
+    "odoo-test-helper",
 ]
 {% if python_version in ['3.13', '3.14'] %}
 
