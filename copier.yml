@@ -186,6 +186,12 @@ use_pipeline:
   default: true
   when: "{{ use_claude_code and custom_repo_pattern != '' }}"
 
+use_kb:
+  type: bool
+  help: SessionStart hook printing the kb knowledge-base index and standup into every Claude Code session (needs `kb` from okolovmark/kb installed; silent otherwise)?
+  default: false
+  when: "{{ use_claude_code }}"
+
 backup_s3_bucket:
   type: str
   help: S3 bucket with production pg_dump backups (empty = no download-backup/aws tooling)

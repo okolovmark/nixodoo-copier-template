@@ -1,5 +1,18 @@
 {
   "hooks": {
+{% if use_kb %}
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${{ project_dir_var }}/.claude/hooks/kb-session-start.sh",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+{% endif %}
     "PreToolUse": [
       {
         "matcher": "Edit|Write",
