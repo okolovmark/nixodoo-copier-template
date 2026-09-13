@@ -36,9 +36,14 @@ paths not needed (`kb` is on PATH from the nix profile):
 - `kb done|skip|snooze <id>` — close or defer a task; `kb why <id>` explains its urgency
 - `kb archive|supersede|merge` — retire a record; nothing is ever deleted
 
+- `kb session note "<text>"` during the session; **at the end of every session with
+  substantive work, before saying goodbye:** `kb session close --body-file <f>` with the
+  narrative (Intent / Done / Decisions / Open threads / Files touched). The SessionStart
+  hook opened the session; the SessionEnd hook closes it without a body if you did not.
+
 Scope is resolved from the cwd (`[scopes]` in `~/.config/kb/config.toml`);
-personal records never show in a project session. Full rules: `kb --help`,
-README of okolovmark/kb.
+personal records never show in a project session; `--scope <s>` opens another view.
+Full rules: `kb --help`, README of okolovmark/kb.
 {% else %}
 ### Standup procedure
 
