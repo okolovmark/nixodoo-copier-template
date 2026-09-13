@@ -18,6 +18,28 @@ Memory lives at:
 __MEMORY_DIR__
 ```
 
+{% if use_kb %}
+### Memory lives in kb (Neo4j), not in this directory
+
+The SessionStart hook `.claude/hooks/kb-session-start.sh` has already put the
+kb index and today's standup (`kb today`) into this context, on every start and
+after every compaction. **Show the `kb today` block verbatim to the user before
+answering the first message.** If the hook printed `kb: NO MEMORY`, say so first.
+
+Write nothing as markdown here. Memory operations are kb commands, absolute
+paths not needed (`kb` is on PATH from the nix profile):
+
+- `kb show <id|slug>` / `kb search "<text>"` / `kb links <id>` / `kb graph <id>` / `kb log <id>` — read
+- `kb add "<title>" --kind note|howto|feedback|reference|decision --body-file <f>` — a new fact (feedback is pinned)
+- `kb add "<title>" [--due D | --plan D | --window weekend | --once]` — a new task (open thread, WIP, blocker)
+- `kb append <id> "<text>"` / `kb edit <id>` — grow or fix a record
+- `kb done|skip|snooze <id>` — close or defer a task; `kb why <id>` explains its urgency
+- `kb archive|supersede|merge` — retire a record; nothing is ever deleted
+
+Scope is resolved from the cwd (`[scopes]` in `~/.config/kb/config.toml`);
+personal records never show in a project session. Full rules: `kb --help`,
+README of okolovmark/kb.
+{% else %}
 ### Standup procedure
 
 This is **non-negotiable** — it's the daily continuity layer. Run once
@@ -50,6 +72,8 @@ rejected for security reasons.
 
 For the full behavior protocol (when to write nodes, journal, state.md
 updates, ID generation, recovery), see [[conventions_behavior_protocol]].
+
+{% endif %}
 
 ## Raw drops (external input the user dropped in `raw/`)
 
