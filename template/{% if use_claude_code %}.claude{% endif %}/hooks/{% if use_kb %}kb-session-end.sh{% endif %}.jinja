@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# SessionEnd hook: close the kb session skeleton (Claude writes the body with kb session close
+# --body-file before the end when it can; a session closed without a body surfaces as
+# "no summary" at the next start). SessionEnd hooks share a 1.5 s budget unless a timeout is
+# set (10 s in settings.json). Silent without kb; never fails.
+set -u
+command -v kb >/dev/null 2>&1 || exit 0
+INPUT=$(cat)
+read -r SESSION_ID REASON < <(printf '%s' "$INPUT" | python3 -c \
+    'import json,sys; d=json.load(sys.stdin); print(d.get("session_id",""), d.get("reason",""))')
+[ -n "$SESSION_ID" ] || exit 0
+# kb addresses a session by id across scopes only when it is the caller's own KB_SESSION
+export KB_SESSION="$SESSION_ID"
+kb session close --id "$SESSION_ID" --reason "${REASON:-other}" >/dev/null 2>&1 || true
+exit 0

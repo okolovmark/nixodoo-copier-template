@@ -26,10 +26,11 @@ upgrade=$(printf '%s' "$status" | python3 -c 'import json,sys; print(json.load(s
 # Optional Odoo pull ([sources.odoo] enabled); prints only on failure, never fails.
 kb sync odoo 2>&1 | sed 's/^/kb: /'
 
+# The session skeleton; Claude writes the body at close (kb session close --body-file …).
+kb session open --scope "$SCOPE" --id "$SESSION_ID" --source "$SOURCE" 2>&1 | sed "s/^/kb: session /"
 kb index --scope "$SCOPE"
 echo
 kb today --scope "$SCOPE" --record-shown
-# phase 3: kb session open --scope "$SCOPE" --id "$SESSION_ID" --source "$SOURCE"
 
 # Project-owned extras (not templated): entire fan-out check, stray files, anything local.
 LOCAL="$(dirname "$0")/kb-session-start.local.sh"

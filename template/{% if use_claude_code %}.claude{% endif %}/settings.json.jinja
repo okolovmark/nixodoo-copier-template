@@ -12,6 +12,17 @@
         ]
       }
     ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${{ project_dir_var }}/.claude/hooks/kb-session-end.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
 {% endif %}
     "PreToolUse": [
       {
