@@ -44,7 +44,11 @@
           {
             "type": "command",
             "command": "python3 ${{ project_dir_var }}/.claude/hooks/nudge-find-code.py"
-          }
+          }{% if use_kb %},
+          {
+            "type": "command",
+            "command": "python3 ${{ project_dir_var }}/.claude/hooks/nudge-kb-truncation.py"
+          }{% endif %}
         ]
       },
       {

@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+"""PreToolUse guard: never read kb through a truncating filter.
+
+kb holds the memory. A record read through `head`, `cut -c` or a short `sed -n`
+range answers the question with part of the record and gives no sign that the
+rest existed: `cut -c` in particular removes the END of every line, which in
+prose is where the exception lives. Measured 2026-09-15 on `user_identity`:
+`kb show ... | sed -n '1,45p' | cut -c1-150` hid 77 of 122 lines and clipped 32
+line endings, one of which carried the only instruction for re-resolving a
+partner id.
+
+Unlike the find-code nudge this one has NO session budget and no
+re-run-to-pass escape: Mark asked for it to fire every time, because a lost
+sentence is not visible later. Two ways through:
+
+- read it whole, or send it to a file and read the parts you need;
+- when a truncation really is right, put the marker `# truncation-ok` in the
+  command. That is deliberate, and it stays visible in the transcript.
+
+Exempt by subcommand: `kb service logs` and `kb log`, which are journals, are
+ordered newest first and are expected to be read in slices. KB_TRUNCATION_GUARD=0
+disables the hook entirely.
+"""
+
+import json
+import os
+import re
+import shlex
+import sys
+
+if os.environ.get("KB_TRUNCATION_GUARD") == "0":
+    sys.exit(0)
+
+payload = json.load(sys.stdin)
+if payload.get("tool_name") != "Bash":
+    sys.exit(0)
+
+command = (payload.get("tool_input") or {}).get("command") or ""
+if "# truncation-ok" in command:
+    sys.exit(0)
+
+try:
+    tokens = shlex.split(command, posix=True)
+except ValueError:  # unbalanced quotes: nothing reliable to inspect
+    sys.exit(0)
+
+OPERATORS = {"|", "||", "&&", ";", "&", "|&"}
+# Subcommands that read memory. `log` and `service logs` are journals: exempt.
+READING = {
+    "show", "search", "query", "index", "today", "next", "why", "links",
+    "graph", "list", "status", "config", "session", "backup", "restore",
+}
+EXEMPT = {("log",), ("service", "logs")}
+TRUNCATORS = {"head", "tail", "cut", "fold", "less", "more", "colrm"}
+
+
+def segments(toks):
+    """The command split on shell operators, so `a | b` yields two segments."""
+    current = []
+    for tok in toks:
+        if tok in OPERATORS:
+            if current:
+                yield current
+            current = []
+        else:
+            current.append(tok)
+    if current:
+        yield current
+
+
+def reads_kb(segment):
+    """True when this segment is a kb invocation that returns memory content."""
+    if not segment or os.path.basename(segment[0]) != "kb":
+        return False
+    words = [tok for tok in segment[1:] if not tok.startswith("-")]
+    if tuple(words[:2]) in EXEMPT or tuple(words[:1]) in EXEMPT:
+        return False
+    return bool(words) and words[0] in READING
+
+
+def truncates(segment):
+    """The filters that drop content: head/tail lose lines, cut loses line ends.
+
+    `sed -n '1,45p'` and `awk 'NR<=20'` are range selections, so they count too;
+    `sed` used to substitute or `awk` used to reshape a whole stream does not.
+    """
+    if not segment:
+        return None
+    prog = os.path.basename(segment[0])
+    if prog in TRUNCATORS:
+        if prog == "cut" and not any(a.startswith("-c") or a.startswith("-b") for a in segment[1:]):
+            return None  # cut -f on a delimited stream keeps every line whole
+        if prog == "fold":
+            return None  # fold wraps, it does not drop; it is the safe answer
+        return prog
+    body = " ".join(segment[1:])
+    if prog in {"sed", "gsed"} and re.search(r"-n\b", body) and re.search(r"\d+\s*,\s*\$?\d*\s*p", body):
+        return "sed range"
+    if prog in {"awk", "gawk", "mawk"} and re.search(r"\bNR\s*[<>=]", body):
+        return "awk NR filter"
+    if prog == "grep" and re.search(r"-m\s*\d", body):
+        return "grep -m"
+    return None
+
+
+parts = list(segments(tokens))
+if not any(reads_kb(part) for part in parts):
+    sys.exit(0)
+
+cutters = [name for name in (truncates(part) for part in parts) if name]
+if not cutters:
+    sys.exit(0)
+
+MESSAGE = (
+    "kb truncation guard: this reads kb through %s, so part of the record never reaches you "
+    "and nothing marks what was dropped. `cut -c` removes the end of every line, which in prose "
+    "is where the exception lives.\n"
+    "Read it whole (a record is a few KB), or send it to a file and read the parts you need:\n"
+    "  kb show <ref> > /tmp/rec.txt && wc -l /tmp/rec.txt\n"
+    "For one field at full length use the structured output instead of cutting the human view:\n"
+    "  kb query 'MATCH (r:Record {slug: $s}) RETURN r.body AS b' -p s=<slug>\n"
+    "Journals are exempt: `kb log <ref>` and `kb service logs` may be sliced. If the truncation "
+    "really is right here, add `# truncation-ok` to the command.\n"
+)
+
+sys.stderr.write(MESSAGE % " and ".join(sorted(set(cutters))))
+sys.exit(2)
