@@ -43,3 +43,13 @@ The full inventory behind the summary in [the README](../README.md#what-it-gener
   restore with **native Odoo neutralization** (`odoo neutralize` + dev fixups),
   SSH helpers for prod/test servers, OCA `queue_job` wiring
 - `nix flake check` shellchecks every project script
+
+## Memory
+
+With `use_kb = false` a generated project carries a markdown memory seed under
+`.claude/memory-template`: an index, a journal, a `state.md` the standup reads, and
+`init-memory.sh` to install it into Claude Code's per-project memory directory.
+
+With `use_kb = true` the seed is not generated at all. Memory lives in
+[kb](https://github.com/okolovmark/kb) instead, and the SessionStart and SessionEnd hooks
+open the session record, print the index and the standup, and close the session.
