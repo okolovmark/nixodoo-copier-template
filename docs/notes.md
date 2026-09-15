@@ -32,3 +32,10 @@ Things that surprised somebody once, kept out of [the README](../README.md) so i
   `mcp.server.fastmcp`, which the `mcp` SDK dropped in 2.0.0, and does not cap
   its own dependency. The `odoo` server needs no pin — it goes through the
   `fastmcp` package, which caps `mcp` itself.
+- `nudge-kb-truncation.py` (PreToolUse, rendered with `use_kb`) refuses a Bash command that
+  reads kb through a truncating filter: `head`, `tail`, `cut -c`, a `sed -n` range, an
+  `awk NR` filter, `grep -m`, `less`. Unlike the find-code nudge it has no session budget
+  and re-running does not make it pass, because a dropped sentence leaves no trace. Read
+  the record whole or send it to a file; `kb log` and `kb service logs` are exempt as
+  journals; `# truncation-ok` in the command is the deliberate escape. `KB_TRUNCATION_GUARD=0`
+  disables it. Corpus: `python3 tests/test_kb_truncation_nudge.py`.
