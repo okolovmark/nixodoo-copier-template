@@ -65,6 +65,7 @@ These are the ones worth a thought:
 | `odoo_version` | `19.0` | everything else follows from it |
 | `custom_repo_pattern` / `custom_repo_name` | empty | your own addons repo; unlocks the development pipeline |
 | `use_claude_code` | `true` | the whole `.claude/` layer |
+| `use_kb` | `false` | memory in [kb](https://github.com/okolovmark/kb) instead of markdown files |
 | `service_suffix` | empty | set it to run two generated projects on one machine |
 | `project_dir_var` | `ODOO<major>_PROJECT_DIR` | same reason, for the project-root variable |
 | `status_mcp` / `tickets_mcp` | `none` | wire status posting and ticket tracking to Teams and Odoo |

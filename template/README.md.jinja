@@ -61,12 +61,21 @@ The project ships Claude Code integration: `CLAUDE.md` (project facts), `.claude
 (guard hooks, Odoo dev skills, `dev`/`review` agents) and `.mcp.json`
 (odoo / postgres MCP servers driven by `.env`).
 
-Initialize Claude's persistent per-project memory once (index, journal, state,
+{% if use_kb %}Claude's persistent memory for this project lives in
+[kb](https://github.com/okolovmark/kb): records, tasks and one record per session, in Neo4j.
+The SessionStart hook opens the session and prints the index and the standup, so there is
+nothing to initialise here beyond having `kb` installed:
+
+```bash
+kb status     # see the kb README for install and kb-setup
+```
+{% else %}Initialize Claude's persistent per-project memory once (index, journal, state,
 bootstrap questions — see `.claude/memory-template/README.md`):
 
 ```bash
 bash .claude/memory-template/scripts/init-memory.sh
 ```
+{% endif %}
 
 {% endif %}
 ### UV and UVX Installation
