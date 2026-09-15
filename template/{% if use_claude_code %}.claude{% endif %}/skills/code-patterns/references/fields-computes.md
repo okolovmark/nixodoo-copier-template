@@ -16,6 +16,7 @@ Facts verified on Odoo 16 source; re-verify on later majors where marked.
 - `ormcache` keyed off `res.company`
 - A LIST `_inherit` needs an explicit `_name`
 - Multi-company scoping: a different mechanism per field kind
+- An untouched Integer column is NULL, so `SET col = col + n` counts nothing
 
 ## Non-stored compute without `@api.depends` is frozen inside the form
 
@@ -278,3 +279,42 @@ Corollaries:
 - **`env.user.company_ids` is never the basis for a business decision** — under
   `sudo` (RPC, shell, cron) `env.user` is OdooBot and the branch flips on every
   non-UI path. Decide from the record (`self.company_id`, `self._origin`).
+
+## An untouched Integer column is NULL, so `SET col = col + n` counts nothing
+
+An `fields.Integer` reads as `0` through the ORM the moment the record exists, but
+the **column** holds `NULL` until something writes it. `NULL + 1` is `NULL`, so an
+atomic counter written in raw SQL silently increments nothing on its first hit -
+and the ORM keeps reporting `0`, so the bug looks like "the counter is not being
+called" rather than "the counter is not working".
+
+```python
+# Wrong: does nothing until some other write has seeded the column.
+self.env.cr.execute(
+    'UPDATE "%s" SET batch_done = batch_done + %%s WHERE id = %%s' % table,
+    (1, record.id),
+)
+
+# Right.
+self.env.cr.execute(
+    'UPDATE "%s" SET batch_done = COALESCE(batch_done, 0) + %%s WHERE id = %%s' % table,
+    (1, record.id),
+)
+```
+
+Raw SQL is the right tool when concurrent writers must not lose a count - a
+read-modify-write through the ORM does - but it bypasses the ORM in both
+directions, so it needs three things around it:
+
+- `COALESCE` on every column being incremented.
+- `flush_recordset(names)` **before**, or a pending ORM write lands after your
+  UPDATE and overwrites it.
+- `invalidate_recordset(names)` **and** `modified(names)` after. Invalidate drops
+  the named fields from the cache; it does **not** recompute non-stored fields
+  that depend on them, so a compute already read in this transaction keeps its old
+  value and any decision made from it is made on stale data.
+
+A `unique` constraint over the counter's key needs the same care: two writers
+both finding no row and both inserting is normal, and an `IntegrityError` is not
+retried by most job runners, so use `INSERT ... ON CONFLICT ... DO UPDATE` rather
+than a read-then-create.
