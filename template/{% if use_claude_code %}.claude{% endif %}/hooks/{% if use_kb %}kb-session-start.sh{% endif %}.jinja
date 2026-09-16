@@ -33,6 +33,12 @@ echo
 kb today --scope "$SCOPE" --record-shown
 
 # Project-owned extras (not templated): entire fan-out check, stray files, anything local.
+# Contract: $1 = the SessionStart source, $2 = this session's id (also exported as
+# KB_SESSION). A local check that needs the live session MUST use that id and must never
+# ask a tool for "the current session": the other SessionStart hooks run in PARALLEL with
+# this one, so a tool answering from state on disk hands back the PREVIOUS session and the
+# check then chases a stale id. That is a real bug, shipped twice - see kaertech-odoo-16
+# PR #65 and kaertech-odoo-19 PR #3, where it cried "BROKEN fan-out" every single session.
 LOCAL="$(dirname "$0")/kb-session-start.local.sh"
-[ -x "$LOCAL" ] && bash "$LOCAL" "$SOURCE"
+[ -x "$LOCAL" ] && bash "$LOCAL" "$SOURCE" "$SESSION_ID"
 exit 0
