@@ -1,0 +1,80 @@
+---
+name: assess
+description: "Decide whether an idea is worth building at all, before anything is specified: state it in one sentence, measure what the environment already answers, make the case for and the case against, sketch concept-level options with an appetite, and render a verdict — go, clarify or kill — with the reason written down. Kill is a success. Use for an idea, a request or a backlog thread that has never had a decision, when asked 'is this worth doing', or when a thread has aged without moving. Not for work already agreed: that goes to `grill`."
+argument-hint: "[the idea, thread id or ticket to assess]"
+---
+
+# Assess
+
+`grill` assumes the decision to build has been made and interrogates **what** to build. Nothing else asks **whether**. That gap is where ideas sit for months: not because nobody knows how, but because nobody has ever decided, and an undecided thread is indistinguishable from a late one.
+
+One pass, one sitting, one verdict. No design: no schema, no field names, no call shapes. If the verdict is `go`, `grill` does that next.
+
+## Not this skill
+
+- Work already agreed and scheduled → `grill`, then the pipeline.
+- A defect with a reproduction → `debug`. A bug is not an idea; "should we fix it" is almost always yes.
+- Pricing something already chosen → `estimate`. Appetite here is a budget, not an estimate.
+
+## The pass
+
+**1. State it in one sentence, and where it came from.** Who asked, when, in what words. If the idea cannot survive one sentence, that is the first finding and often the whole answer — say so and ask for the sentence rather than inventing one.
+
+**2. Measure before asking.** Everything the environment can answer is looked up, never asked and never guessed: does something already do this, how many records actually hit the case, how often, what did the last comparable change cost. Read the code, the database, the git history, the tickets. **A number you measured beats a number anyone remembers** — most ideas die or survive on this step alone, and an assessment with no measured number in it has not been done.
+
+**3. The case for.** The problem, who has it, what it costs them today, and what changes if it is solved. Tag every claim: measured (with the number and where it came from) or assumed. Do not let an assumption wear a number's clothes.
+
+**4. The case against.** The strongest reasons not to build it: the workaround people already use and why it is tolerable, a low cost of doing nothing, something in the system that already does this, a cheaper answer that is not code — a setting, a report, a convention written down, a one-off script. **Make this case every time**; when there is genuinely nothing against, write that sentence explicitly, because a section nobody attempted and one that found nothing look identical.
+
+**5. Options at concept level, with an appetite.** 2–3 sketches of what would change for the people using it — not how it is built. Always include the cheapest real alternative, including doing nothing. Per option: an appetite (`small` days / `medium` weeks / `large` months, a budget rather than an estimate) and its **rabbit holes**, the parts most likely to blow the scope open.
+
+**6. The verdict**, below.
+
+## Verdict
+
+Score first, plainly, each `strong` / `adequate` / `weak` / `unknown` with one line of justification:
+
+| Criterion | Asks |
+|---|---|
+| Problem real | is it a problem someone actually has, or one we imagined for them |
+| Evidence | measured, or assumed — name which |
+| Cost of inaction | what it costs to keep doing nothing, and who pays it |
+| Already solved | does something in the system, or a setting, already answer this |
+| Appetite fit | is there a credible option inside a sane budget |
+| Risk | are the ways this goes wrong understood |
+
+Then one of three:
+
+- **go** — worth specifying. Requires: the problem stated with **at least one measured number**; the cheapest alternative considered and beaten on its merits; an agreed appetite with an option that fits it; and nothing the decision depends on left `unknown`.
+- **clarify** — promising, blocked on something named. State the one question, its owner, and what answer would change the verdict. A question the user themselves owns is not parked here — it is asked now, in this pass.
+- **kill** — not worth building. Name the decisive reason: no real problem, already solved, cost beats value, cheaper answer exists, superseded, out of scope.
+
+**`go` is not available while a named input is unknown.** The verdict is `clarify`, never a `go` carrying a caveat — a decision made around a known unknown is the thing this pass exists to stop.
+
+**A kill is a successful outcome.** Most ideas should end here, and an idea killed with its reason recorded stops costing attention. Do not soften a kill into a `clarify` to avoid saying no.
+
+## Routing the questions
+
+Same rule as `grill`: a fact is looked up, a decision is asked, and a decision that belongs to someone else is collected for them rather than guessed. Who the stakeholders are, and how they are addressed, is read from the user's own identity record — never written into this file.
+{% if use_kb %}
+
+## Write it down
+
+The verdict outlives the chat or it did not happen:
+
+- one record, `kb add "<the one sentence>" --kind decision --summary "<verdict + the decisive reason>"`, body = the scorecard, both cases, the options with their appetites, and the handoff;
+- `kb link` it to the thread it came from;
+- on **kill**, close the thread with the reason (`kb archive <id> --reason "…"` or `kb done`), so it stops surfacing;
+- on **clarify**, the thread keeps its open question as its next action, with the owner named.
+{% elif tickets_mcp == 'odoo' %}
+
+## Write it down
+
+The verdict outlives the chat or it did not happen. Persist per `odoo-tickets`: the scorecard and both cases as an internal note on the task, the verdict in the stage — a `kill` closes the task as no longer relevant, naming the reason.
+{% endif %}
+
+## Handoff
+
+- **go** → `grill`, carrying the problem sentence, the chosen option, the appetite, in/out of scope, and any question still open. `grill` starts from these, it does not re-derive them.
+- **kill** → nothing further. The record is the deliverable.
+- **clarify** → the named question goes to its owner; the pass resumes when it is answered, and the verdict is revised in place rather than started again.
