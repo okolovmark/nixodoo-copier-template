@@ -1,6 +1,6 @@
 ---
 name: grill
-description: "Relentless requirements interview BEFORE building: one question at a time with a recommended answer, decisions routed to their owner (user vs stakeholder), an NFR sweep, an explicit assumptions ledger, a trade-off matrix at real design forks, a pre-mortem round before the build is confirmed; resolved terms and decisions written down via domain-modeling. Use when the user asks to be grilled about a plan, or before any feature-shaped change; the pipeline invokes it as its Phase-1 gate."
+description: "Relentless requirements interview BEFORE building: one question at a time with a recommended answer, decisions routed to their owner (user vs stakeholder), an NFR sweep, the case against building it at all, an agreed appetite before options are drawn, a trade-off matrix with each option's rabbit holes at real design forks, a pre-mortem, and a gate that will not pass while a named input is unknown; resolved terms and decisions written down via domain-modeling. Use when the user asks to be grilled about a plan, or before any feature-shaped change; the pipeline invokes it as its Phase-1 gate."
 argument-hint: "[task key / topic / plan to stress-test]"
 ---
 
@@ -45,6 +45,16 @@ the task touches and ask the matching concrete-scenario questions early
 misalignments and, for each, the question that would have caught it — append a
 row whenever a rework traces back to an unasked question.
 
+## The case against
+
+The pre-mortem below attacks the agreed solution. Nothing yet attacks the **premise**, and a well-designed answer to a problem nobody has is still waste.
+
+Before options are drawn, state the strongest reasons this should not be built at all: the workaround people already use and why it is tolerable, the cost of doing nothing when that cost is low, a place in the system that already does this, a cheaper answer that is not code — a setting, a report, a convention written down.
+
+**Make this case every time.** If there is genuinely nothing against, write that sentence explicitly; a section that was never attempted and one that found nothing look identical on the page, and only one of them is worth trusting.
+
+If the case against survives the round, say so and stop. A grill that ends in "we should not build this" has done its job, not failed at it.
+
 ## Assumptions ledger
 
 A stakeholder question that can't be answered now either **blocks** the work or becomes an **explicit assumption**:
@@ -59,10 +69,12 @@ The user signs off on every assumption before building starts. No silent assumpt
 
 When more than one viable design survives the interview, the choice is made in the open, not silently:
 
-1. Present 2–3 genuinely different options; include one from outside the project's habits — a core mechanism nobody remembered, a pattern from another domain.
-2. Ask the user for the criteria and their weights (rework cost, migration risk, performance, maintenance…). Criteria are theirs; scores are yours.
-3. Show the option × criterion matrix, one line of justification per cell that matters, and recommend one option.
-4. The matrix outlives the chat as the "alternatives considered" of the ADR (domain-modeling three-part test) — including why the losers lost.
+1. **Fix the appetite first** — `small` (days) / `medium` (weeks) / `large` (months), agreed with the user BEFORE any option is drawn. It is a budget, not an estimate: it bounds what may be designed, where the `estimate` skill prices what was already chosen. An option that does not fit the appetite is reported as not fitting; it is never quietly resized to look like it does.
+2. Present 2–3 genuinely different options; include one from outside the project's habits — a core mechanism nobody remembered, a pattern from another domain — and always include the cheapest real alternative: do nothing, change a setting, write the convention down, buy it.
+3. **Name the rabbit holes of each option** — the parts most likely to blow the scope open. This is the column estimates go wrong on, and an option whose rabbit holes nobody can name is not understood well enough to be scored yet.
+4. Ask the user for the criteria and their weights (rework cost, migration risk, performance, maintenance…). Criteria are theirs; scores are yours.
+5. Show the option × criterion matrix, one line of justification per cell that matters, and recommend one option — **or recommend none, when none clears the bar.** "Nothing here is worth building" is a result; a winner manufactured because a matrix was drawn is not.
+6. The matrix outlives the chat as the "alternatives considered" of the ADR (domain-modeling three-part test) — including why the losers lost.
 
 A single obvious design needs no matrix. Its value shows at real forks: it regularly reveals that the initially unattractive option wins on the user's own criteria.
 
@@ -78,6 +90,8 @@ When the tree is walked, produce:
 ## Alignment Summary — <topic>
 **In scope:** …
 **Out of scope:** … (the explicit no-s)
+**Appetite:** <small | medium | large — and whether the chosen option fits it>
+**Case against:** <the strongest reasons not to build this and why they did not win; or "none found — looked">
 **Decisions:** <one line each — what + owner>
 **Assumptions:** <ledger entries, signed off; or "none">
 **Accepted risks:** <pre-mortem survivors the user chose to live with; or "none">
@@ -88,6 +102,17 @@ When the tree is walked, produce:
 ## Pre-mortem
 
 With the summary drafted and BEFORE asking for confirmation, run one round against the agreed design: break the requirements and the solution. Integration outage mid-flow, a peak-volume day, two users on the same document, a backdated correction, the cancellation path. Most raised risks get discarded; the two or three that survive become ledger assumptions, scope changes, or **Accepted risks** in the summary. The pre-mortem attacks what was agreed — it does not grow scope.
+
+## The gate
+
+Confirmation is not on offer while a named input is still unknown. Before asking, check every one of these:
+
+- every question routed to the user is answered. An unanswered one is not an assumption and not a default you may pick — it is one more question, asked now;
+- every stakeholder question is answered, or parked as a ledger assumption the user has signed off;
+- the appetite is agreed, and the recommended option fits it;
+- the case against has been made and answered.
+
+If any of them is open, the answer is **not yet** — name the open item and what would close it. Never a "go" carrying a caveat: a gate that passes with a known unknown is the failure this skill exists to prevent.
 
 Then ask: "Did I understand correctly — do we build this?" **Do not start building until the user confirms.**
 {% if tickets_mcp == 'odoo' %}
