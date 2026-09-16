@@ -18,8 +18,11 @@ The full inventory behind the summary in [the README](../README.md#what-it-gener
   testing, commit conventions, pre-PR checklist, **semantic code navigation** over the
   official Odoo Language Server (`super()` chains across `_inherit`, XML `ref`/model
   targets, find-usages, model inheritance maps), a debug recipe,
-  isolated worktree envs, a **grill** requirements interview — one question at a
-  time, decisions routed to their owner, explicit assumptions — and
+  isolated worktree envs, an **assess** pass that decides whether an idea is worth
+  building at all before anything is specified — go / clarify / kill, where a kill
+  is a successful outcome — a **grill** requirements interview for what survives —
+  one question at a time, decisions routed to their owner, the case against, an
+  appetite agreed before options are drawn — and
   **domain-modeling**: a `CONTEXT.md` glossary of canonical terms mapped to Odoo
   models + `docs/adr/` decision records, both maintained as design conversations
   resolve), `dev`/`review`/`verify`/`documenter` agents, MCP servers config, a persistent
