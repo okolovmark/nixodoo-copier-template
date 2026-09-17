@@ -60,7 +60,9 @@ security / controllers / data / migrations), new dependencies, migrations needed
   invalidates it, so on a form it keeps its first value for the whole edit
   session (an `attrs` or `parent.` domain reading it goes stale silently) and
   stored it is written NULL on `create()`. An explicit empty `@api.depends()`
-  with a why is the accepted answer, never on a stored field.
+  with a why is the accepted answer, never on a stored field - and not where a
+  view reads the field either: on an unsaved record that compute never runs at
+  all, so a `domain` built on it filters nothing.
 - **Performance**: ORM in loops, read_group, SQL parameterization.
 - **Transactions**: savepoints, parameterization.
 - **Views**: inheritance, xpath, XML IDs.
