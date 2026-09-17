@@ -6,6 +6,7 @@ Facts verified on Odoo 16 source; re-verify on later majors where marked.
 
 - Non-stored compute without `@api.depends` is frozen inside the form
 - Stored compute without `@api.depends` never runs on `create()`
+- An empty `@api.depends()` never reaches an UNSAVED record
 - Repairing a stale stored compute
 - Overriding a core compute drops its `@api.depends_context`
 - `search=` kwarg fires only for non-stored fields
@@ -66,7 +67,9 @@ def _compute_can_edit(self):
 `@api.depends()` is legal and core uses it (`base/models/ir_model.py:211`). It
 is the difference between "asked and answered" and "never asked", which is what
 review and the CI check read. On a STORED field it is not an answer, though -
-see the next entry: it means the column is written NULL on `create()`.
+see the next entry: it means the column is written NULL on `create()`. And on a
+non-stored field it is only an answer for a record that ALREADY EXISTS - see
+"An empty `@api.depends()` never reaches an UNSAVED record" below.
 
 Verified on 16.0; the mechanism is unchanged in 17 and 18.
 
@@ -87,6 +90,54 @@ supplier = fields.Boolean(default=lambda self: self.env.context.get("res_partner
 
 Adding `@api.depends_context(...)` instead re-runs the compute on every read and
 can overwrite user edits — avoid for editable fields.
+
+## An empty `@api.depends()` never reaches an UNSAVED record
+
+The first entry is about a value going stale. On a record that has never been
+saved the failure is one step worse: the compute does not run at all, so the
+field arrives EMPTY - and that is the state a form is in while somebody fills
+it, which is exactly when a `domain` or an `attrs` reading the field decides
+anything.
+
+`onchange`'s first call fills every field in the view that has no default with
+`False` and caches that on the `new()` record (`models.py`, the `first_call`
+branch). A compute only comes back from there through `modified()`, which walks
+the dependency triggers - and a compute that declares none is in nobody's
+trigger list. Nothing ever fires it, for the whole edit session.
+
+A picker domain built on such a field is then evaluated against an empty list,
+and silently excludes nothing:
+
+```python
+# WRONG - reads [] on every unsaved order, so the domain below filters nothing
+ic_own_partner_ids = fields.Many2many("res.partner", compute="_compute_ic_own_partner_ids")
+
+@api.depends()  # the set is the same for every record; nothing here feeds it
+def _compute_ic_own_partner_ids(self):
+    ...
+```
+
+```xml
+<field name="partner_id" domain="[('id', 'not in', ic_own_partner_ids)]"/>
+```
+
+**Name a dependency that is on the record anyway** - `company_id` is the usual
+one - even where the value does not really follow it. The cost is a recompute
+nobody needed; the gain is that the field exists at all where it is read.
+Measured on 16.0: `purchase.order.onchange({}, [], spec)` returns
+`[(Command.CLEAR, 0, 0)]` for the field declared `@api.depends()`, and the full
+list of LINK commands once it declares `@api.depends("company_id")`.
+
+**Test it through the protocol, not through the method.** Calling `_compute_x()`
+by hand on a `new()` record forces the compute, so such a test passes on the
+broken code - that is what let this ship:
+
+```python
+value = self.env["purchase.order"].onchange({}, [], spec)["value"]["ic_own_partner_ids"]
+excluded = [command[1] for command in value if command[0] == Command.LINK]
+```
+
+Verified on 16.0.
 
 ## Repairing a stale stored compute
 
