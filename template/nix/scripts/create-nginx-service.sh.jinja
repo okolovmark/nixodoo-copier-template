@@ -1,0 +1,44 @@
+# shellcheck shell=bash
+# Generate the systemd user service for the nginx reverse proxy in front of
+# Odoo. Test and development only - production is fronted by the deployment's
+# own proxy, so setup-prod never calls this.
+# Requires: NGINX_BIN - absolute binary path (injected by flake.nix).
+set -e
+SYSTEMD_DIR="$HOME/.config/systemd/user"
+PROJECT_DIR="$PWD"
+
+mkdir -p "$SYSTEMD_DIR"
+
+NGINX_SERVICE_FILE="$SYSTEMD_DIR/nginx{{ service_suffix }}.service"
+echo "Creating Nginx service..."
+cat > "$NGINX_SERVICE_FILE" << EOF
+[Unit]
+Description=Nginx for Odoo
+After=network.target
+
+[Service]
+Type=forking
+Environment="PATH=%h/{{ nix_profile_rel }}/bin:\$PATH"
+Environment={{ project_dir_var }}=$PROJECT_DIR
+ExecStartPre=$NGINX_BIN -c $PROJECT_DIR/.nginx/nginx.conf -p $PROJECT_DIR/.nginx -e $PROJECT_DIR/.nginx/logs/error.log -t
+ExecStart=$NGINX_BIN -c $PROJECT_DIR/.nginx/nginx.conf -p $PROJECT_DIR/.nginx -e $PROJECT_DIR/.nginx/logs/error.log
+ExecReload=$NGINX_BIN -c $PROJECT_DIR/.nginx/nginx.conf -p $PROJECT_DIR/.nginx -e $PROJECT_DIR/.nginx/logs/error.log -s reload
+ExecStop=$NGINX_BIN -c $PROJECT_DIR/.nginx/nginx.conf -p $PROJECT_DIR/.nginx -e $PROJECT_DIR/.nginx/logs/error.log -s stop
+Restart=always
+RestartSec=10
+StandardOutput=journal+console
+
+[Install]
+WantedBy=default.target
+
+EOF
+echo "  Created $NGINX_SERVICE_FILE"
+
+echo
+echo "Reloading systemd daemon..."
+systemctl --user daemon-reload
+echo
+echo "To enable and start the proxy, run:"
+echo "  systemctl --user enable nginx{{ service_suffix }}.service"
+echo "  systemctl --user start nginx{{ service_suffix }}.service"
+echo "  systemctl --user status nginx{{ service_suffix }}.service"

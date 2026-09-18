@@ -168,33 +168,38 @@
                     update-repos = mkScript "update-repos" { deps = [ pkgs.git pkgs.yq-go ]; };
                     bootstrap-deps = mkScript "bootstrap-deps" { deps = [ pkgs.uv python pkgs.git ]; };
                     create-odoo-config = mkScript "create-odoo-config" { };
-                    create-nginx-config = mkScript "create-nginx-config" { };
                     create-systemd-service = mkScript "create-systemd-service" {
-                        vars = {
-                            NGINX_BIN = "${pkgs.nginx}/bin/nginx";
-                            LOGROTATE_BIN = "${pkgs.logrotate}/sbin/logrotate";
-                        };
+                        vars.LOGROTATE_BIN = "${pkgs.logrotate}/sbin/logrotate";
                     };
                     setup-prod = mkScript "setup-prod" {
                         deps = [
                             create-env
                             update-repos
                             create-odoo-config
-                            create-nginx-config
                             create-systemd-service
                         ];
                     };
 
                     # test and development
+                    # The reverse proxy is set up here and not in setup-prod:
+                    # production is fronted by the deployment's own proxy
+                    create-nginx-config = mkScript "create-nginx-config" { };
+                    create-nginx-service = mkScript "create-nginx-service" {
+                        vars.NGINX_BIN = "${pkgs.nginx}/bin/nginx";
+                    };
 {% if backup_s3_bucket %}
                     create-aws-config = mkScript "create-aws-config" { };
                     download-backup = mkScript "download-backup" {
                         deps = [ postgresql pkgs.awscli2 odooWrapper ];
                         vars.DEV_FIXUP_SQL = "${./nix/scripts/dev-fixup.sql}";
                     };
-                    setup-test = mkScript "setup-test" { deps = [ setup-prod create-aws-config ]; };
+                    setup-test = mkScript "setup-test" {
+                        deps = [ setup-prod create-nginx-config create-nginx-service create-aws-config ];
+                    };
 {% else %}
-                    setup-test = mkScript "setup-test" { deps = [ setup-prod ]; };
+                    setup-test = mkScript "setup-test" {
+                        deps = [ setup-prod create-nginx-config create-nginx-service ];
+                    };
 {% endif %}
 
                     # development
@@ -236,9 +241,12 @@
                     postgresql
                     pkgs.awscli2
                     pkgs.sassc
-                    pkgs.nginx
                     pkgs.yq-go
                 ];
+
+                # Reverse proxy - test and development only, production is
+                # fronted by the deployment's own proxy
+                proxyTools = [ pkgs.nginx ];
 
                 # Odoo binary (supports subcommands: server, shell, scaffold, etc.)
                 mkOdooWrapper = devFlags: mkScript "odoo" {
@@ -367,14 +375,14 @@
                     # nix profile add {{ nix_profile_flag }}.#test-server / nix profile remove {{ nix_profile_flag }}test-server
                     test-server = mkServer {
                         suffix = "test-server";
-                        tools = productionTools;
+                        tools = productionTools ++ proxyTools;
                         odoo = odooWrapper;
                     };
 
                     # nix profile add {{ nix_profile_flag }}.#dev-server / nix profile remove {{ nix_profile_flag }}dev-server
                     dev-server = mkServer {
                         suffix = "dev-server";
-                        tools = productionTools ++ devTools;
+                        tools = productionTools ++ proxyTools ++ devTools;
                         odoo = odooDevWrapper;
                         extraInstall = devServerExtras;
                     };
