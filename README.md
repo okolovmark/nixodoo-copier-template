@@ -37,7 +37,7 @@ sudo systemctl restart nix-daemon
 
 ## What it generates
 
-- **Odoo 16.0 to 19.0** on Python 3.10 to 3.14 and PostgreSQL 13 to 17, chosen at generation time
+- **Odoo 16.0 to 19.0** on Python 3.10 to 3.14 and PostgreSQL 13 to 18, chosen at generation time
   and verified end to end for every version.
 - **Three toolchains** as flake packages: `dev-server`, `test-server`, `prod-server`, the first two
   wrapping `odoo` and the Postgres client tools against this project's cluster; `prod-server`

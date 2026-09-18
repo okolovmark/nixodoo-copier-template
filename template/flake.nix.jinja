@@ -5,6 +5,12 @@
         nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
         flake-utils.url = "github:numtide/flake-utils";
 
+        # Second pin, used for NOTHING but a PostgreSQL major the main pin does
+        # not carry (nixos-25.05 stops at 17). A release that carries every
+        # major from 13 to 18, so any answer to postgres_version resolves; it
+        # needs nothing else from this pin, python included.
+        nixpkgs-postgres.url = "github:NixOS/nixpkgs/nixos-26.05";
+
         # Core pyproject-nix ecosystem tools
         pyproject-nix.url = "github:pyproject-nix/pyproject.nix";
         uv2nix.url = "github:pyproject-nix/uv2nix";
@@ -18,14 +24,30 @@
         pyproject-build-systems.inputs.pyproject-nix.follows = "pyproject-nix";
     };
 
-    outputs = { self, nixpkgs, flake-utils, uv2nix, pyproject-nix, pyproject-build-systems, ... }:
+    outputs = { self, nixpkgs, nixpkgs-postgres, flake-utils, uv2nix, pyproject-nix, pyproject-build-systems, ... }:
         flake-utils.lib.eachDefaultSystem (system:
             let
             # ===      common dependencies      ===
                 pkgs = import nixpkgs { inherit system; };
                 lib = nixpkgs.lib;
                 python = pkgs.python{{ python_version | replace('.', '') }};
-                postgresql = pkgs.postgresql_{{ postgres_version }};
+
+                # PostgreSQL for this project's own cluster and its client
+                # tools. Majors the main pin carries come from it, so nothing
+                # moves for an existing project; a newer major (18) comes from
+                # the second pin.
+                postgresqlAttr = "postgresql_{{ postgres_version }}";
+                mainPinHasPostgresql = pkgs ? ${postgresqlAttr};
+                postgresql =
+                    if mainPinHasPostgresql
+                    then pkgs.${postgresqlAttr}
+                    else (import nixpkgs-postgres { inherit system; }).${postgresqlAttr};
+
+                # libpq for building psycopg2 from an sdist. It stays on the
+                # MAIN pin even when the cluster does not: libpq talks to any
+                # server major, while two stdenvs in one python env do not mix.
+                psycopg2Postgresql =
+                    if mainPinHasPostgresql then postgresql else pkgs.postgresql;
 
                 # Load the workspace and create uv2nix overlay
                 workspace = uv2nix.lib.workspace.loadWorkspace {
@@ -90,12 +112,12 @@
                         # plus setuptools; postgresql.lib provides libpq at link time.
                         psycopg2 = prev.psycopg2.overrideAttrs (old: {
                             nativeBuildInputs = (old.nativeBuildInputs or []) ++ [
-                                postgresql.pg_config
+                                psycopg2Postgresql.pg_config
                                 final.setuptools
                                 final.wheel
                             ];
                             buildInputs = (old.buildInputs or []) ++ [
-                                postgresql.lib
+                                psycopg2Postgresql.lib
                                 pkgs.openssl
                             ];
                         });
