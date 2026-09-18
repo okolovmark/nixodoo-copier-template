@@ -29,6 +29,12 @@ logging_collector = on
 log_directory = 'log'
 log_filename = 'postgresql.log'
 log_statement = 'all'
+# 'all' is what makes the dev log useful, and it is also what makes it grow:
+# one project reached 33 GB in two months. Rotate by size into the same file
+# name, so the log stays capped and the documented path keeps working.
+log_rotation_size = 100MB
+log_rotation_age = 0
+log_truncate_on_rotation = on
 listen_addresses = 'localhost'
 EOF
     mkdir -p "$PGDATA/log"
