@@ -43,8 +43,9 @@ sudo systemctl restart nix-daemon
   `odoo` and the Postgres client tools against this project's cluster.
 - **Pinned sources**: `repos.yaml` for Odoo, `addons.yaml` for OCA and custom addon repos, pinned by
   branch or commit, with a symlink farm builder.
-- **Generated configuration**: `.env`, `odoo.conf` with a random master password, an nginx reverse
-  proxy, systemd user units and a log-rotation timer.
+- **Generated configuration**: `.env`, `odoo.conf` with a random master password, systemd user
+  units, a log-rotation timer, and an nginx reverse proxy for dev and test - production is left to
+  whatever already fronts it.
 - **Python dependencies straight from Odoo's own `requirements.txt`**, locked with uv and built with
   uv2nix, so the flake and your shell agree.
 - **Claude Code integration**, optional: `CLAUDE.md`, guard hooks, Odoo skills including semantic

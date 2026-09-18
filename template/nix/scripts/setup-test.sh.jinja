@@ -1,9 +1,15 @@
 # shellcheck shell=bash
-# Full test-server setup: prod setup{% if backup_s3_bucket %} + AWS credentials{% endif %}.
+# Full test-server setup: prod setup + nginx reverse proxy{% if backup_s3_bucket %} + AWS credentials{% endif %}.
 # The called scripts are on PATH (injected by flake.nix).
 set -e
 echo "=== Running setup of production server  ==="
 setup-prod
+echo
+echo "=== Running create-nginx-config ==="
+create-nginx-config
+echo
+echo "=== Running create-nginx-service ==="
+create-nginx-service
 {% if backup_s3_bucket %}
 echo
 echo "=== Running create-aws-config ==="

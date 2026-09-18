@@ -10,8 +10,9 @@ The full inventory behind the summary in [the README](../README.md#what-it-gener
   own debug adapter (Zed), with a `dev-python` symlink pinning the debuggee to the project env
 - Pinnable source management: `repos.yaml` (odoo) + `addons.yaml` (OCA/custom addon repos,
   branch- or commit-pinned) with an addons symlink farm builder
-- Generated configs: `.env`, `odoo.conf` (random master password), nginx reverse proxy,
-  systemd user units incl. daily log rotation
+- Generated configs: `.env`, `odoo.conf` (random master password), systemd user units incl.
+  daily log rotation, and an nginx reverse proxy for dev/test only (`prod-server` ships no
+  proxy - production keeps its own front end)
 - Python deps imported straight from Odoo's own `requirements.txt` and locked with `uv`
 - **Claude Code integration** (optional): `CLAUDE.md`, guard hooks (read-only OCA/core,
   dangerous-command blocker, ruff auto-format), Odoo dev skills (code patterns, style,
