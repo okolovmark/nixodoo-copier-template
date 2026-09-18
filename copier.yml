@@ -62,6 +62,7 @@ postgres_version:
     - 15
     - 16
     - 17
+    - 18
 
 # --- ports / database (defaults derived from the Odoo major version) ---
 

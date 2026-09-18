@@ -2,7 +2,7 @@
 
 The full inventory behind the summary in [the README](../README.md#what-it-generates).
 
-- **Odoo 16.0 / 17.0 / 18.0 / 19.0**, **Python 3.10–3.13**, **PostgreSQL 13–17** — picked at
+- **Odoo 16.0 / 17.0 / 18.0 / 19.0**, **Python 3.10–3.13**, **PostgreSQL 13–18** — picked at
   generation time; every Odoo version runtime-verified end-to-end (clone → lock → build → `-i base`)
 - Nix flake with three installable toolchains (`dev-server`, `test-server`, `prod-server`):
   wrapped `odoo`, `psql`/`pg_dump`/... bound to the project cluster (dev/test; `prod-server`
