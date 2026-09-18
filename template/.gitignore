@@ -2,7 +2,7 @@
 !.vscode/mcp.json
 !.vscode/launch.json
 
-.postgres
+.postgres*
 .aws
 .env
 .venv
