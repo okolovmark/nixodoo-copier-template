@@ -426,15 +426,17 @@ systemctl --user start odoo{{ service_suffix }}.service odoo{{ service_suffix }}
 systemctl --user status odoo{{ service_suffix }}.service
 ```
 
-This profile ships no reverse proxy: put your own in front of Odoo on
-`{{ odoo_http_port }}` (and `{{ odoo_gevent_port }}` for websockets).
+This profile ships neither a reverse proxy nor the Postgres client: put your
+own proxy in front of Odoo on `{{ odoo_http_port }}` (and
+`{{ odoo_gevent_port }}` for websockets), and note that Odoo's own database
+manager (backup, duplicate, restore) shells out to `pg_dump`/`pg_restore`, so
+it needs a Postgres client on `PATH` from somewhere else if you use it.
 
 ### Tools Included For Production
 
 - Python {{ python_version }} with all Odoo dependencies
 - Odoo {{ odoo_version }} binary
 - wkhtmltopdf (PDF generation)
-- PostgreSQL {{ postgres_version }} client
 - AWS CLI 2
 - sassc (SCSS compilation)
 - systemd service for Odoo + daily log rotation

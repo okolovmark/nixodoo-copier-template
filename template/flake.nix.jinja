@@ -238,7 +238,6 @@
                 productionTools = [
                     appPythonEnv
                     pkgs.wkhtmltopdf
-                    postgresql
                     pkgs.awscli2
                     pkgs.sassc
                     pkgs.yq-go
@@ -247,6 +246,11 @@
                 # Reverse proxy - test and development only, production is
                 # fronted by the deployment's own proxy
                 proxyTools = [ pkgs.nginx ];
+
+                # Postgres client - test and development only, where dumps are
+                # restored locally; production talks to its database over the
+                # wire and has no psql work to do
+                dbClientTools = [ postgresql ];
 
                 # Odoo binary (supports subcommands: server, shell, scaffold, etc.)
                 mkOdooWrapper = devFlags: mkScript "odoo" {
@@ -375,14 +379,14 @@
                     # nix profile add {{ nix_profile_flag }}.#test-server / nix profile remove {{ nix_profile_flag }}test-server
                     test-server = mkServer {
                         suffix = "test-server";
-                        tools = productionTools ++ proxyTools;
+                        tools = productionTools ++ proxyTools ++ dbClientTools;
                         odoo = odooWrapper;
                     };
 
                     # nix profile add {{ nix_profile_flag }}.#dev-server / nix profile remove {{ nix_profile_flag }}dev-server
                     dev-server = mkServer {
                         suffix = "dev-server";
-                        tools = productionTools ++ proxyTools ++ devTools;
+                        tools = productionTools ++ proxyTools ++ dbClientTools ++ devTools;
                         odoo = odooDevWrapper;
                         extraInstall = devServerExtras;
                     };
