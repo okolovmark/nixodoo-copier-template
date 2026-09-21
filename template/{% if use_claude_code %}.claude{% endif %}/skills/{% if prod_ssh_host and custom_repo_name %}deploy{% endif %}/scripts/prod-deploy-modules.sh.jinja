@@ -40,13 +40,17 @@ link_step=""
 
 # -A: the box's `origin` is a git SSH remote and the pull runs on your
 # forwarded key, not on a deploy key sitting in the box's ~/.ssh.
+#
+# --logfile= is empty on purpose: Odoo realpaths the option, so /dev/stdout
+# becomes /proc/<pid>/fd/pipe:[N] over SSH and cannot be opened. Empty leaves it
+# falsy, so Odoo keeps its default stderr handler and the log still comes back.
 set +e
 ssh -A -F "$SSH_CONFIG" "$HOST" "set -euo pipefail
 export PATH=\"\$HOME/{{ nix_profile_rel }}/bin:\$PATH\"
 cd {{ prod_remote_project_dir }}/src/{{ custom_repo_name }}
 git pull origin {{ odoo_version }}
 $link_step
-python {{ prod_remote_project_dir }}/src/odoo/odoo-bin -c {{ prod_remote_odoo_conf }} --workers 0 -d {{ prod_db_name }} $FLAG $MODULES --stop-after-init --logfile=/dev/stdout
+python {{ prod_remote_project_dir }}/src/odoo/odoo-bin -c {{ prod_remote_odoo_conf }} --workers 0 -d {{ prod_db_name }} $FLAG $MODULES --stop-after-init --logfile=
 systemctl --user restart odoo{{ service_suffix }}.service"
 status=$?
 set -e

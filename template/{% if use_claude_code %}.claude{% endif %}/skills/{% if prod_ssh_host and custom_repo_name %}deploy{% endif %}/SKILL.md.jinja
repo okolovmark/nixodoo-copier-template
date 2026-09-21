@@ -126,12 +126,18 @@ export PATH="$HOME/{{ nix_profile_rel }}/bin:$PATH"   # non-interactive SSH lack
 cd {{ prod_remote_project_dir }}/src/{{ custom_repo_name }}
 git pull origin {{ odoo_version }}
 cd {{ prod_remote_project_dir }} && {{ prod_link_addons_cmd }}          # --link-addons only
-python {{ prod_remote_project_dir }}/src/odoo/odoo-bin -c {{ prod_remote_odoo_conf }} --workers 0 -d {{ prod_db_name }} <-u|-i> <modules> --stop-after-init --logfile=/dev/stdout
+python {{ prod_remote_project_dir }}/src/odoo/odoo-bin -c {{ prod_remote_odoo_conf }} --workers 0 -d {{ prod_db_name }} <-u|-i> <modules> --stop-after-init --logfile=
 systemctl --user restart odoo{{ service_suffix }}.service
 ```
 
-`logfile=/dev/stdout` makes the box print `ERROR: couldn't create the logfile
-directory` and fall back to stdout — that line is not a failure.
+**`--logfile=` (empty) is deliberate**, and `--logfile=/dev/stdout` is wrong
+here: Odoo runs every path option through `realpath`, so over SSH — where
+stdout is a pipe — `/dev/stdout` resolves to `/proc/<pid>/fd/pipe:[N]`, which
+cannot be opened. The box then printed `ERROR: couldn't create the logfile
+directory` on every deploy and fell back to stdout anyway. An empty value
+leaves the option falsy, so Odoo builds no file handler at all and logs to
+**stderr** — which the SSH call returns just the same. A line that PIPES the
+log needs `2>&1` for that reason; the deploy script does not pipe.
 
 ## Step 2b — Exclusive-lock migrations: stop the service first
 

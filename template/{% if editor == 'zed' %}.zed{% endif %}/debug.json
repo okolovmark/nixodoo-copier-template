@@ -10,7 +10,9 @@
       // ("process exited before debugger attached").
       "--dev=qweb,werkzeug,xml",
       "--workers=0",
-      "--logfile=/dev/stdout",
+      // Empty on purpose: Odoo realpaths this option, so /dev/stdout becomes an
+      // unopenable /proc/<pid>/fd/pipe:[N] and the log falls back with an ERROR.
+      "--logfile=",
     ],
     // Pin the debuggee to the project env (via the profile symlink kept fresh by
     // create-debug-venv). A bare "python" resolves through PATH, and Zed puts the

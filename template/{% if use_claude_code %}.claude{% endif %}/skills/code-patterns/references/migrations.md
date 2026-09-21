@@ -64,7 +64,7 @@ Diagnose in one command — a clean deploy prints **nothing**:
 
 ```bash
 odoo -c <conf> -u <module> --workers 0 --stop-after-init \
-     --log-handler odoo.schema:DEBUG --logfile=/dev/stdout | grep -E "odoo.schema:"
+     --log-handler odoo.schema:DEBUG --logfile= 2>&1 | grep -E "odoo.schema:"
 ```
 
 Duplicates accumulated so far:
