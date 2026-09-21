@@ -72,7 +72,7 @@ These are the ones worth a thought:
 | `project_dir_var` | `ODOO<major>_PROJECT_DIR` | same reason, for the project-root variable |
 | `status_mcp` / `tickets_mcp` | `none` | wire status posting and ticket tracking to Teams and Odoo |
 | `backup_s3_bucket` | empty | restore production dumps locally |
-| `prod_ssh_host` / `test_ssh_host` | empty | the deploy and prod-ops runbooks |
+| `prod_ssh_host` / `test_ssh_hosts` | empty | the deploy and prod-ops runbooks |
 
 Every question and its default: [docs/questions.md](docs/questions.md).
 

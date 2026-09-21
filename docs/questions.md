@@ -24,5 +24,5 @@ Defaults in the table; anything you leave empty turns its feature off. See [the 
 | `use_pipeline` | `true` (asked when a custom addons repo is set) |
 | `use_kb` | `false` — SessionStart hook: `kb index` + `kb today` into every session (needs `kb` from okolovmark/kb; silent when absent) |
 | `backup_s3_bucket` | empty → no backup tooling |
-| `prod_ssh_host` (+user/url), `test_ssh_host` (+user/port/forward/url) | empty → no SSH helpers |
+| `prod_ssh_host` (+user/url; `prod_local_ssh_host` adds a `prod-local` alias for the office-LAN address), `test_ssh_hosts` (YAML mapping alias → host, +user/port/url pattern with `{alias}`) | empty → no SSH helpers |
 | `prod_remote_project_dir` / `prod_remote_odoo_conf` / `prod_db_name` / `prod_link_addons_cmd` (where this same project sits on the box, for the deploy and prod-ops skills) | `~/<project_name>` / `<that dir>/odoo.conf` / `odoo` / `nix run .#update-repos` |

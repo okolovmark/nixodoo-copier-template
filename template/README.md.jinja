@@ -59,7 +59,7 @@ curl -fsSL https://claude.ai/install.sh | bash
 
 The project ships Claude Code integration: `CLAUDE.md` (project facts), `.claude/`
 (guard hooks, Odoo dev skills, `dev`/`review` agents) and `.mcp.json`
-(odoo / postgres MCP servers driven by `.env`).
+(the odoo MCP server, driven by `.env`).
 
 {% if use_kb %}Claude's persistent memory for this project lives in
 [kb](https://github.com/okolovmark/kb): records, tasks and one record per session, in Neo4j.
@@ -157,7 +157,6 @@ The `.env` file contains these default values:
 | `ODOO_HTTP_PORT` | {{ odoo_http_port }} | Odoo HTTP port |
 | `ODOO_GEVENT_PORT` | {{ odoo_gevent_port }} | Odoo {% if odoo_major | int >= 17 %}gevent websocket{% else %}longpolling{% endif %} port |
 | `ODOO_NGINX_PORT` | {{ nginx_port }} | Nginx proxy port |
-| `DATABASE_URI` | postgresql://{{ db_user }}:{{ db_password }}@localhost:{{ postgres_port }}/{{ db_name }} | Database URI |
 | `EDITOR` | nano | Preferred text editor |
 | `ODOO_URL` | `http://localhost:{{ nginx_port }}` | Odoo URL via Nginx (for external tools) |
 | `ODOO_DATABASE` | {{ db_name }} | Odoo database name (for external tools) |
@@ -280,8 +279,8 @@ journalctl --user -u nginx{{ service_suffix }}.service -f | ccze -A
 {% if prod_ssh_host %}
 
 # Connect to remote servers:
-{% if test_ssh_host %}
-test-server
+{% if test_ssh_hosts %}
+test-server <alias>     # one of: {{ test_ssh_hosts | join(', ') }}
 {% endif %}
 prod-server
 {% endif %}

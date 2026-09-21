@@ -209,6 +209,12 @@ prod_ssh_user:
   default: ubuntu
   when: "{{ prod_ssh_host != '' }}"
 
+prod_local_ssh_host:
+  type: str
+  help: "Production box's address on the office LAN when it differs from prod_ssh_host (adds a `prod-local` alias beside `prod`; empty = none)"
+  default: ""
+  when: "{{ prod_ssh_host != '' }}"
+
 prod_web_url:
   type: str
   help: Production web URL (shown by the prod-server helper)
@@ -244,35 +250,34 @@ prod_link_addons_cmd:
   default: "nix run .#update-repos"
   when: "{{ prod_ssh_host != '' and use_claude_code and custom_repo_name }}"
 
-test_ssh_host:
-  type: str
-  help: Test server SSH host/IP (empty = no test-server helper)
-  default: ""
+# Test boxes: one SSH alias per entry, all sharing the user and port below. A
+# single box is `{test: 203.0.113.2}`; a per-developer fleet is
+# `{odoo1.kepi: 192.168.20.112, odoo2.kepi: 192.168.20.113}`. Every alias goes
+# into .ssh/config, `nix run .#test-server -- <alias>` connects, and the deploy
+# and prod-ops scripts accept it as their host argument.
+test_ssh_hosts:
+  type: yaml
+  help: "Test boxes as a YAML mapping alias -> host/IP, e.g. {test: 203.0.113.2} (empty = no test-server helper)"
+  default: {}
   when: "{{ prod_ssh_host != '' }}"
 
 test_ssh_user:
   type: str
-  help: Test server SSH user
+  help: SSH user on the test boxes
   default: ubuntu
-  when: "{{ test_ssh_host != '' }}"
+  when: "{% if test_ssh_hosts %}true{% else %}false{% endif %}"
 
 test_ssh_port:
   type: int
-  help: Test server SSH port
+  help: SSH port on the test boxes
   default: 22
-  when: "{{ test_ssh_host != '' }}"
-
-test_local_forward:
-  type: str
-  help: "Optional LocalForward for the test host (e.g. '1680 localhost:16069'; empty = none)"
-  default: ""
-  when: "{{ test_ssh_host != '' }}"
+  when: "{% if test_ssh_hosts %}true{% else %}false{% endif %}"
 
 test_web_url:
   type: str
-  help: Test web URL (shown by the test-server helper)
+  help: "Web URL of a test box as the test-server helper prints it; `{alias}` stands for the box's alias (e.g. http://{alias}:8069/web; empty = not shown)"
   default: ""
-  when: "{{ test_ssh_host != '' }}"
+  when: "{% if test_ssh_hosts %}true{% else %}false{% endif %}"
 
 project_dir_var:
   type: str

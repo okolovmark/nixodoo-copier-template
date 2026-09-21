@@ -323,7 +323,7 @@
 {% if prod_ssh_host %}
                 # SSH connection helpers
                 prodServerHelper = mkScript "prod-server" { };
-{% if test_ssh_host %}
+{% if test_ssh_hosts %}
                 testServerHelper = mkScript "test-server" { };
 {% endif %}
 {% endif %}
@@ -359,7 +359,7 @@
                     ln -s ${welcomeMessage}/bin/welcome-message $out/bin/welcome-message
 {% if prod_ssh_host %}
                     ln -s ${prodServerHelper}/bin/prod-server $out/bin/prod-server
-{% if test_ssh_host %}
+{% if test_ssh_hosts %}
                     ln -s ${testServerHelper}/bin/test-server $out/bin/test-server
 {% endif %}
 {% endif %}

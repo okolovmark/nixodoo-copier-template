@@ -38,9 +38,9 @@ echo "  postgres logs:    tail -f \".postgres/log/postgresql.log\" | ccze -A"
 {% if prod_ssh_host %}
 echo ""
 echo "Remote Servers:"
-echo "  prod-server  - Connect to production{% if prod_web_url %} ({{ prod_web_url }}){% endif %}"
-{% if test_ssh_host %}
-echo "  test-server  - Connect to test{% if test_web_url %} ({{ test_web_url }}){% endif %}"
+echo "  prod-server  - Connect to production{% if prod_web_url %} ({{ prod_web_url }}){% endif %}{% if prod_local_ssh_host %}; 'prod-server local' over the LAN{% endif %}"
+{% if test_ssh_hosts %}
+echo "  test-server  - Connect to a test box: {{ test_ssh_hosts | join(', ') }}{% if test_ssh_hosts | length > 1 %} (pass the alias){% endif %}"
 {% endif %}
 {% endif %}
 echo ""

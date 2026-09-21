@@ -15,8 +15,13 @@ command and getting an explicit OK.
 - `ssh -F "${{ project_dir_var }}/.ssh/config" prod '<remote command>'` — the
   same connection `nix run .#prod-server` uses interactively. Add `-A` only
   when the remote command needs git (pull on the forwarded key).
-{% if test_ssh_host %}
-- `test` is a second host alias in the same config — same mechanics.
+{% if prod_local_ssh_host %}
+- `prod-local` is the same box over the office LAN ({{ prod_local_ssh_host }});
+  `prod` ({{ prod_ssh_host }}) is the address that works from any network.
+{% endif %}
+{% if test_ssh_hosts %}
+- Test boxes are further aliases in the same config, same mechanics:
+  {{ test_ssh_hosts | join(', ') }}.
 {% endif %}
 - {% if prod_web_url %}Web {{ prod_web_url }} · {% endif %}DB `{{ prod_db_name }}` · config `{{ prod_remote_odoo_conf }}` ·
   checkout `{{ prod_remote_project_dir }}` · odoo-bin
@@ -31,7 +36,7 @@ command and getting an explicit OK.
 | channel | use for | limits |
 |---|---|---|
 | **RPC** (odoo MCP, `env_profile: "prod"`) | quick reads, ticket plumbing | acts as a plain service user: `groups=`-restricted fields raise, model ACLs bar whole models, and record rules **silently narrow** reads — a `read_group` scoped to the account's companies looks complete and is not. No `sudo()` over RPC. |
-| **local prod-dump DB** (postgres-mcp / SQL) | finding the MECHANISM: history tables RPC is denied, heavy joins, forensics | a snapshot — check its age first (`select max(create_date) from <busy table>`); records newer than the dump are simply absent |
+| **local prod-dump DB** (SQL through `psql` on the dev cluster, port {{ postgres_port }}) | finding the MECHANISM: history tables RPC is denied, heavy joins, forensics | a snapshot — check its age first (`select max(create_date) from <busy table>`); records newer than the dump are simply absent |
 | **live `{{ odoo_cmd }} shell` over SSH** | the FIGURES: anything going to a stakeholder, a ticket or a decision | runs as superuser — read-only discipline is on you; pipe a named script, never an inline one-liner |
 
 Two rules that repeatedly save wrong conclusions:
@@ -68,7 +73,7 @@ validated arguments is one reviewable permission decision; inline
 classifier and is unreviewable anyway.
 
 ```bash
-bash "${{ project_dir_var }}/.claude/skills/prod-ops/scripts/prod-run-odoo-script.sh" <prod{% if test_ssh_host %}|test{% endif %}> <script.py> [dry|commit]
+bash "${{ project_dir_var }}/.claude/skills/prod-ops/scripts/prod-run-odoo-script.sh" <prod{% if prod_local_ssh_host %}|prod-local{% endif %}{% if test_ssh_hosts %}|<test alias>{% endif %}> <script.py> [dry|commit]
 ```
 
 The runner pipes the file into `odoo-bin shell` on the box (superuser), passes
@@ -115,6 +120,11 @@ model, records affected, dry-run vs committed, counts. Mechanics (base64 →
 
 ## Service ops
 
+- Odoo on the box is the systemd **user** unit `create-systemd-service`
+  generates, so every service command is `systemctl --user …` run as the
+  service user — a plain `systemctl is-active odoo` reports `inactive` for a
+  running service. Lingering (`loginctl enable-linger <user>`) is what keeps
+  it alive after the last SSH session closes.
 - **Stop/start in SEPARATE ssh calls** — a single long ssh that stops the
   service, works and starts it again can drop mid-way and leave the box down.
 - Long-running `-u` / migrations run **detached** (`setsid nohup ... >> log`,

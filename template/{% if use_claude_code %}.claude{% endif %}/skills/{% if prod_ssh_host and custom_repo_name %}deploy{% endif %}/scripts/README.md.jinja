@@ -10,7 +10,7 @@ belongs here, not inline in `SKILL.md`.
 | `prod-deploy-modules.sh` | Step 2, every deploy | pulls `{{ odoo_version }}`, updates modules, restarts the service | `DEPLOY_EXIT=0` |
 {% if use_queue_job %}| `prod-requeue-jobs.sh` | Step 6, after a clean deploy | `queue.job` enqueued/started → pending | `REQUEUED <n>` |
 {% endif %}
-Every script here takes the host alias as its first argument (`prod` / `test`),
+Every script here takes the host alias as its first argument (`prod`{% if prod_local_ssh_host %}, `prod-local`{% endif %}{% if test_ssh_hosts %} or a test alias{% endif %}),
 refuses any other host, and **exits non-zero when its marker is missing**, so a
 silent no-op cannot read as success.
 

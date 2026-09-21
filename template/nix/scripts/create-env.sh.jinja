@@ -56,7 +56,6 @@ if [ ! -f .env ]; then
         printf "ODOO_HTTP_PORT=%s\n" "$http_port"
         printf "ODOO_GEVENT_PORT=%s\n" "$gevent_port"
         printf "ODOO_NGINX_PORT=%s\n" "$nginx_port"
-        printf "DATABASE_URI=%s\n" "postgresql://$pguser:$pgpassword@localhost:$pgport/$pgdatabase"
         printf "EDITOR=%s\n" "$editor"
         printf "ODOO_URL=%s\n" "http://localhost:$nginx_port"
         printf "ODOO_DATABASE=%s\n" "$pgdatabase"

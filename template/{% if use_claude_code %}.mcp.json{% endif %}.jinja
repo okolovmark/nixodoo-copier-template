@@ -7,14 +7,6 @@
         "-c",
         "source .env && uvx --from 'git+https://github.com/okolovmark/odoo-fast-mcp@cb85a99' odoo-fast-mcp"
       ]
-    },
-    "postgres-mcp": {
-      "type": "stdio",
-      "command": "bash",
-      "args": [
-        "-c",
-        "source .env && uvx --with 'mcp<2' postgres-mcp --access-mode=unrestricted $DATABASE_URI"
-      ]
     }
   }
 }

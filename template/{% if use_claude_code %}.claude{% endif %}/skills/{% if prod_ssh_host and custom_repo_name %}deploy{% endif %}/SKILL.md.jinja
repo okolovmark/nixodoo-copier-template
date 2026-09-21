@@ -2,7 +2,7 @@
 ---
 name: deploy
 description: "Deploy a merged addons PR to the Odoo PRODUCTION server{% if status_mcp == 'teams' %}, announce it in the maintenance Teams chat{% endif %}{% if use_queue_job %}, and requeue stuck queue jobs{% endif %}: blast-radius tag -> {% if status_mcp == 'teams' %}notify start -> {% endif %}deploy over SSH{% if use_queue_job %} -> requeue enqueued/started queue.jobs{% endif %} -> invariant check (T+0, and T+60 for high blast radius){% if status_mcp == 'teams' %} -> notify result{% endif %}{% if tickets_mcp == 'odoo' %} -> note the exact deploy commands on the task{% endif %}. Use when the user says a PR is merged and asks to deploy it. Always prints the exact prod commands and waits for explicit approval before touching prod."
-argument-hint: "[PR number or URL] [{% if test_ssh_host %}test|{% endif %}prod — default prod]"
+argument-hint: "[PR number or URL] [prod{% if test_ssh_hosts %}|<test alias>{% endif %} — default prod]"
 ---
 
 # Deploy — production Odoo
@@ -35,8 +35,9 @@ chat was recreated.
   the box's `origin` is a git SSH remote and the pull runs on your forwarded
   key. A stale deploy key in the box's `~/.ssh` is not the account that owns
   the branch — do not use it.
-{% if test_ssh_host %}
-- If the 2nd argument is `test`, target the `test` alias instead of `prod`.
+{% if test_ssh_hosts %}
+- If the 2nd argument names a test box ({{ test_ssh_hosts | join(', ') }}),
+  target that alias instead of `prod`.
 {% endif %}
 
 ## Step 1 — Resolve the PR
@@ -109,7 +110,7 @@ so the approval covers them.
 and for the permission-rule shapes.
 
 ```bash
-bash "${{ project_dir_var }}/.claude/skills/deploy/scripts/prod-deploy-modules.sh" <{% if test_ssh_host %}prod|test{% else %}prod{% endif %}> <-u|-i> <modules> [--link-addons]
+bash "${{ project_dir_var }}/.claude/skills/deploy/scripts/prod-deploy-modules.sh" <prod{% if test_ssh_hosts %}|<test alias>{% endif %}> <-u|-i> <modules> [--link-addons]
 ```
 
 - `<modules>` comma-separated, no spaces. `--link-addons` **only** when a module
@@ -177,7 +178,7 @@ statements whenever a model or field goes away.
 ## Step 3 — Show the plan and get approval (mandatory — this is prod)
 
 Print and **wait for an explicit "go"**:
-- target host{% if test_ssh_host %} (`prod` / `test`){% endif %}, the PR (title + url), affected modules,
+- target host{% if test_ssh_hosts %} (`prod` or a test alias){% endif %}, the PR (title + url), affected modules,
 - the **blast radius** (tier + per-module reasons) and which invariant checks it
   earns (T+0 / T+60 / none), including any project write step the check needs,
 - **whether it runs Step 2 or Step 2b**, and for 2b the expected downtime,
@@ -207,7 +208,7 @@ HTML-escape `<` and `&` in the values you substitute in.
 <strong>Blast radius:</strong> {high|medium|low}<br>
 <strong>PR:</strong> <a href="{pr url}">#{n}</a></p>
 <p><strong>What changed:</strong> {plain 2-4 sentence summary, what + why}</p>
-<p>Starting deploy on {% if test_ssh_host %}{prod|test}{% else %}prod{% endif %}.</p>
+<p>Starting deploy on {% if test_ssh_hosts %}{host}{% else %}prod{% endif %}.</p>
 ```
 {% endif %}
 
@@ -317,7 +318,7 @@ expected there and a finding at T+60.
 - **Deploy exit 0** -> send:
   ```html
   <p>✅ <strong>Deployed: {PR title}</strong></p>
-  <p><code>{modules}</code> updated on {% if test_ssh_host %}{prod|test}{% else %}prod{% endif %}.{% if prod_web_url %}
+  <p><code>{modules}</code> updated on {% if test_ssh_hosts %}{host}{% else %}prod{% endif %}.{% if prod_web_url %}
   <a href="{{ prod_web_url }}">Odoo</a>{% endif %}</p>
   ```
 {% if use_queue_job %}  Tell the user (not the chat) the requeued count from Step 6.

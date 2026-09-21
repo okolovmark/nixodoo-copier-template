@@ -7,6 +7,9 @@
 # to dev-fixup.sql (all injected by flake.nix).
 set -e
 
+# Where the nightly dump lands; S3_BUCKET in the environment reads another one.
+S3_BUCKET="${S3_BUCKET:-{{ backup_s3_bucket }}}"
+
 # Parse arguments
 SKIP_DOWNLOAD=false
 DATABASE_NAME=""
@@ -81,12 +84,22 @@ echo "  User: $PGUSER"
 echo "  Database: $PGDATABASE"
 
 if [ "$SKIP_DOWNLOAD" = false ]; then
-    echo "Downloading latest backup from AWS S3..."
+    echo "Downloading latest backup from s3://$S3_BUCKET ..."
     mkdir -p "$PWD/backup"
     if [ "$(ls -A backup)" ]; then
         rm backup/*
     fi
-    AWS_SHARED_CREDENTIALS_FILE=.aws/credentials aws s3 cp "s3://{{ backup_s3_bucket }}/$(AWS_SHARED_CREDENTIALS_FILE=.aws/credentials aws s3 ls s3://{{ backup_s3_bucket }}/ | tail -1 | awk '{print $NF}')" backup
+    export AWS_SHARED_CREDENTIALS_FILE=.aws/credentials
+    # Dumps are named <db>_<YYYY-MM-DD-HH-MM-SS>.dump, so lexical order is
+    # chronological and the last name is the newest.
+    LATEST=$(aws s3 ls "s3://$S3_BUCKET/" | awk '{print $NF}' | grep -v '/$' | sort | tail -1)
+    if [ -z "$LATEST" ]; then
+        echo "No dumps found in s3://$S3_BUCKET/ - check the bucket name and that" >&2
+        echo ".aws/credentials can read it." >&2
+        exit 1
+    fi
+    echo "  newest: $LATEST"
+    aws s3 cp "s3://$S3_BUCKET/$LATEST" backup
     echo "Backup downloaded successfully to $PWD/backup"
 else
     echo "Skipping download, using existing backup folder..."
