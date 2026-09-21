@@ -521,7 +521,7 @@ returns no closing block.
    ```bash
    {{ odoo_cmd }} -c <CONF> -u <MODULE_NAME> \
        --workers 0 --test-enable --test-tags /<MODULE_NAME> \
-       --stop-after-init --logfile=/dev/stdout 2>&1
+       --stop-after-init --logfile= 2>&1
    ```
    The leading `/` in `--test-tags /<MODULE_NAME>` is mandatory — a bare
    name selects a (nonexistent) TAG, runs 0 tests and goes false-green.

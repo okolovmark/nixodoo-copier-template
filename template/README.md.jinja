@@ -246,7 +246,7 @@ To update the server with the latest code and addons, run:
 cd ${{ project_dir_var }}
 git pull
 nix run .#update-repos
-{{ odoo_cmd }} -c ${{ project_dir_var }}/odoo.conf -u module_name --workers 0 --stop-after-init --logfile=/dev/stdout
+{{ odoo_cmd }} -c ${{ project_dir_var }}/odoo.conf -u module_name --workers 0 --stop-after-init --logfile=
 systemctl --user restart odoo{{ service_suffix }}.service
 ```
 
@@ -297,7 +297,7 @@ tail -f ${{ project_dir_var }}/odoo.log | ccze -A
 journalctl --user -u nginx{{ service_suffix }}.service -f | ccze -A
 
 # Odoo update module:
-{{ odoo_cmd }} -c ${{ project_dir_var }}/odoo.conf -u module_name --workers 0 --stop-after-init --logfile=/dev/stdout
+{{ odoo_cmd }} -c ${{ project_dir_var }}/odoo.conf -u module_name --workers 0 --stop-after-init --logfile=
 
 # Odoo shell:
 {{ odoo_cmd }} shell -c ${{ project_dir_var }}/odoo.conf --workers 0 --stop-after-init

@@ -79,7 +79,7 @@ schema, see `code-patterns` references/migrations.md):
 
 ```bash
 {{ odoo_cmd }} -c ${{ project_dir_var }}/odoo.conf -u <module> --workers 0 --stop-after-init \
-     --log-handler odoo.schema:DEBUG --logfile=/dev/stdout | grep -E "odoo.schema:"
+     --log-handler odoo.schema:DEBUG --logfile= 2>&1 | grep -E "odoo.schema:"
 ```
 
 Duplicate constraints already accumulated by such churn:

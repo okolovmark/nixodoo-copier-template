@@ -31,7 +31,7 @@ echo "  systemctl --user stop odoo{{ service_suffix }}.service postgres{{ servic
 echo "  systemctl --user status odoo{{ service_suffix }}.service postgres{{ service_suffix }}.service nginx{{ service_suffix }}.service"
 echo ""
 echo "Useful Commands:"
-echo "  update module:    {{ odoo_cmd }} -c \${{ project_dir_var }}/odoo.conf -u module_name --workers 0 --stop-after-init --logfile=/dev/stdout"
+echo "  update module:    {{ odoo_cmd }} -c \${{ project_dir_var }}/odoo.conf -u module_name --workers 0 --stop-after-init --logfile="
 echo "  run shell:        {{ odoo_cmd }} shell -c \${{ project_dir_var }}/odoo.conf --workers 0 --stop-after-init"
 echo "  odoo logs:        journalctl --user -u odoo{{ service_suffix }}.service -f | ccze -A"
 echo "  postgres logs:    tail -f \".postgres/log/postgresql.log\" | ccze -A"

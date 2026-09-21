@@ -20,7 +20,7 @@ each leaves an artifact (a test, a script, a log excerpt) that goes to the ticke
 ## Channel 1 — targeted test (preferred)
 
 ```bash
-{{ odoo_cmd }} -c ${{ project_dir_var }}/odoo.conf --workers 0 --stop-after-init --logfile=/dev/stdout \
+{{ odoo_cmd }} -c ${{ project_dir_var }}/odoo.conf --workers 0 --stop-after-init --logfile= \
     --http-port <free port> --test-enable --test-tags /{{ module_prefix }}_<module>:TestX.test_y
 ```
 
@@ -55,7 +55,8 @@ each leaves an artifact (a test, a script, a log excerpt) that goes to the ticke
 
 ## Channel 3 — logs
 
-- `odoo.log` of the dev service; a one-off run with `--logfile=/dev/stdout`.
+- `odoo.log` of the dev service; a one-off run with `--logfile=` (empty — it
+  logs to stderr; `/dev/stdout` is realpathed to an unopenable pipe path).
 - `--log-level=debug_sql` for the exact queries; `--log-handler=odoo.addons.<module>:DEBUG`
   to raise one module; `--dev=reload,qweb,werkzeug,xml` for the dev server
   (auto-reload, full werkzeug tracebacks).
