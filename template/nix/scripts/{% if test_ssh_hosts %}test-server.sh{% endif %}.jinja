@@ -13,7 +13,7 @@ for a in "${ALIASES[@]}"; do
     [ "$a" = "$BOX" ] && found=1
 done
 if [ "$found" -ne 1 ]; then
-    echo "usage: nix run .#test-server -- <alias>   # one of: ${ALIASES[*]}" >&2
+    echo "usage: test-server <alias>   # one of: ${ALIASES[*]}" >&2
     exit 2
 fi
 echo "Connecting to $BOX..."
