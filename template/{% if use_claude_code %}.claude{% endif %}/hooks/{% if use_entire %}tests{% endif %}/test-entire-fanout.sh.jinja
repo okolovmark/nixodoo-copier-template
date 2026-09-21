@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# The fan-out hook must never block the session, whatever entire does.
+#
+# Claude Code reads a non-zero hook exit as a block - exit 2 refuses the prompt
+# on UserPromptSubmit, the tool call on PreToolUse and the stop on Stop - and a
+# Go "fatal error: runtime: out of memory" exits with exactly 2. That is how
+# entire 0.10.1 cost a typed message on 2026-09-18. This test stubs entire with
+# that failure and asserts the hook still exits clean on every phase we wire.
+#
+# Usage: .claude/hooks/tests/test-entire-fanout.sh   (no arguments, no network)
+set -u
+
+hook=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/entire-fanout.sh
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+
+# A root with no src/ checkouts: this test is about the primary repo's status.
+export {{ project_dir_var }}="$tmp/root"
+mkdir -p "${{ "{" }}{{ project_dir_var }}}" "$tmp/bin"
+
+# The stub takes its behaviour from the environment, so it is written once.
+cat > "$tmp/bin/entire" <<'STUB'
+#!/usr/bin/env bash
+[ -n "${STUB_STDOUT:-}" ] && printf '%s\n' "$STUB_STDOUT"
+[ -n "${STUB_STDERR:-}" ] && printf '%s\n' "$STUB_STDERR" >&2
+exit "${STUB_EXIT:-0}"
+STUB
+chmod +x "$tmp/bin/entire"
+
+# PATH with every real entire stripped out, for the not-installed case.
+bare_path=$(IFS=:; out=; for dir in $PATH; do
+    [ -x "$dir/entire" ] && continue
+    out="${out:+$out:}$dir"
+done; printf '%s' "$out")
+
+payload='{"session_id":"test","prompt":"hello"}'
+phases="session-start session-end user-prompt-submit stop pre-task post-task post-todo"
+failures=0
+
+fail() { printf '  FAIL %s\n' "$1"; failures=$((failures + 1)); }
+ok()   { printf '  ok   %s\n' "$1"; }
+
+check() {  # check <what> <expected> <got>
+    [ "$2" = "$3" ] && ok "$1" || fail "$1: expected $2, got $3"
+}
+
+run_hook() {  # run_hook <phase>, honouring HOOK_PATH; stdout -> $tmp/stdout
+    printf '%s' "$payload" | PATH="${HOOK_PATH:-$tmp/bin:$PATH}" \
+        bash "$hook" "$1" > "$tmp/stdout" 2> "$tmp/stderr"
+    HOOK_STATUS=$?
+}
+
+export STUB_STDERR='fatal error: runtime: out of memory' STUB_STDOUT=''
+
+echo 'entire crashes the way it did on 2026-09-18 (Go fatal error, exit 2):'
+export STUB_EXIT=2
+for phase in $phases; do
+    run_hook "$phase"
+    check "$phase exits clean" 0 "$HOOK_STATUS"
+done
+grep -q 'entire-fanout: entire exited 2' "$tmp/stderr" \
+    && ok 'the failure is reported on stderr' || fail 'nothing reported on stderr'
+
+echo 'entire fails some other way (exit 1):'
+export STUB_EXIT=1
+for phase in $phases; do
+    run_hook "$phase"
+    check "$phase exits clean" 0 "$HOOK_STATUS"
+done
+
+echo 'entire succeeds:'
+export STUB_EXIT=0 STUB_STDERR='' STUB_STDOUT='{"systemMessage":"recorded"}'
+run_hook session-start
+check 'session-start exits clean' 0 "$HOOK_STATUS"
+grep -q 'recorded' "$tmp/stdout" \
+    && ok 'its stdout reaches Claude Code unchanged' || fail 'stdout was swallowed'
+
+echo 'entire is not installed at all:'
+HOOK_PATH=$bare_path
+run_hook user-prompt-submit
+check 'user-prompt-submit exits clean' 0 "$HOOK_STATUS"
+run_hook session-start
+check 'session-start exits clean' 0 "$HOOK_STATUS"
+grep -q 'not installed or not on PATH' "$tmp/stdout" \
+    && ok 'session-start says so once' || fail 'no installation notice'
+
+[ "$failures" -eq 0 ] && echo 'PASS' || echo "FAIL ($failures)"
+exit $((failures > 0))

@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Replay one Claude Code hook payload into every entire-enabled repo in the env.
+#
+# entire keys session state to a repository's git directory
+# (<git-dir>/entire-sessions/<session-id>.json), resolved from the working
+# directory of the process running the hook. The custom addons checkout nested
+# under src/ has its own .git, so one conversation gets one record in the
+# project and a separate one in {{ custom_repo_name }}, neither aware of the
+# other - which is why commits in the nested repo came out with no
+# Entire-Checkpoint trailer at all. Feeding the same payload to both repos is
+# the vendor's own workaround (Stefan Haubold, entire, 2026-09-03). It is an
+# UNSUPPORTED shape: recheck after every entire CLI upgrade.
+#
+# Cost, accepted knowingly: each repo then stores the whole session transcript,
+# including work done in the other. Both are private repos of the same org, and
+# pushing transcripts to them is already the deliberate choice.
+#
+# Worktrees need no entry of their own - measured 2026-09-04 on CLI 0.10.1, a
+# worktree resolves to the repo's COMMON git dir and shares its session record.
+#
+# Usage: entire-fanout.sh <phase>   e.g. stop, session-start, pre-task
+set -u
+
+phase=${1:?usage: entire-fanout.sh <phase>}
+
+if ! command -v entire >/dev/null 2>&1; then
+    if [ "$phase" = "session-start" ]; then
+        printf '%s\n' '{"systemMessage":"\n\nEntire CLI is enabled but not installed or not on PATH.\nInstallation guide: https://docs.entire.io/cli/installation#installation-methods"}'
+    fi
+    exit 0
+fi
+
+root=${{ "{" }}{{ project_dir_var }}:-${CLAUDE_PROJECT_DIR:-$PWD}}
+
+# Hooks are always fed JSON on stdin; a tty means someone ran this by hand.
+if [ -t 0 ]; then
+    payload=""
+else
+    payload=$(cat)
+fi
+
+# Primary repo first: its stdout IS the hook's, so the fan-out can never change
+# what Claude Code reads from this hook. Its exit status is not - see below.
+printf '%s' "$payload" | (cd "$root" && entire hooks claude-code "$phase")
+status=$?
+
+# A recorder has no verdict to cast on the session, so its exit status is never
+# passed on. Claude Code reads a non-zero hook exit as a block, and exit 2 as a
+# hard one in every phase: the prompt is refused on UserPromptSubmit, the tool
+# call on PreToolUse, the stop on Stop. A Go "fatal error: runtime: out of
+# memory" exits with exactly 2 - which is how entire 0.10.1 cost a typed message
+# on 2026-09-18, out of memory on a single 32.4 GB mapping on a 30 GB box, with
+# a 3.6 MB transcript and a session record under 0.1 MB. Every
+# non-zero status entire can return here is its own failure, and a missed
+# checkpoint is cheaper than a blocked session, so the failure is reported on
+# stderr and the hook exits clean.
+if [ "$status" -ne 0 ]; then
+    printf 'entire-fanout: entire exited %s on %s - continuing without a checkpoint\n' \
+        "$status" "$phase" >&2
+    status=0
+fi
+
+# Secondary repos: every nested checkout under src/ that has entire's own
+# commit hook installed (this picks the addons repo and skips the read-only OCA
+# ones). Record-only - they neither speak nor fail the hook.
+for gitdir in "$root"/src/*/.git; do
+    [ -e "$gitdir" ] || continue
+    grep -qs 'entire hooks git' "$gitdir/hooks/prepare-commit-msg" || continue
+    repo=$(dirname "$gitdir")
+    printf '%s' "$payload" | (cd "$repo" && entire hooks claude-code "$phase") \
+        >/dev/null 2>&1 || true
+done
+
+exit $status
