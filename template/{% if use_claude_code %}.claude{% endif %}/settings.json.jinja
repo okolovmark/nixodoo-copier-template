@@ -1,7 +1,18 @@
 {
   "hooks": {
-{% if use_kb %}
+{% if use_kb or use_entire %}
     "SessionStart": [
+{% if use_entire %}
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${{ project_dir_var }}/.claude/hooks/entire-fanout.sh session-start"
+          }
+        ]
+      }{% if use_kb %},{% endif %}
+{% endif %}
+{% if use_kb %}
       {
         "hooks": [
           {
@@ -11,8 +22,21 @@
           }
         ]
       }
+{% endif %}
     ],
     "SessionEnd": [
+{% if use_entire %}
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${{ project_dir_var }}/.claude/hooks/entire-fanout.sh session-end"
+          }
+        ]
+      }{% if use_kb %},{% endif %}
+{% endif %}
+{% if use_kb %}
       {
         "hooks": [
           {
@@ -22,6 +46,7 @@
           }
         ]
       }
+{% endif %}
     ],
 {% endif %}
     "PreToolUse": [
@@ -59,7 +84,16 @@
             "command": "python3 ${{ project_dir_var }}/.claude/hooks/nudge-find-code.py"
           }
         ]
-      }
+      }{% if use_entire %},
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${{ project_dir_var }}/.claude/hooks/entire-fanout.sh pre-task"
+          }
+        ]
+      }{% endif %}
     ],
     "PostToolUse": [
       {
@@ -70,9 +104,57 @@
             "command": "bash ${{ project_dir_var }}/.claude/hooks/ruff-post-edit.sh"
           }
         ]
+      }{% if use_entire %},
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${{ project_dir_var }}/.claude/hooks/entire-fanout.sh post-task"
+          }
+        ]
+      },
+      {
+        "matcher": "TaskCreate|TaskUpdate",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${{ project_dir_var }}/.claude/hooks/entire-fanout.sh post-todo"
+          }
+        ]
+      }{% endif %}
+    ]{% if use_entire %},
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${{ project_dir_var }}/.claude/hooks/entire-fanout.sh stop"
+          }
+        ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${{ project_dir_var }}/.claude/hooks/entire-fanout.sh user-prompt-submit"
+          }
+        ]
+      }
+    ]{% endif %}
+  },
+{% if use_entire %}
+  "permissions": {
+    "deny": [
+      "Read(./.entire/metadata/**)",
+      "Read(./src/{{ custom_repo_name }}/.entire/metadata/**)"
     ]
   },
+{% endif %}
   "statusLine": {
     "type": "command",
     "command": "bash ${{ project_dir_var }}/.claude/statusline-command.sh"
