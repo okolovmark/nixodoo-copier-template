@@ -10,7 +10,7 @@
             "command": "bash ${{ project_dir_var }}/.claude/hooks/entire-fanout.sh session-start"
           }
         ]
-      }{% if use_kb %},{% endif %}
+      }{% if use_kb %},{% endif +%}
 {% endif %}
 {% if use_kb %}
       {
@@ -34,7 +34,7 @@
             "command": "bash ${{ project_dir_var }}/.claude/hooks/entire-fanout.sh session-end"
           }
         ]
-      }{% if use_kb %},{% endif %}
+      }{% if use_kb %},{% endif +%}
 {% endif %}
 {% if use_kb %}
       {
@@ -73,7 +73,7 @@
           {
             "type": "command",
             "command": "python3 ${{ project_dir_var }}/.claude/hooks/nudge-kb-truncation.py"
-          }{% endif %}
+          }{% endif +%}
         ]
       },
       {
@@ -93,7 +93,7 @@
             "command": "bash ${{ project_dir_var }}/.claude/hooks/entire-fanout.sh pre-task"
           }
         ]
-      }{% endif %}
+      }{% endif +%}
     ],
     "PostToolUse": [
       {
@@ -122,7 +122,7 @@
             "command": "bash ${{ project_dir_var }}/.claude/hooks/entire-fanout.sh post-todo"
           }
         ]
-      }{% endif %}
+      }{% endif +%}
     ]{% if use_entire %},
     "Stop": [
       {
@@ -145,7 +145,7 @@
           }
         ]
       }
-    ]{% endif %}
+    ]{% endif +%}
   },
 {% if use_entire %}
   "permissions": {
