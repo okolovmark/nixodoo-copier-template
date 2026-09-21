@@ -38,6 +38,20 @@ log_truncate_on_rotation = on
 listen_addresses = 'localhost'
 EOF
     mkdir -p "$PGDATA/log"
+
+    # initdb creates exactly one role, named after the OS user. Everything in
+    # this project connects as $PGUSER instead, so the cluster that owns the
+    # role creates it, here, rather than leaving it to whichever script happens
+    # to touch the cluster first. It used to be created as a side effect of
+    # download-backup, which meant a project set up without restoring a dump
+    # had a cluster nothing could log into.
+    # The systemd service is written further down and is not running yet, so
+    # start the fresh cluster just long enough to do it.
+    pg_ctl start -o "-k $PGHOST -p $PGPORT"
+    env PGUSER="$USER" PGDATABASE=postgres psql -d postgres \
+        -c "CREATE USER $PGUSER WITH SUPERUSER PASSWORD '$PGPASSWORD';"
+    pg_ctl stop
+    echo "Created PostgreSQL role '$PGUSER'"
 fi
 
 # Create PostgreSQL systemd service
