@@ -39,7 +39,7 @@ python3 $L sym   <query>                  # workspace-wide symbol search
 python3 $L model <model.name>             # every class defining/extending the model
 python3 $L open  <file>                   # push current file content to the server
 python3 $L bump  <version>                # install an odoo-ls release, repoint 'current'
-python3 $L status|restart|stop            # daemon lifecycle
+python3 $L status|restart|stop|sweep      # daemon lifecycle (status names strays, sweep kills them)
 ```
 
 `<symbol>` is text on that line (column computed automatically), or an explicit 1-based column.
@@ -78,7 +78,7 @@ python3 $L who <field_name>
 ## Caveats
 
 - **`who`/`refs` are a lower bound.** It resolves usages by type inference, so it misses sites where the receiver type is lost: lambda params inside `filtered()`/`mapped()`, field names inside XML `attrs=`/domain strings. Always cross-check with `grep -rn` before claiming "unused" or renaming.
-- Daemon: cold start indexes the whole tree (~10-20s), then queries are ~1s. Auto-starts on first query, exits after 3h idle. `restart` after big git operations (checkout/rebase) — the daemon only sees fresh content of files you query or `open`.
+- Daemon: cold start indexes the whole tree (~10-20s), then queries are ~1s. Auto-starts on first query, exits after 3h idle. `restart` after big git operations (checkout/rebase) — the daemon only sees fresh content of files you query or `open`. One daemon per project, one server under it; a server whose daemon was killed outright keeps ~1.5 GB and is invisible to the next one, so the daemon sweeps such strays at startup and `status` names any it sees.
 - Binary resolution: `ODOO_LS_BIN` env > `~/.local/share/odoo-ls/current/` symlink > highest version there > Zed extension dir > PATH. `lsp.py bump <version>` installs a release from https://github.com/odoo/odoo-ls/releases and repoints `current` — use at least 1.5.1 (1.4.0's GoToReferences misses `with_company()` chains and XML field usages). Zed users: point `lsp.odoo.binary.path` in Zed settings at the `current` symlink so the editor and this CLI run the same server.
 - Server config = `odools.toml` at project root (shared with the editor). Logs: `~/.cache/odoo-ls-cli/`.
 

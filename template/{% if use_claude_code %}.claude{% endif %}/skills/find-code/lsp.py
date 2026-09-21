@@ -14,7 +14,7 @@ Commands:
   model <model.name>                 every class defining/extending the model
   open  <file>                       push a file's current content to the server
   bump  <version>                    install an odoo-ls release, point 'current' at it
-  status | restart | stop            daemon lifecycle
+  status | restart | stop | sweep    daemon lifecycle (sweep kills servers left behind)
 """
 
 import hashlib
@@ -22,6 +22,7 @@ import json
 import os
 import queue
 import re
+import signal
 import socket
 import subprocess
 import sys
@@ -131,6 +132,20 @@ class LSP:
         self.docs = {}  # abs path -> (version, content sha1)
         threading.Thread(target=self._reader, daemon=True).start()
         self._initialize()
+
+    def stop(self):
+        """Take the server down with us. It will not go on its own."""
+        if self.proc.poll() is not None:
+            return
+        self.proc.terminate()
+        try:
+            self.proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+            try:
+                self.proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
 
     def _write(self, obj):
         b = json.dumps(obj).encode()
@@ -245,6 +260,68 @@ class LSP:
         self.docs[path] = (version, sha)
 
 
+def find_orphans():
+    """Every odoo_ls_server of ours whose daemon is gone.
+
+    One daemon per project is the design - the socket is keyed by the project
+    root and a second daemon loses the bind and leaves. What breaks the count
+    is the server outliving its parent: it honours neither --client-process-id
+    nor EOF on its stdin (measured 2026-09-21 on 0.9.x, one had been holding
+    1.5 GB for three days after its daemon was killed). A stray is invisible to
+    the next daemon, which then indexes the tree a second time next to it.
+
+    Ours are the ones logging into RUNTIME_DIR; an editor's own server writes
+    its logs elsewhere and is never touched, even though it shares the binary.
+    """
+    strays = []
+    for entry in glob("/proc/[0-9]*/cmdline"):
+        try:
+            with open(entry, "rb") as fh:
+                argv = fh.read().decode("utf-8", "replace").split("\0")
+        except OSError:
+            continue  # the process is already gone, or is not ours to read
+        if not argv or not argv[0].endswith("odoo_ls_server"):
+            continue
+        if RUNTIME_DIR not in argv:
+            continue
+        try:
+            client = int(argv[argv.index("--client-process-id") + 1])
+        except (ValueError, IndexError):
+            continue
+        try:
+            os.kill(client, 0)
+            continue  # its daemon is alive, so this one is doing its job
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            continue  # someone else's process on a reused pid; leave it alone
+        strays.append(int(entry.split("/")[2]))
+    return strays
+
+
+def sweep_orphans():
+    """Terminate the strays find_orphans() names, and return what was killed."""
+    killed = []
+    for pid in find_orphans():
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            continue
+        for _ in range(30):
+            time.sleep(0.1)
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+        else:
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+        killed.append(pid)
+    return killed
+
+
 def run_daemon():
     os.makedirs(RUNTIME_DIR, exist_ok=True)
     if os.path.exists(SOCK):
@@ -259,18 +336,31 @@ def run_daemon():
     except OSError:
         return  # lost the race to another daemon
     srv.listen(8)
+    for pid in sweep_orphans():
+        print(f"swept orphaned odoo_ls_server {pid}", file=sys.stderr)
     lsp = LSP()
     state = {"last": time.time()}
     qlock = threading.Lock()
+
+    def shutdown():
+        """Never exit without the server: a stray holds ~1.5 GB for days."""
+        try:
+            lsp.stop()
+        finally:
+            try:
+                os.unlink(SOCK)
+            except OSError:
+                pass
+            os._exit(0)
+
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(sig, lambda *_: shutdown())
 
     def idle_watch():
         while True:
             time.sleep(60)
             if time.time() - state["last"] > IDLE_EXIT or lsp.proc.poll() is not None:
-                try:
-                    os.unlink(SOCK)
-                finally:
-                    os._exit(0)
+                shutdown()
 
     threading.Thread(target=idle_watch, daemon=True).start()
 
@@ -286,16 +376,14 @@ def run_daemon():
             state["last"] = time.time()
             op = req.get("op")
             if op == "ping":
-                resp = {"ok": 1, "pid": os.getpid(), "bin": os.path.realpath(lsp.bin),
+                resp = {"ok": 1, "pid": os.getpid(), "server_pid": lsp.proc.pid,
+                        "bin": os.path.realpath(lsp.bin),
                         "ready": bool(lsp._progress_seen and not lsp._progress),
                         "uptime": int(time.time() - lsp.started), "root": ROOT}
             elif op == "stop":
                 conn.sendall(b'{"ok": 1}\n')
                 conn.close()
-                try:
-                    os.unlink(SOCK)
-                finally:
-                    os._exit(0)
+                shutdown()
             elif op == "open":
                 lsp.wait_ready()
                 with qlock:
@@ -441,6 +529,13 @@ def main():
             raise
         except Exception:
             print("daemon not running")
+        strays = find_orphans()
+        if strays:
+            print(f"orphaned odoo_ls_server (no daemon, ~1.5 GB each): {strays}\n"
+                  f"clear them with: {os.path.basename(__file__)} sweep")
+    elif cmd == "sweep":
+        killed = sweep_orphans()
+        print(f"swept {killed}" if killed else "no orphaned odoo_ls_server")
     elif cmd == "stop":
         try:
             cli_send({"op": "stop"}, timeout=5)
