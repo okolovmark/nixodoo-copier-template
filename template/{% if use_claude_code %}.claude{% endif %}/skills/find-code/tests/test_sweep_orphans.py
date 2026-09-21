@@ -12,6 +12,7 @@ Usage: python3 .claude/skills/find-code/tests/test_sweep_orphans.py
 
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -49,8 +50,11 @@ def fake_server(bindir, logs_dir, client_pid):
     binary = bindir / "odoo_ls_server"
     if not binary.exists():
         binary.symlink_to(shutil.which("bash"))
+    # Its own session, so the sleep it spawns can be cleaned up with it: killing
+    # the bash alone leaves the sleep behind for five minutes.
     return subprocess.Popen(
-        [str(binary), "-c", "sleep 300; :", "fake",
+        start_new_session=True,
+        args=[str(binary), "-c", "sleep 300; :", "fake",
          "--config-path", "/nowhere/odools.toml",
          "--selected-config", "test", "--log-level", "warn",
          "--logs-directory", str(logs_dir),
@@ -85,8 +89,10 @@ def main():
         check("nothing is left to find", not lsp.find_orphans())
     finally:
         for proc in (stray, live, editor):
-            if proc.poll() is None:
-                proc.kill()
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
             proc.wait()
 
     print("PASS" if not failures else f"FAIL ({len(failures)})")
