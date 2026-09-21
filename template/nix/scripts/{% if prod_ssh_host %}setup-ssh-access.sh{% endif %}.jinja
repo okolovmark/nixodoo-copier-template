@@ -1,31 +1,47 @@
 # shellcheck shell=bash
-# One-time SSH key + config for the remote servers (no-op if .ssh exists).
+# SSH key + config for the remote servers. Each half is skipped when it already
+# exists: the key pair is never regenerated, and .ssh/config is written only
+# when missing — remove that one file and rerun to pick up new hosts.
+# The key has no passphrase: the deploy and prod-ops scripts use it
+# non-interactively.
 set -e
-if [ ! -d "$PWD/.ssh" ]; then
+KEY="$PWD/.ssh/odoo{{ odoo_major }}"
+CONFIG="$PWD/.ssh/config"
+mkdir -p "$PWD/.ssh"
+if [ ! -f "$KEY" ]; then
     echo "Configuring ssh access for servers..."
-    mkdir .ssh
-    ssh-keygen -t ed25519 -f "$PWD/.ssh/odoo{{ odoo_major }}"
+    ssh-keygen -t ed25519 -N '' -f "$KEY"
     echo "Ask your admin to add this public key to the servers:"
-    cat "$PWD/.ssh/odoo{{ odoo_major }}.pub"
+    cat "$KEY.pub"
     echo
-    cat > "$PWD/.ssh/config" << EOF
+fi
+if [ -f "$CONFIG" ]; then
+    echo ".ssh/config exists — remove it and rerun to regenerate it from the current hosts."
+else
+    cat > "$CONFIG" << EOF
 Host prod
   HostName {{ prod_ssh_host }}
   User {{ prod_ssh_user }}
-  IdentityFile $PWD/.ssh/odoo{{ odoo_major }}
+  IdentityFile $KEY
   ServerAliveInterval 60
   ServerAliveCountMax 3
-{% if test_ssh_host %}
-Host test
-  HostName {{ test_ssh_host }}
+{% if prod_local_ssh_host %}
+Host prod-local
+  HostName {{ prod_local_ssh_host }}
+  User {{ prod_ssh_user }}
+  IdentityFile $KEY
+  ServerAliveInterval 60
+  ServerAliveCountMax 3
+{% endif %}
+{% for alias, host in test_ssh_hosts.items() %}
+Host {{ alias }}
+  HostName {{ host }}
   User {{ test_ssh_user }}
   Port {{ test_ssh_port }}
-{% if test_local_forward %}
-  LocalForward {{ test_local_forward }}
-{% endif %}
-  IdentityFile $PWD/.ssh/odoo{{ odoo_major }}
+  IdentityFile $KEY
   ServerAliveInterval 60
   ServerAliveCountMax 3
-{% endif %}
+{% endfor %}
 EOF
+    echo "Wrote $CONFIG"
 fi

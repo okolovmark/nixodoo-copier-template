@@ -24,7 +24,8 @@ jobs:
               -d odoo_prod_url=https://odoo.example.com -d use_pipeline=true
               -d backup_s3_bucket=acme-backups -d editor=vscode
               -d prod_ssh_host=203.0.113.1 -d prod_web_url=https://odoo.example.com
-              -d test_ssh_host=203.0.113.2
+              -d prod_local_ssh_host=10.0.0.5
+              -d 'test_ssh_hosts={test: 203.0.113.2, test2: 203.0.113.3}'
           - name: no-claude-18
             args: >-
               -d project_name=ci-plain -d odoo_version=18.0

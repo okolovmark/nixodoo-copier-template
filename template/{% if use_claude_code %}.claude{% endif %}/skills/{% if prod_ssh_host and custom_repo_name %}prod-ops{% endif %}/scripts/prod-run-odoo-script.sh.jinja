@@ -1,9 +1,10 @@
+{% set hosts = ['prod'] + (['prod-local'] if prod_local_ssh_host else []) + (test_ssh_hosts | list) %}
 #!/usr/bin/env bash
 # Run a LOCAL odoo-shell script on the prod/test box: pipes the named file into
 # `odoo-bin shell` over SSH. The shell runs as SUPERUSER; the dry/commit
 # discipline is the script contract (see the prod-ops skill), not a guard here.
 #
-# Usage: prod-run-odoo-script.sh <prod{% if test_ssh_host %}|test{% endif %}> <script.py> [dry|commit]
+# Usage: prod-run-odoo-script.sh <{{ hosts | join('|') }}> <script.py> [dry|commit]
 #
 # The script must read SCRIPT_MODE (default "dry"), only env.cr.commit() in
 # commit mode, and end with: print("SCRIPT_DONE mode=%s" % MODE)
@@ -15,10 +16,10 @@ HOST="${1:-}"
 SCRIPT="${2:-}"
 MODE="${3:-dry}"
 
-usage() { echo "usage: $0 <prod{% if test_ssh_host %}|test{% endif %}> <script.py> [dry|commit]" >&2; exit 2; }
+usage() { echo "usage: $0 <{{ hosts | join('|') }}> <script.py> [dry|commit]" >&2; exit 2; }
 
 case "$HOST" in
-  prod{% if test_ssh_host %}|test{% endif %}) ;;
+  {{ hosts | join('|') }}) ;;
   *) usage ;;
 esac
 [ -n "$SCRIPT" ] && [ -f "$SCRIPT" ] || { echo "no such script: $SCRIPT" >&2; usage; }

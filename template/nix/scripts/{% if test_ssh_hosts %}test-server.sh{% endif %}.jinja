@@ -1,0 +1,24 @@
+# shellcheck shell=bash
+# SSH into a test box by its alias in .ssh/config ({{ test_ssh_hosts | join(', ') }}).
+# With a single box the alias may be omitted.
+if [ -z "${{ project_dir_var }}" ]; then {{ project_dir_var }}="$(pwd)"; fi
+ALIASES=({% for alias in test_ssh_hosts %}{{ alias }} {% endfor %})
+{% if test_ssh_hosts | length == 1 %}
+BOX="${1:-{{ (test_ssh_hosts | list)[0] }}}"
+{% else %}
+BOX="${1:-}"
+{% endif %}
+found=0
+for a in "${ALIASES[@]}"; do
+    [ "$a" = "$BOX" ] && found=1
+done
+if [ "$found" -ne 1 ]; then
+    echo "usage: nix run .#test-server -- <alias>   # one of: ${ALIASES[*]}" >&2
+    exit 2
+fi
+echo "Connecting to $BOX..."
+{% if test_web_url %}
+URL="{{ test_web_url }}"
+echo "URL: ${URL//\{alias\}/$BOX}"
+{% endif %}
+ssh -F "${{ project_dir_var }}/.ssh/config" "$BOX"

@@ -1,8 +1,15 @@
 # shellcheck shell=bash
 # SSH into the production server using the project-local SSH config.
+{% if prod_local_ssh_host %}
+# `prod-server local` takes the office-LAN address ({{ prod_local_ssh_host }}) instead.
+{% endif %}
 if [ -z "${{ project_dir_var }}" ]; then {{ project_dir_var }}="$(pwd)"; fi
-echo "Connecting to production server..."
+HOST=prod
+{% if prod_local_ssh_host %}
+if [ "${1:-}" = "local" ]; then HOST=prod-local; fi
+{% endif %}
+echo "Connecting to production server ($HOST)..."
 {% if prod_web_url %}
 echo "URL: {{ prod_web_url }}"
 {% endif %}
-ssh -F "${{ project_dir_var }}/.ssh/config" prod
+ssh -F "${{ project_dir_var }}/.ssh/config" "$HOST"

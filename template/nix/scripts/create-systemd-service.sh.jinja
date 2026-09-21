@@ -10,8 +10,9 @@ echo "Creating systemd user services..."
 echo "Project directory: $PROJECT_DIR"
 mkdir -p "$SYSTEMD_DIR"
 
-# Add or update {{ project_dir_var }} in ~/.bashrc if it exists
-if [ -f "$HOME/.bashrc" ]; then
+# Add or update {{ project_dir_var }} in ~/.bashrc when there is a writable one
+# (-w as well as -f: a read-only rc file must not abort the whole setup under set -e).
+if [ -f "$HOME/.bashrc" ] && [ -w "$HOME/.bashrc" ]; then
     if grep -q "export {{ project_dir_var }}=" "$HOME/.bashrc"; then
         echo "Updating {{ project_dir_var }} in ~/.bashrc..."
         sed -i "s|export {{ project_dir_var }}=.*|export {{ project_dir_var }}=$PROJECT_DIR|g" "$HOME/.bashrc"
@@ -26,6 +27,9 @@ if [ -f "$HOME/.bashrc" ]; then
         } >> "$HOME/.bashrc"
         echo "  Added {{ project_dir_var }} to ~/.bashrc"
     fi
+else
+    echo "NOTE: ~/.bashrc is missing or not writable. Export this yourself in your shell's rc file:"
+    echo "        export {{ project_dir_var }}=$PROJECT_DIR"
 fi
 
 # Create Odoo service

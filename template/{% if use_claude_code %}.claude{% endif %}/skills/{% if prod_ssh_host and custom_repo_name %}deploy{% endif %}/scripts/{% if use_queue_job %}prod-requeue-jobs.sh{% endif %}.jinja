@@ -1,3 +1,4 @@
+{% set hosts = ['prod'] + (['prod-local'] if prod_local_ssh_host else []) + (test_ssh_hosts | list) %}
 #!/usr/bin/env bash
 # Requeue queue.job rows left in enqueued/started -> pending (the OCA "Requeue"
 # button). After a deploy restart, `started` jobs are orphaned (their runner
@@ -10,13 +11,13 @@
 # usually no RPC fallback — a service account outside Job Queue Manager cannot
 # read queue.job at all.
 #
-# Usage: prod-requeue-jobs.sh [prod|test]     (default: prod)
+# Usage: prod-requeue-jobs.sh [{{ hosts | join('|') }}]     (default: prod)
 # Prints: REQUEUED <n>   — exits non-zero if that marker never appears, so a
 #                          silent no-op cannot read as success.
 set -euo pipefail
 
 HOST="${1:-prod}"
-case "$HOST" in prod|test) ;; *) echo "refusing unknown host: $HOST" >&2; exit 2 ;; esac
+case "$HOST" in {{ hosts | join('|') }}) ;; *) echo "refusing unknown host: $HOST" >&2; exit 2 ;; esac
 
 PROJECT_DIR="${{ project_dir_var }}"
 [ -n "$PROJECT_DIR" ] || PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"

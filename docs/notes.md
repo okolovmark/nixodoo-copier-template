@@ -26,12 +26,6 @@ Things that surprised somebody once, kept out of [the README](../README.md) so i
   commands: that is one permission decision instead of a fresh judgement call
   every deploy. Nothing there runs before the skill's approval gate, and Claude
   cannot grant itself the permission entry — it composes it and you paste it.
-- `postgres-mcp` in `.mcp.json` runs with `--access-mode=unrestricted` — it
-  targets the **local dev database** only (`DATABASE_URI` from `.env`).
-- `postgres-mcp` runs with `--with 'mcp<2'`: it imports
-  `mcp.server.fastmcp`, which the `mcp` SDK dropped in 2.0.0, and does not cap
-  its own dependency. The `odoo` server needs no pin — it goes through the
-  `fastmcp` package, which caps `mcp` itself.
 - `nudge-kb-truncation.py` (PreToolUse, rendered with `use_kb`) refuses a Bash command that
   reads kb through a truncating filter: `head`, `tail`, `cut -c`, a `sed -n` range, an
   `awk NR` filter, `grep -m`, `less`. Unlike the find-code nudge it has no session budget
