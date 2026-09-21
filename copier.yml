@@ -253,7 +253,7 @@ prod_link_addons_cmd:
 # Test boxes: one SSH alias per entry, all sharing the user and port below. A
 # single box is `{test: 203.0.113.2}`; a per-developer fleet is
 # `{odoo1.kepi: 192.168.20.112, odoo2.kepi: 192.168.20.113}`. Every alias goes
-# into .ssh/config, `nix run .#test-server -- <alias>` connects, and the deploy
+# into .ssh/config, `test-server <alias>` (dev-server profile) connects, and the deploy
 # and prod-ops scripts accept it as their host argument.
 test_ssh_hosts:
   type: yaml

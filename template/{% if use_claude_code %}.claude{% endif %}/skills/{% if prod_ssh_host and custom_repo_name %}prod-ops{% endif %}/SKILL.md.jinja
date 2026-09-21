@@ -13,7 +13,7 @@ command and getting an explicit OK.
 ## Access & layout
 
 - `ssh -F "${{ project_dir_var }}/.ssh/config" prod '<remote command>'` — the
-  same connection `nix run .#prod-server` uses interactively. Add `-A` only
+  same connection the `prod-server` command uses interactively. Add `-A` only
   when the remote command needs git (pull on the forwarded key).
 {% if prod_local_ssh_host %}
 - `prod-local` is the same box over the office LAN ({{ prod_local_ssh_host }});
