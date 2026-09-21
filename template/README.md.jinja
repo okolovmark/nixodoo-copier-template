@@ -77,6 +77,31 @@ bash .claude/memory-template/scripts/init-memory.sh
 ```
 {% endif %}
 
+{% if use_entire %}
+### Entire CLI installation
+
+Sessions here are recorded by [Entire](https://entire.io): checkpoints on `refs/entire/*`,
+one session record per repository. The `.claude/` hooks call it on every phase and carry on
+silently when it is missing, so nothing breaks without it.
+
+Prefer the release artifact over the vendor's one-line installer, which pipes a script from
+the network straight into a shell. The binary is a static Go build, so unpacking is all it
+takes:
+
+```bash
+gh release download v0.10.6 --repo entireio/cli \
+  --pattern 'entire_linux_amd64.tar.gz' --pattern checksums.txt
+sha256sum -c --ignore-missing checksums.txt
+tar -xzf entire_linux_amd64.tar.gz entire git-remote-entire
+install -m 755 entire git-remote-entire ~/.local/bin/
+```
+
+The version is not pinned by the flake: it lives on each machine, like Claude Code itself,
+and the CLI nudges you when a newer one exists. 0.10.6 is what this project has been
+verified against; check yours with `entire --version`, and keep the pair you replace for a
+rollback.
+
+{% endif %}
 {% endif %}
 ### UV and UVX Installation
 

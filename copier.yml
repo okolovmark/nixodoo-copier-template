@@ -193,6 +193,12 @@ use_kb:
   default: false
   when: "{{ use_claude_code }}"
 
+use_entire:
+  type: bool
+  help: Sessions recorded by the Entire CLI (entire.io)? Documents it as a prerequisite; the hooks that call it skip silently when it is not installed.
+  default: false
+  when: "{{ use_claude_code }}"
+
 backup_s3_bucket:
   type: str
   help: S3 bucket with production pg_dump backups (empty = no download-backup/aws tooling)
