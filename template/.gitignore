@@ -30,3 +30,7 @@ result
 # Per-agent scratch state written by Claude Code. Never committed, and left
 # untracked it makes the working tree dirty, which blocks `copier update`.
 .claude/agent-memory/
+
+# The deploy lock the deploy skill takes on the prod/test box (a directory in
+# this same checkout there): never committed.
+.deploy-lock/
