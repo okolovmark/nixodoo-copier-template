@@ -7,6 +7,7 @@ belongs here, not inline in `SKILL.md`.
 
 | Script | Deploy step | Writes | Success marker |
 |---|---|---|---|
+| `prod-deploy-lock.sh` | Step 3.5 (acquire), Step 7 (release / mark-failed) | the lock directory `{{ prod_remote_project_dir }}/.deploy-lock` on the box | `LOCK_ACQUIRED` / `LOCK_RELEASED` / `LOCK_MARKED_FAILED` |
 | `prod-deploy-modules.sh` | Step 2, every deploy | pulls `{{ odoo_version }}`, updates modules, restarts the service | `DEPLOY_EXIT=0` |
 {% if use_queue_job %}| `prod-requeue-jobs.sh` | Step 6, after a clean deploy | `queue.job` enqueued/started → pending | `REQUEUED <n>` |
 {% endif %}
@@ -19,7 +20,9 @@ Call them with the host spelled out — that is the form the permission rules
 match:
 
 ```bash
+bash "${{ project_dir_var }}/.claude/skills/deploy/scripts/prod-deploy-lock.sh" prod acquire <PR> --wait 1800
 bash "${{ project_dir_var }}/.claude/skills/deploy/scripts/prod-deploy-modules.sh" prod -u <modules>
+bash "${{ project_dir_var }}/.claude/skills/deploy/scripts/prod-deploy-lock.sh" prod release <PR>
 {% if use_queue_job %}bash "${{ project_dir_var }}/.claude/skills/deploy/scripts/prod-requeue-jobs.sh" prod
 {% endif %}```
 
@@ -40,11 +43,43 @@ Two rule shapes, and the difference matters:
   authorize *this script with any valid module list* — that is the entry the
   deploy script needs, and the script validates its own arguments (host,
   `-u`/`-i`, `^[a-z0-9_,]+$` module list) so the prose can describe a closed set.
+  The lock script needs the same shape: its PR number changes every deploy, and
+  it validates host, action (`acquire|status|release|mark-failed`), a numeric
+  PR, a numeric `--wait` and `--force`.
 
 **Claude cannot write its own permission file** — by any tool, and the refusal
 is not negotiable. Compose the entry, hand it to the user, and let them paste
 it. Do that *before* the first deploy of a new module, not after the deploy
 stalls halfway.
+
+## The deploy lock
+
+Several developers deploy from their own clones of this project, and each
+learns that another deploy is running only from a chat message they may not
+have read yet. `prod-deploy-lock.sh` is the machine check: a directory
+`{{ prod_remote_project_dir }}/.deploy-lock` on the box, created with `mkdir`
+(atomic — two deployers racing for it cannot both win), holding one line
+`holder=<gh login> pr=<n> since=<UTC> state=deploying|failed`.
+
+- **Taken before the merge** (Step 3.5), because a merged PR lands on prod
+  with the next `git pull`, whoever runs it; **released after the result is
+  posted** (Step 7). `prod-deploy-modules.sh` refuses to run without it
+  (`DEPLOY_LOCK_MISSING`, `DEPLOY_EXIT=3`), so a deploy that skipped the
+  skill's Step 3.5 stops before the pull.
+- `acquire <PR> --wait 1800` retries every 5 minutes for up to 30, one short
+  ssh call per attempt (the box drops long sessions; an unanswered attempt is
+  repeated, three in a row give `SSH_UNREACHABLE`). Still held after the wait →
+  `LOCK_HELD holder=… since=… age=…m`, exit 3: the skill stops and reports who
+  holds it. **Nothing releases another holder's lock automatically** — a
+  Step-2b deploy legitimately holds it with the service stopped for minutes.
+  `release --force` exists for the human who has checked with the holder, and
+  runs only on their explicit command.
+- **A failed deploy keeps the lock**, `state=failed` (`mark-failed <PR>`): prod
+  may be half-migrated and the next deploy must not land on top of it. The
+  acquire loop does not wait on a failed lock; the person who repairs prod
+  releases it.
+- Test boxes carry their own lock, same script, the alias as host.
+- The lock lives in this checkout on the box and is in `.gitignore`.
 
 ## Project write steps
 

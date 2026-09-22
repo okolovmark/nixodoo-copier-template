@@ -1,18 +1,23 @@
 {% set repo_org = custom_repo_pattern | regex_replace('.*[:/]([^/]+)/\\{\\}.*', '\\1') if custom_repo_pattern else 'my-org' %}
 ---
 name: deploy
-description: "Deploy a merged addons PR to the Odoo PRODUCTION server{% if status_mcp == 'teams' %}, announce it in the maintenance Teams chat{% endif %}{% if use_queue_job %}, and requeue stuck queue jobs{% endif %}: blast-radius tag -> {% if status_mcp == 'teams' %}notify start -> {% endif %}deploy over SSH{% if use_queue_job %} -> requeue enqueued/started queue.jobs{% endif %} -> invariant check (T+0, and T+60 for high blast radius){% if status_mcp == 'teams' %} -> notify result{% endif %}{% if tickets_mcp == 'odoo' %} -> note the exact deploy commands on the task{% endif %}. Use when the user says a PR is merged and asks to deploy it. Always prints the exact prod commands and waits for explicit approval before touching prod."
+description: "Merge an approved addons PR and deploy it to the Odoo PRODUCTION server under the box's deploy lock{% if status_mcp == 'teams' %}, announcing it in the maintenance Teams chat{% endif %}{% if use_queue_job %}, then requeue stuck queue jobs{% endif %}: mergeable? -> blast-radius tag -> plan -> deploy lock (waits up to 30 min on another developer's deploy) -> merge -> {% if status_mcp == 'teams' %}notify start -> {% endif %}deploy over SSH{% if use_queue_job %} -> requeue enqueued/started queue.jobs{% endif %} -> invariant check (T+0, and T+60 for high blast radius){% if status_mcp == 'teams' %} -> notify result{% endif %} -> release the lock{% if tickets_mcp == 'odoo' %} -> note the exact deploy commands on the task{% endif %}. Use when the user says 'merge PR N and deploy', or 'deploy PR N' for an already-merged PR. That command is the approval: the skill prints the plan and the exact prod commands and stops only on an anomaly."
 argument-hint: "[PR number or URL] [prod{% if test_ssh_hosts %}|<test alias>{% endif %} — default prod]"
 ---
 
-# Deploy — production Odoo
+# Merge + deploy — production Odoo
 
-Beats: **blast-radius tag -> {% if status_mcp == 'teams' %}notify start -> {% endif %}deploy on prod{% if use_queue_job %} -> requeue stuck
+Beats: **mergeable? -> blast-radius tag -> plan -> deploy lock -> merge -> {% if status_mcp == 'teams' %}notify start -> {% endif %}deploy on prod{% if use_queue_job %} -> requeue stuck
 queue jobs{% endif %} -> invariant check (T+0; T+60 again for high blast radius){% if status_mcp == 'teams' %} ->
-notify result{% endif %}{% if tickets_mcp == 'odoo' %} -> note the exact commands on the task{% endif %}**. Runs commands on the
-**production** server — never acts without showing the exact commands and
-getting an explicit OK first. Step numbers are fixed across projects — a gap in
-them means this project does not run that step.
+notify result{% endif %} -> release the lock{% if tickets_mcp == 'odoo' %} -> note the exact commands on the task{% endif %}**. Runs commands on the
+**production** server. The user's command — "merge PR N and deploy", or
+"deploy PR N" for a PR already merged — is the approval: Step 3 prints the plan
+and the exact commands and goes on, stopping only when the plan holds something
+the command did not imply (the list is in Step 3). Several developers deploy
+from their own clones, so the box carries a **deploy lock** (Step 3.5): taken
+before the merge, released after the result, never broken by this skill on its
+own. Step numbers are fixed across projects — a gap in them means this project
+does not run that step.
 
 ## Fixed targets
 
@@ -40,16 +45,55 @@ chat was recreated.
   target that alias instead of `prod`.
 {% endif %}
 
-## Step 1 — Resolve the PR
+## Step 0 — Is the PR mergeable?
 
-PRs live in `{{ repo_org }}/{{ custom_repo_name }}`, base `{{ odoo_version }}`.
+PRs live in `{{ repo_org }}/{{ custom_repo_name }}`, base `{{ odoo_version }}`. The merge in Step 3.5
+runs as your `gh` account (`gh auth status`), and the lock carries its login.
 
 ```bash
-gh pr view <PR> -R {{ repo_org }}/{{ custom_repo_name }} --json number,title,body,url,state,mergedAt
+gh pr view <PR> -R {{ repo_org }}/{{ custom_repo_name }} --json number,title,url,state,mergeable,headRefOid,headRefName,mergeCommit,statusCheckRollup \
+  --jq '{number,title,url,state,mergeable,headRefOid,headRefName,mergeCommit,checks: [.statusCheckRollup[]? | {name: (.name // .context), status: (.conclusion // .state)}]}'
+```
+
+- `state: MERGED` → the old "deploy PR N" form: the merge checks below do not
+  apply, Step 3.5 skips the merge, and `mergeCommit.oid` is the `MC` Step 1
+  uses.
+- `state: OPEN` → every check must hold, else **stop** and name the one that
+  failed — never merge around a red check or a conflict, and take no lock:
+  - `mergeable: MERGEABLE` (`CONFLICTING` → the author rebases first;
+    `UNKNOWN` → GitHub is still computing, re-query after a few seconds);
+  - every `checks[].status` is `SUCCESS` (`NEUTRAL` / `SKIPPED` pass;
+    `PENDING` / `IN_PROGRESS` / `QUEUED` → CI is still running, wait for it;
+    `FAILURE` / `ERROR` / `CANCELLED` → stop);
+  - keep `headRefOid`: it is the commit the user's command approved, and the
+    merge in Step 3.5 refuses anything else.
+  No review is required here; the checks above are the gate.
+- `state: CLOSED` → stop; nothing to deploy.
+
+## Step 1 — Resolve the PR
+
+Everything here is read-only and runs **before the merge**, so an anomaly stops
+the deploy while the PR is still open.
+
+```bash
+gh pr view <PR> -R {{ repo_org }}/{{ custom_repo_name }} --json body
 gh api repos/{{ repo_org }}/{{ custom_repo_name }}/pulls/<PR>/files --paginate --jq '.[] | .status + "\t" + .filename'
 ```
 
-- `state` **must be `MERGED`** — else stop; this skill deploys merged work only.
+The diff this deploy lands, as a git range for the checks below — fetch the PR
+head first (`refs/pull/<PR>/head` exists for a fork's PR too):
+
+```bash
+REPO="${{ project_dir_var }}/src/{{ custom_repo_name }}"
+git -C "$REPO" fetch origin "+refs/pull/<PR>/head:refs/remotes/origin/pr/<PR>" {{ odoo_version }}
+# OPEN PR — its own changes against the base it will merge into
+RANGE="$(git -C "$REPO" merge-base origin/{{ odoo_version }} <headRefOid>)..<headRefOid>"
+# MERGED PR — the merge commit's own diff. MC^1..MC, never `git show $MC`: on a
+# merge commit git show prints the combined diff, which is empty here, so every
+# grep below would pass every PR.
+RANGE="$MC^1..$MC"
+```
+
 - **modules** = top-level dir of each changed path that owns a `__manifest__.py`
   (drop repo-root files like linter configs, `README*`, `.github/...`).
 - **new module** = `<module>/__manifest__.py` with status `added` → install with
@@ -65,9 +109,7 @@ gh api repos/{{ repo_org }}/{{ custom_repo_name }}/pulls/<PR>/files --paginate -
   statements needing an AccessExclusiveLock:
 
   ```bash
-  # MC^1..MC, never `git show $MC`: on a merge commit git show prints the
-  # combined diff, which is empty here, so the grep would pass every PR.
-  git -C "${{ project_dir_var }}/src/{{ custom_repo_name }}" diff "$MC^1..$MC" -- '*/migrations/*' \
+  git -C "$REPO" diff "$RANGE" -- '*/migrations/*' \
     | grep -inE '^\+.*(DROP TABLE|DROP COLUMN|ALTER TABLE|TRUNCATE|LOCK TABLE)'
   ```
 
@@ -77,10 +119,8 @@ gh api repos/{{ repo_org }}/{{ custom_repo_name }}/pulls/<PR>/files --paginate -
   documents):
 
   ```bash
-  MC=$(gh pr view <PR> -R {{ repo_org }}/{{ custom_repo_name }} --json mergeCommit --jq .mergeCommit.oid)
-  git -C "${{ project_dir_var }}/src/{{ custom_repo_name }}" fetch origin
   python3 "${{ project_dir_var }}/.claude/skills/deploy-checks/scripts/blast-radius.py" \
-    --repo "${{ project_dir_var }}/src/{{ custom_repo_name }}" --range "$MC^1..$MC"
+    --repo "$REPO" --range "$RANGE"
   ```
 
   Capture the final `BLAST_RADIUS=<tier>` — it drives Step 6.5/Step 9: **high**
@@ -93,16 +133,19 @@ structure (new fields), so an update is always needed; never skip it.
 **Derive the module list from the pull, not from the PR.** `git pull origin
 {{ odoo_version }}` fast-forwards the whole branch, so everything merged since prod's last
 deploy comes along and goes live on the restart — including PRs nobody asked you
-to deploy, which then never get their own `-u`. List what is actually landing:
+to deploy, which then never get their own `-u`. List what is already merged and
+not yet on prod:
 
 ```bash
 PROD_HEAD=$(ssh -F "${{ project_dir_var }}/.ssh/config" prod 'git -C {{ prod_remote_project_dir }}/src/{{ custom_repo_name }} rev-parse HEAD')
-git -C "${{ project_dir_var }}/src/{{ custom_repo_name }}" fetch origin
-git -C "${{ project_dir_var }}/src/{{ custom_repo_name }}" diff --name-only "$PROD_HEAD..origin/{{ odoo_version }}" | cut -d/ -f1 | sort -u
+git -C "$REPO" diff --name-only "$PROD_HEAD..origin/{{ odoo_version }}" | cut -d/ -f1 | sort -u
+git -C "$REPO" log --oneline --merges "$PROD_HEAD..origin/{{ odoo_version }}"     # which PRs those are
 ```
 
-Every module in that list belongs in `<modules>`; name the extra PRs in Step 3
-so the approval covers them.
+Every module in that list belongs in `<modules>` next to the PR's own; the extra
+PRs are riders, and a rider is one of Step 3's anomalies — the command named one
+PR. Step 3.5 repeats this listing after the merge: it must then read exactly the
+planned set.
 
 ## Step 2 — Run the deploy script (order B: update then restart)
 
@@ -175,27 +218,99 @@ ssh -A -F "${{ project_dir_var }}/.ssh/config" prod 'systemctl --user start odoo
 
 `RETRY_EXIT=0` + `Modules loaded.` is the success pair. **Non-zero → prod is
 down and half-migrated**: do not start the service on old code, fix forward or
-restore, and tell the user immediately.
+restore, tell the user immediately, and mark the lock failed (Step 7) so nobody
+deploys on top of it.
 
 Odoo drops a removed model's table only while the model is still in the
 registry, so a retirement PR must drop it in its own migration — expect these
 statements whenever a model or field goes away.
 
-## Step 3 — Show the plan and get approval (mandatory — this is prod)
+## Step 3 — Show the plan; the command is the approval
 
-Print and **wait for an explicit "go"**:
+The command that started this — "merge PR N and deploy", or "deploy PR N" for a
+merged one — approved the PR it named. Print the plan and **go on without a
+second "go"**:
 - target host{% if test_ssh_hosts %} (`prod` or a test alias){% endif %}, the PR (title + url), affected modules,
 - the **blast radius** (tier + per-module reasons) and which invariant checks it
   earns (T+0 / T+60 / none), including any project write step the check needs,
 - **whether it runs Step 2 or Step 2b**, and for 2b the expected downtime,
-- the **full deploy command verbatim**,
+- the **full deploy command verbatim**, and the lock and merge commands of
+  Step 3.5,
 {% if status_mcp == 'teams' %}
-- the START and DONE message drafts,
+- the START and DONE message drafts.
+{% else %}
+- the result line you will report.
 {% endif %}
-- any permission rule the user must paste first (a module never deployed from
-  here — `scripts/README.md`, Permissions).
 
-No approval -> do nothing. This gate is the only thing protecting prod.
+**Stop and ask** — before the lock, before the merge, so a "no" costs nothing —
+when the plan holds something the command did not imply:
+- **Step 2b** (a migration wants an exclusive lock: the service goes down for
+  minutes);
+- **riders** — merged PRs the pull carries along that the command did not name;
+- **blast radius high** (the deploy touches this business's critical documents
+  and earns the T+60 check);
+- a **module never deployed from here** — the permission rule the user must
+  paste first (`scripts/README.md`, Permissions);
+- anything in Step 0 or Step 1 that did not add up (a check you could not read,
+  a module list that does not match the files).
+
+Nothing else is a question. A plain PR with green checks, a low or medium blast
+radius and no riders runs straight through.
+
+## Step 3.5 — Take the deploy lock, then merge
+
+Several developers deploy from their own clones; the lock on the box is what
+keeps their deploys apart in time (`scripts/README.md`, The deploy lock). It is
+taken **before** the merge because a merged PR lands on prod with the next
+`git pull`, whoever runs it.
+
+```bash
+bash "${{ project_dir_var }}/.claude/skills/deploy/scripts/prod-deploy-lock.sh" prod acquire <PR> --wait 1800
+```
+
+- Run it with Bash `run_in_background` — it retries every 5 minutes for up to
+  30 and returns when the lock is taken or the wait is up — and pick up its
+  completion notification. While it waits, tell the user who holds the lock and
+  since when (the `WAITING` lines say); post nothing to the chat.
+- `LOCK_ACQUIRED holder=<you> pr=<PR> since=<UTC> state=deploying` → merge.
+- `LOCK_HELD holder=<login> pr=<n> since=<UTC> state=deploying age=<m>m` after
+  the wait → **stop and report** holder and time; it is theirs to release.
+  Never `release --force` on your own judgement: a Step-2b deploy holds the
+  lock with the service stopped for minutes, and that is exactly when breaking
+  it would be a disaster. `--force` runs only on an explicit user command that
+  names it.
+- `LOCK_HELD … state=failed` → the previous deploy broke prod and its owner
+  left the lock up on purpose (Step 7); the script does not wait on it. Stop,
+  report; whoever repairs prod releases it.
+- `SSH_UNREACHABLE` → the box did not answer three times, nothing ran. Retry
+  once, then report.
+- A test box carries its own lock: the alias as host.
+
+**Merge** (skip for a PR Step 0 found already `MERGED`):
+
+```bash
+gh pr merge <PR> -R {{ repo_org }}/{{ custom_repo_name }} --merge --match-head-commit <headRefOid>
+```
+
+- `--merge` = a merge commit, the repo's convention (Step 1's `MC^1..MC` range
+  depends on it); no `--squash`, no `--delete-branch`.
+- Refused for a head mismatch → someone pushed to the branch after the command:
+  the new commits have no approval. **Release the lock**
+  (`prod-deploy-lock.sh prod release <PR>`), stop, tell the user.
+- Any other refusal → release the lock, stop, report.
+- Then re-query `state` and `mergeCommit.oid` until `MERGED` (usually
+  immediate); that oid is `MC` from here on.
+
+**Re-list the pull** — the Step-1 `PROD_HEAD..origin/{{ odoo_version }}` listing again, now
+including this PR. It must read exactly the planned module set; a new module
+means a rider merged while you held the lock (someone merging by hand), and
+that is the Step-3 anomaly again: stop and ask, lock held — the question is
+short and the answer changes the `-u` list.
+
+From here the lock is held until Step 7 releases it or marks it failed. Should
+you stop for any reason before Step 5 has touched prod, **release it first**: a
+lock left behind by a session that simply ended makes everyone wait 30 minutes
+on nothing.
 {% if status_mcp == 'teams' %}
 
 ## Step 4 — Notify start
@@ -242,7 +357,8 @@ the same.
 `set -euo pipefail` stops at the first failing step, so a non-zero exit is a
 real failure.
 
-- **Non-zero exit** -> go straight to Step 7 (failure).{% if use_queue_job %} Do **not** requeue.{% endif +%}
+- **Non-zero exit** -> go straight to Step 7 (failure), which keeps the lock
+  raised.{% if use_queue_job %} Do **not** requeue.{% endif +%}
   Do **not** post success.
 {% if use_queue_job %}
 
@@ -353,6 +469,25 @@ the update itself fails) — say both halves. **Never** report success on a
 non-zero exit: prod may be in a partial state and that is the one thing the
 user must hear immediately.
 {% endif %}
+
+### The lock, either way
+
+Right after the result is out:
+
+```bash
+bash "${{ project_dir_var }}/.claude/skills/deploy/scripts/prod-deploy-lock.sh" prod release <PR>        # exit 0
+bash "${{ project_dir_var }}/.claude/skills/deploy/scripts/prod-deploy-lock.sh" prod mark-failed <PR>    # non-zero exit
+```
+
+- **Success → release** (`LOCK_RELEASED pr=<PR>`). The T+60 check of Step 9 is
+  read-only and needs no lock; the next deploy may proceed.
+- **Failure → mark-failed** (`LOCK_MARKED_FAILED … state=failed`): prod may be
+  half-migrated, and the next deployer's acquire stops on that state instead of
+  landing on top of it. Say in the report that the lock stays up and who
+  releases it: the person who repairs prod, with `release --force` once it is
+  sound — on their explicit command, never yours.
+- `LOCK_MISMATCH` → the lock is not yours (held for another PR): do not touch
+  it; report.
 {% if tickets_mcp == 'odoo' %}
 
 ## Step 8 — Record the exact commands on the task

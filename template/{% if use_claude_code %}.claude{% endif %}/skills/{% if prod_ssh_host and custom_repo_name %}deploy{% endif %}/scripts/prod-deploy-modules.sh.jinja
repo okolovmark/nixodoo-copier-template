@@ -16,6 +16,10 @@
 # --link-addons re-links the addon symlinks; pass it ONLY when a module was
 # added or removed in the merged PR.
 #
+# Refuses to run unless the box's deploy lock is held (deploy skill Step 3.5,
+# prod-deploy-lock.sh beside this file): DEPLOY_LOCK_MISSING, DEPLOY_EXIT=3,
+# nothing pulled. The lock is what keeps two developers' deploys apart.
+#
 # Prints the full remote log, then DEPLOY_EXIT=<n>. Exits non-zero if the
 # update failed, so a broken deploy cannot read as success.
 set -euo pipefail
@@ -46,6 +50,7 @@ link_step=""
 # falsy, so Odoo keeps its default stderr handler and the log still comes back.
 set +e
 ssh -A -F "$SSH_CONFIG" "$HOST" "set -euo pipefail
+[ -d {{ prod_remote_project_dir }}/.deploy-lock ] || { echo 'DEPLOY_LOCK_MISSING: take the deploy lock first (prod-deploy-lock.sh <host> acquire <PR>)' >&2; exit 3; }
 export PATH=\"\$HOME/{{ nix_profile_rel }}/bin:\$PATH\"
 cd {{ prod_remote_project_dir }}/src/{{ custom_repo_name }}
 git pull origin {{ odoo_version }}

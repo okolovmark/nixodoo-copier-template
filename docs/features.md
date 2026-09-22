@@ -38,11 +38,12 @@ The full inventory behind the summary in [the README](../README.md#what-it-gener
   crons, negative stock), **prod-ops** (working with the prod box outside a
   deploy: read-channel choice — RPC vs local prod-dump DB vs live odoo shell —
   prod forensics, and a named-script runner with a dry → commit → read-back
-  ladder), **deploy** (the prod runbook itself: resolve the merged
-  PR, derive the `-u` list from what the pull actually lands, approval gate, one
-  named write script per prod step, T+0/T+60 invariant checks — with the
-  announcement and ticket-note beats gated on your `status_mcp`/`tickets_mcp`
-  answers) and **estimate** (effort estimates priced from a calibration table of
+  ladder), **deploy** (the prod runbook itself: check the PR is mergeable,
+  derive the `-u` list from what the pull actually lands, show the plan, take
+  the box's deploy lock — waiting on another developer's deploy instead of
+  colliding with it — merge, one named write script per prod step, T+0/T+60
+  invariant checks, release the lock — with the announcement and ticket-note
+  beats gated on your `status_mcp`/`tickets_mcp` answers) and **estimate** (effort estimates priced from a calibration table of
   your own closed tickets, not from gut feel)
 - Optional (asked during generation): custom addons repo wiring, S3 production-backup
   restore with **native Odoo neutralization** (`odoo neutralize` + dev fixups),

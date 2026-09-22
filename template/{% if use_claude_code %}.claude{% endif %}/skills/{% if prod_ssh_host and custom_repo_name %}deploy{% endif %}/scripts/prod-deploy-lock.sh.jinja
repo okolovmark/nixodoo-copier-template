@@ -1,0 +1,166 @@
+{% set hosts = ['prod'] + (['prod-local'] if prod_local_ssh_host else []) + (test_ssh_hosts | list) %}
+#!/usr/bin/env bash
+# The deploy lock on the Odoo box (deploy skill Step 0). One lock per box:
+# a directory `{{ prod_remote_project_dir }}/.deploy-lock` created with
+# `mkdir` — atomic, so two deployers racing for it cannot both win — holding
+# an `info` file: holder=<gh login> pr=<n> since=<UTC> state=deploying|failed.
+#
+# Why: several developers deploy from their own clones, and each only
+# learns that another deploy is running from a chat message they may not
+# have read yet. The lock is the machine check: taken BEFORE the PR is
+# merged (a merged PR lands on prod with the next `git pull`, whoever pulls),
+# released after the result is posted.
+#
+# Runs as ONE argv, like every write script here: one named script with
+# validated arguments is a single permission decision.
+#
+# Usage: prod-deploy-lock.sh <{{ hosts | join('|') }}> <action> [<PR>] [--wait <seconds>] [--force]
+#   acquire <PR> [--wait N]   take the lock; with --wait, retry every 5 min
+#                             (DEPLOY_LOCK_POLL_SECONDS) until taken or N seconds
+#                             have passed
+#   status                    LOCK_FREE or LOCK_HELD <info> age=<m>m
+#   release <PR>              drop the lock IF it is held for that PR
+#   release --force           drop the lock whoever holds it — only on an
+#                             explicit human command, never on the skill's own
+#   mark-failed <PR>          keep the lock raised, state=failed: the deploy
+#                             broke prod and nobody must deploy on top of it
+#
+# Markers (one line, grep-able): LOCK_ACQUIRED / LOCK_HELD / LOCK_FREE /
+# LOCK_RELEASED / LOCK_MARKED_FAILED / LOCK_MISMATCH / WAITING.
+# Exit: 0 acquired|free|released|marked, 2 usage, 3 held (after any wait),
+#       4 PR mismatch, 5 the box was unreachable on every attempt.
+#
+# The holder is the `gh` login of whoever runs this (DEPLOY_LOCK_HOLDER
+# overrides it), so the next deployer knows whom to ask.
+set -euo pipefail
+
+usage="usage: prod-deploy-lock.sh <{{ hosts | join('|') }}> <acquire|status|release|mark-failed> [<PR>] [--wait <seconds>] [--force]"
+HOST="${1:?$usage}"
+ACTION="${2:?$usage}"
+shift 2
+
+PR=""
+WAIT=0
+FORCE=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --wait) WAIT="${2:?--wait needs a number of seconds}"; shift 2 ;;
+        --force) FORCE=1; shift ;;
+        *) [ -z "$PR" ] || { echo "unexpected argument: $1" >&2; exit 2; }; PR="$1"; shift ;;
+    esac
+done
+
+case "$HOST" in {{ hosts | join('|') }}) ;; *) echo "refusing unknown host: $HOST" >&2; exit 2 ;; esac
+case "$ACTION" in acquire|status|release|mark-failed) ;; *) echo "unknown action: $ACTION" >&2; echo "$usage" >&2; exit 2 ;; esac
+[[ "$WAIT" =~ ^[0-9]+$ ]] || { echo "--wait must be a number of seconds: $WAIT" >&2; exit 2; }
+if [ -n "$PR" ]; then
+    [[ "$PR" =~ ^[0-9]+$ ]] || { echo "PR must be a number: $PR" >&2; exit 2; }
+fi
+case "$ACTION" in
+    acquire|mark-failed) [ -n "$PR" ] || { echo "$ACTION needs the PR number" >&2; exit 2; } ;;
+    release) [ -n "$PR" ] || [ -n "$FORCE" ] || { echo "release needs the PR number, or --force" >&2; exit 2; } ;;
+    status) [ -z "$PR" ] || { echo "status takes no PR" >&2; exit 2; } ;;
+esac
+[ -z "$FORCE" ] || [ "$ACTION" = release ] || { echo "--force is only for release" >&2; exit 2; }
+
+PROJECT_DIR="${{ project_dir_var }}"
+[ -n "$PROJECT_DIR" ] || PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
+SSH_CONFIG="$PROJECT_DIR/.ssh/config"
+[ -f "$SSH_CONFIG" ] || { echo "no ssh config at $SSH_CONFIG (run: nix run .#setup-ssh-access)" >&2; exit 2; }
+
+HOLDER="${DEPLOY_LOCK_HOLDER:-}"
+if [ -z "$HOLDER" ] && [ "$ACTION" = acquire ]; then
+    HOLDER="$(gh api user --jq .login 2>/dev/null || true)"
+    [ -n "$HOLDER" ] || HOLDER="${USER:-unknown}@$(hostname -s 2>/dev/null || echo localhost)"
+fi
+[ -z "$HOLDER" ] || [[ "$HOLDER" =~ ^[A-Za-z0-9._@-]+$ ]] || { echo "holder must be a plain login: $HOLDER" >&2; exit 2; }
+
+POLL="${DEPLOY_LOCK_POLL_SECONDS:-300}"      # between two attempts while another deploy holds the lock
+RETRY="${DEPLOY_LOCK_RETRY_SECONDS:-20}"    # between two attempts while the box does not answer
+[[ "$POLL" =~ ^[0-9]+$ ]] && [ "$POLL" -gt 0 ] || { echo "DEPLOY_LOCK_POLL_SECONDS must be a positive number: $POLL" >&2; exit 2; }
+[[ "$RETRY" =~ ^[0-9]+$ ]] && [ "$RETRY" -gt 0 ] || { echo "DEPLOY_LOCK_RETRY_SECONDS must be a positive number: $RETRY" >&2; exit 2; }
+
+# One short remote call per attempt — a 30-minute wait is many short ssh
+# sessions, not one long one the box can drop (it does, intermittently: exit
+# 255 with an empty output means nothing ran, so the attempt is simply
+# repeated).
+remote() {
+    ssh -F "$SSH_CONFIG" "$HOST" "bash -s -- $1 '${PR:-0}' '${HOLDER:-}' '${FORCE:-}'" <<'REMOTE'
+set -euo pipefail
+ACTION="$1"; PR="$2"; HOLDER="$3"; FORCE="$4"
+LOCK_DIR={{ prod_remote_project_dir }}/.deploy-lock
+INFO="$LOCK_DIR/info"
+now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+info_field() { sed -n "s/.*$1=\([^ ]*\).*/\1/p" "$INFO" 2>/dev/null | head -n1; }
+describe() {
+    if [ -f "$INFO" ]; then
+        since=$(info_field since)
+        epoch=$(date -u -d "$since" +%s 2>/dev/null || echo 0)
+        [ "$epoch" -gt 0 ] && age=$(( ($(date -u +%s) - epoch) / 60 )) || age="?"
+        echo "LOCK_HELD $(cat "$INFO") age=${age}m"
+    else
+        echo "LOCK_HELD (no info file — the lock dir exists but says nothing)"
+    fi
+}
+case "$ACTION" in
+    status)
+        if [ -d "$LOCK_DIR" ]; then describe; exit 3; fi
+        echo LOCK_FREE ;;
+    acquire)
+        if mkdir "$LOCK_DIR" 2>/dev/null; then
+            echo "holder=$HOLDER pr=$PR since=$(now) state=deploying" > "$INFO"
+            echo "LOCK_ACQUIRED $(cat "$INFO")"
+        else
+            describe; exit 3
+        fi ;;
+    release)
+        [ -d "$LOCK_DIR" ] || { echo LOCK_FREE; exit 0; }
+        held_pr=$(info_field pr)
+        if [ -n "$FORCE" ] || [ "$held_pr" = "$PR" ]; then
+            rm -rf "$LOCK_DIR"
+            echo "LOCK_RELEASED pr=${held_pr:-?}${FORCE:+ forced}"
+        else
+            echo "LOCK_MISMATCH held for pr=${held_pr:-?}, asked to release pr=$PR — not released"; exit 4
+        fi ;;
+    mark-failed)
+        [ -f "$INFO" ] || { echo "LOCK_FREE — nothing to mark"; exit 4; }
+        held_pr=$(info_field pr)
+        [ "$held_pr" = "$PR" ] || { echo "LOCK_MISMATCH held for pr=${held_pr:-?}, asked to mark pr=$PR"; exit 4; }
+        line="$(sed 's/ state=[a-z]*/ state=failed/' "$INFO" | tr -d '\n') failed_at=$(now)"
+        echo "$line" > "$INFO"
+        echo "LOCK_MARKED_FAILED $line" ;;
+esac
+REMOTE
+}
+
+if [ "$ACTION" != acquire ]; then
+    set +e; remote "$ACTION"; status=$?; set -e
+    [ "$status" -ne 255 ] || echo "SSH_UNREACHABLE: the box did not answer — nothing ran" >&2
+    exit "$status"
+fi
+
+deadline=$(( $(date +%s) + WAIT ))
+unreachable=0
+while :; do
+    set +e; out=$(remote acquire); status=$?; set -e
+    case "$status" in
+        0) echo "$out"; exit 0 ;;
+        3)
+            unreachable=0
+            if grep -q 'state=failed' <<<"$out"; then
+                echo "$out"
+                echo "LOCK_FAILED_DEPLOY: the previous deploy broke prod and its lock stays raised — a human decides on 'release --force' after the fix; do not wait it out" >&2
+                exit 3
+            fi
+            if [ "$(date +%s)" -ge "$deadline" ]; then echo "$out"; exit 3; fi
+            echo "WAITING ${out#LOCK_HELD } — next check in ${POLL}s"
+            remaining=$(( deadline - $(date +%s) ))
+            sleep $(( remaining < POLL ? remaining : POLL )) ;;
+        255)
+            unreachable=$(( unreachable + 1 ))
+            [ "$unreachable" -lt 3 ] || { echo "SSH_UNREACHABLE: 3 attempts in a row, giving up — nothing ran on the box" >&2; exit 5; }
+            echo "WAITING box unreachable (attempt $unreachable/3) — retrying in ${RETRY}s"
+            sleep "$RETRY" ;;
+        *) echo "$out"; exit "$status" ;;
+    esac
+done

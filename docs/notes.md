@@ -24,8 +24,16 @@ Things that surprised somebody once, kept out of [the README](../README.md) so i
 - The `deploy` skill writes to production, so its write steps are named scripts
   under `skills/deploy/scripts/` with validated arguments, never inline remote
   commands: that is one permission decision instead of a fresh judgement call
-  every deploy. Nothing there runs before the skill's approval gate, and Claude
+  every deploy. Nothing there runs before the skill has shown its plan, and Claude
   cannot grant itself the permission entry — it composes it and you paste it.
+- The deploy skill merges the PR itself, under a **deploy lock** on the box
+  (`prod-deploy-lock.sh`: an atomic `mkdir` of `<prod project dir>/.deploy-lock`
+  with holder, PR and time inside). Several developers deploying from their own
+  clones used to learn of each other's deploys from a chat message; the lock is
+  the machine check — taken before the merge, released after the result, kept
+  raised (`state=failed`) when the deploy broke prod, and never broken by the
+  skill on its own. `prod-deploy-modules.sh` refuses to run without it.
+  Corpus: `python3 tests/test_prod_deploy_lock.py`.
 - `nudge-kb-truncation.py` (PreToolUse, rendered with `use_kb`) refuses a Bash command that
   reads kb through a truncating filter: `head`, `tail`, `cut -c`, a `sed -n` range, an
   `awk NR` filter, `grep -m`, `less`. Unlike the find-code nudge it has no session budget
