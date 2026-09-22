@@ -41,3 +41,9 @@ Things that surprised somebody once, kept out of [the README](../README.md) so i
   the record whole or send it to a file; `kb log` and `kb service logs` are exempt as
   journals; `# truncation-ok` in the command is the deliberate escape. `KB_TRUNCATION_GUARD=0`
   disables it. Corpus: `python3 tests/test_kb_truncation_nudge.py`.
+- With `use_entire`, every session pushes a checkpoint, so `refs/entire/*` and the loose-object
+  count climb until any git command trips `gc.auto` and an unbounded `git repack` runs inside
+  whatever process made that call — measured at 1325 refs and 76,636 loose objects: 16 GB RSS,
+  ~600 % CPU, an OOM-killed editor, and a repack that restarts from scratch on the next launch.
+  The generated README carries the caps and the capped `systemd-run` pack under
+  [Entire and git auto-gc](../template/README.md.jinja).
