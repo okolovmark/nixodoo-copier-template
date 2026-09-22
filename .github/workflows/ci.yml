@@ -21,7 +21,7 @@ jobs:
               -d custom_repo_name=acme-addons
               -d module_prefix=acme -d ticket_prefix=ACME
               -d status_mcp=teams -d tickets_mcp=odoo
-              -d odoo_prod_url=https://odoo.example.com -d use_pipeline=true
+              -d odoo_prod_url=https://odoo.example.com -d use_pipeline=true -d use_entire=true
               -d backup_s3_bucket=acme-backups -d editor=vscode
               -d prod_ssh_host=203.0.113.1 -d prod_web_url=https://odoo.example.com
               -d prod_local_ssh_host=10.0.0.5

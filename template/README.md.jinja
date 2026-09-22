@@ -101,6 +101,44 @@ and the CLI nudges you when a newer one exists. 0.10.6 is what this project has 
 verified against; check yours with `entire --version`, and keep the pair you replace for a
 rollback.
 
+### Entire and git auto-gc
+
+Every session pushes a checkpoint, so `refs/entire/*` and the loose-object count grow with use.
+Past `gc.auto` (6700 loose objects) any git command fires `git maintenance run --auto`, and on a
+tree that size an unbounded `git repack` is heavy enough to take the machine down. Measured on
+this project at 1325 `refs/entire/*` and 76,636 loose objects (17 GB of a 19 GB `.git`): 16 GB
+RSS and ~600 % CPU, which OOM-killed the editor whose git call had launched it. The repack dies
+with the editor, nothing gets packed, and the next editor start repeats it from scratch.
+
+Bound the repack and keep it out of the editor's process tree, in every checkout entire
+records{% if custom_repo_name %} — with `src/{{ custom_repo_name }}` nested, that is two{% endif %}:
+
+```bash
+git config maintenance.auto false     # no repack inside an editor's own git call
+git config pack.threads 2
+git config pack.windowMemory 256m
+git config pack.deltaCacheSize 128m
+```
+
+That leaves nothing packing automatically, so pack deliberately when the loose count climbs into
+the tens of thousands (`git count-objects -v`), capped, as a transient unit that outlives the
+editor:
+
+```bash
+systemd-run --user --unit="git-gc-$(basename "$PWD")" --collect \
+  --property=MemoryMax=8G --property=MemorySwapMax=0 \
+  --property=CPUQuota=250% --property=Nice=10 \
+  --property=IOSchedulingClass=idle \
+  --working-directory="$PWD" \
+  "$(command -v git)" gc --no-detach
+```
+
+Read the run's real memory off `anon` in the unit's `memory.stat`, which stays below 1 GB under
+these limits. `MemoryCurrent` is not that figure: it sits near the cap throughout as mmap'd pack
+cache the cgroup reclaims, so `memory.events` counts `max` hits at `oom_kill 0`. The measured
+tree above took 28 minutes of wall clock and came out at an 11 GB `.git` — 54 loose objects in
+2 packs, `git fsck --connectivity-only` clean, every `refs/entire/*` intact.
+
 {% endif %}
 {% endif %}
 ### UV and UVX Installation
