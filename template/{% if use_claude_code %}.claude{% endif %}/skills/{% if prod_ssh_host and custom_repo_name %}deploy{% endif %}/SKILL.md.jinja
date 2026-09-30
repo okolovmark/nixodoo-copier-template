@@ -42,7 +42,11 @@ chat was recreated.
   the branch — do not use it.
 {% if test_ssh_hosts %}
 - If the 2nd argument names a test box ({{ test_ssh_hosts | join(', ') }}),
-  target that alias instead of `prod`.
+  target that alias instead of `prod`. The scripts pick that box's own database
+  (`test_db_name`); the hand-typed commands in this skill name prod's
+  `{{ prod_db_name }}`, so swap in the box's database when you run one there. Odoo
+  creates a database it cannot find, so a wrong `-d` does not fail: it updates a
+  new empty database and exits 0.
 {% endif %}
 
 ## Step 0 — Is the PR mergeable?
