@@ -21,7 +21,9 @@ command and getting an explicit OK.
 {% endif %}
 {% if test_ssh_hosts %}
 - Test boxes are further aliases in the same config, same mechanics:
-  {{ test_ssh_hosts | join(', ') }}.
+  {{ test_ssh_hosts | join(', ') }}. Each has its own database
+  (`test_db_name`, e.g. {% for alias in test_ssh_hosts %}{% if loop.first %}{{ alias }} -> `{{ test_db_name | replace('{alias}', alias) | replace('{short}', alias.split('.')[0]) }}`{% endif %}{% endfor %}); the scripts pick it by host, a hand-typed
+  `-d` must name it too.
 {% endif %}
 - {% if prod_web_url %}Web {{ prod_web_url }} · {% endif %}DB `{{ prod_db_name }}` · config `{{ prod_remote_odoo_conf }}` ·
   checkout `{{ prod_remote_project_dir }}` · odoo-bin

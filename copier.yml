@@ -246,7 +246,7 @@ prod_remote_odoo_conf:
 
 prod_db_name:
   type: str
-  help: Database name on the prod/test box
+  help: Database name on the prod box
   default: odoo
   when: "{{ prod_ssh_host != '' and use_claude_code and custom_repo_name }}"
 
@@ -284,6 +284,12 @@ test_web_url:
   help: "Web URL of a test box as the test-server helper prints it; `{alias}` stands for the box's alias (e.g. http://{alias}:8069/web; empty = not shown)"
   default: ""
   when: "{% if test_ssh_hosts %}true{% else %}false{% endif %}"
+
+test_db_name:
+  type: str
+  help: "Database name on a test box, used when the deploy / prod-ops scripts get a test alias as host; `{alias}` stands for the box's alias, `{short}` for the alias up to its first dot (e.g. {short}: odoo1.kepi -> odoo1)"
+  default: "{{ prod_db_name }}"
+  when: "{% if test_ssh_hosts and use_claude_code and custom_repo_name %}true{% else %}false{% endif %}"
 
 project_dir_var:
   type: str

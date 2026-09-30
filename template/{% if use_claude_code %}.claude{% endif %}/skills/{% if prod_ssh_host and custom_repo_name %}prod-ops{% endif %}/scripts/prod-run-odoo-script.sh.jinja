@@ -1,4 +1,5 @@
-{% set hosts = ['prod'] + (['prod-local'] if prod_local_ssh_host else []) + (test_ssh_hosts | list) %}
+{% set prod_hosts = ['prod'] + (['prod-local'] if prod_local_ssh_host else []) %}
+{% set hosts = prod_hosts + (test_ssh_hosts | list) %}
 #!/usr/bin/env bash
 # Run a LOCAL odoo-shell script on the prod/test box: pipes the named file into
 # `odoo-bin shell` over SSH. The shell runs as SUPERUSER; the dry/commit
@@ -25,9 +26,19 @@ esac
 [ -n "$SCRIPT" ] && [ -f "$SCRIPT" ] || { echo "no such script: $SCRIPT" >&2; usage; }
 case "$MODE" in dry|commit) ;; *) usage ;; esac
 
+# Each box has its own database: prod's is {{ prod_db_name }}, a test box has its own.
+# Odoo creates a database it cannot find and installs base into it, so a wrong
+# name here does not fail: the command runs on a new empty database and exits 0.
+case "$HOST" in
+  {{ prod_hosts | join('|') }}) DB={{ prod_db_name }} ;;
+{% for alias in test_ssh_hosts %}
+  {{ alias }}) DB={{ test_db_name | replace('{alias}', alias) | replace('{short}', alias.split('.')[0]) }} ;;
+{% endfor %}
+esac
+
 set +e
 OUT=$(ssh -F "${{ project_dir_var }}/.ssh/config" "$HOST" \
-  "export PATH=\"\$HOME/{{ nix_profile_rel }}/bin:\$PATH\"; SCRIPT_MODE=$MODE python {{ prod_remote_project_dir }}/src/odoo/odoo-bin shell -c {{ prod_remote_odoo_conf }} -d {{ prod_db_name }} --no-http" \
+  "export PATH=\"\$HOME/{{ nix_profile_rel }}/bin:\$PATH\"; SCRIPT_MODE=$MODE python {{ prod_remote_project_dir }}/src/odoo/odoo-bin shell -c {{ prod_remote_odoo_conf }} -d $DB --no-http" \
   < "$SCRIPT" 2>&1)
 SSH_EXIT=$?
 set -e

@@ -1,4 +1,5 @@
-{% set hosts = ['prod'] + (['prod-local'] if prod_local_ssh_host else []) + (test_ssh_hosts | list) %}
+{% set prod_hosts = ['prod'] + (['prod-local'] if prod_local_ssh_host else []) %}
+{% set hosts = prod_hosts + (test_ssh_hosts | list) %}
 #!/usr/bin/env bash
 # Requeue queue.job rows left in enqueued/started -> pending (the OCA "Requeue"
 # button). After a deploy restart, `started` jobs are orphaned (their runner
@@ -19,6 +20,16 @@ set -euo pipefail
 HOST="${1:-prod}"
 case "$HOST" in {{ hosts | join('|') }}) ;; *) echo "refusing unknown host: $HOST" >&2; exit 2 ;; esac
 
+# Each box has its own database: prod's is {{ prod_db_name }}, a test box has its own.
+# Odoo creates a database it cannot find and installs base into it, so a wrong
+# name here does not fail: the command runs on a new empty database and exits 0.
+case "$HOST" in
+  {{ prod_hosts | join('|') }}) DB={{ prod_db_name }} ;;
+{% for alias in test_ssh_hosts %}
+  {{ alias }}) DB={{ test_db_name | replace('{alias}', alias) | replace('{short}', alias.split('.')[0]) }} ;;
+{% endfor %}
+esac
+
 PROJECT_DIR="${{ project_dir_var }}"
 [ -n "$PROJECT_DIR" ] || PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 SSH_CONFIG="$PROJECT_DIR/.ssh/config"
@@ -27,7 +38,7 @@ SSH_CONFIG="$PROJECT_DIR/.ssh/config"
 # --no-http is mandatory: the live service holds the HTTP port, without it the
 # shell dies with EADDRINUSE. odoo shell rolls back on exit, so the explicit
 # commit is what makes the requeue stick.
-REMOTE='export PATH="$HOME/{{ nix_profile_rel }}/bin:$PATH"; python {{ prod_remote_project_dir }}/src/odoo/odoo-bin shell -c {{ prod_remote_odoo_conf }} -d {{ prod_db_name }} --no-http'
+REMOTE='export PATH="$HOME/{{ nix_profile_rel }}/bin:$PATH"; python {{ prod_remote_project_dir }}/src/odoo/odoo-bin shell -c {{ prod_remote_odoo_conf }} -d '"$DB"' --no-http'
 
 output=$(ssh -A -F "$SSH_CONFIG" "$HOST" "$REMOTE" <<'PY' 2>&1
 jobs = env["queue.job"].search([("state", "in", ["enqueued", "started"])])

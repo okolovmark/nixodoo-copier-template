@@ -29,7 +29,7 @@ ANSWERS = dict(
     prod_remote_project_dir="~/proj", project_dir_var="TEST_PROJECT_DIR",
     odoo_version="16.0", module_prefix="foo", nix_profile_rel=".nix-profile",
     custom_repo_name="addons", prod_remote_odoo_conf="~/proj/odoo.conf",
-    prod_db_name="odoo", prod_link_addons_cmd="true", service_suffix="",
+    prod_db_name="odoo", test_db_name="{short}", prod_link_addons_cmd="true", service_suffix="",
 )
 
 FAKE_SSH = """#!/usr/bin/env bash
