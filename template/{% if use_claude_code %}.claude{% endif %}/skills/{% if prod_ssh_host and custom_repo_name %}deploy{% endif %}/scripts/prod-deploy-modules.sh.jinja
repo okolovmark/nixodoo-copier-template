@@ -59,6 +59,11 @@ link_step=""
 # --logfile= is empty on purpose: Odoo realpaths the option, so /dev/stdout
 # becomes /proc/<pid>/fd/pipe:[N] over SSH and cannot be opened. Empty leaves it
 # falsy, so Odoo keeps its default stderr handler and the log still comes back.
+#
+# --dev=xml on the update only: views are then validated against their files, as
+# the local `odoo` wrapper always does. Without it a view the update has not
+# reloaded yet is read from the database, and a field the new code removed fails
+# on the box an update every local rehearsal passed. The restart runs without it.
 set +e
 ssh -A -F "$SSH_CONFIG" "$HOST" "set -euo pipefail
 [ -d {{ prod_remote_project_dir }}/.deploy-lock ] || { echo 'DEPLOY_LOCK_MISSING: take the deploy lock first (prod-deploy-lock.sh <host> acquire <PR>)' >&2; exit 3; }
@@ -66,7 +71,7 @@ export PATH=\"\$HOME/{{ nix_profile_rel }}/bin:\$PATH\"
 cd {{ prod_remote_project_dir }}/src/{{ custom_repo_name }}
 git pull origin {{ odoo_version }}
 $link_step
-python {{ prod_remote_project_dir }}/src/odoo/odoo-bin -c {{ prod_remote_odoo_conf }} --workers 0 -d $DB $FLAG $MODULES --stop-after-init --logfile=
+python {{ prod_remote_project_dir }}/src/odoo/odoo-bin -c {{ prod_remote_odoo_conf }} --workers 0 -d $DB $FLAG $MODULES --stop-after-init --dev=xml --logfile=
 systemctl --user restart odoo{{ service_suffix }}.service"
 status=$?
 set -e
