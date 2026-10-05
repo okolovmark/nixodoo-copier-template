@@ -84,6 +84,13 @@ the newest file is used. If `wt-start` reports no dump, ask the user to drop one
 - **Runtime:** sessions run `workers = 0`, `max_cron_threads = 0` (light, no
   nginx/websocket juggling). The `queue_job` runner still starts in threaded mode
   against the session DB — jobs process normally and isolated.
+- **A test run takes the session's port unless told otherwise.** With the
+  session service stopped for a CLI test run, the test server binds the port in
+  the session `odoo.conf`, and a browser tab still open on `<URL>` - logged in,
+  polling its systray and bus - sends its requests into the running tests'
+  transaction: tests die on state they never set, as the tab's user. Pass
+  `--http-port <free port>` to every test run against a session, so such a tab
+  gets a refused connection instead.
 - **Pointing the odoo MCP at a session:** `connect` to it explicitly —
   `connect(host="localhost", port=<PORT>, database=<DB>, username="admin", password="admin")`.
   The `default`/`prod` env profiles map to `{{ db_name }}`/prod (not a session), so pass
