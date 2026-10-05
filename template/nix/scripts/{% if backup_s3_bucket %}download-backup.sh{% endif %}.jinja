@@ -2,7 +2,9 @@
 # Download the latest prod backup from S3 and restore it into a local database,
 # then neutralize it (native `odoo neutralize` — runs every installed module's
 # data/neutralize.sql) and apply dev fixups (admin/admin, requeue stuck jobs,
-# bump the document sequences past the dump's imported names).
+# bump the document sequences past the dump's imported names). The restore and
+# both steps run under a staging name; the database takes its real name only
+# once neutralized.
 # Requires on PATH: aws, psql, pg_ctl, pg_restore, odoo; DEV_FIXUP_SQL - path
 # to dev-fixup.sql (all injected by flake.nix).
 set -e
@@ -135,20 +137,33 @@ if [ "$(ls -A backup)" ]; then
     # overrides (1 = the old serial behaviour).
     RESTORE_JOBS="${PG_RESTORE_JOBS:-$(nproc 2>/dev/null || echo 4)}"
     if [ "$RESTORE_JOBS" -gt 8 ]; then RESTORE_JOBS=8; fi
-    echo "Restoring backup to database '$PGDATABASE'... ($RESTORE_JOBS jobs, errors: $PWD/backup/pg_restore.log)"
-    env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='$PGDATABASE' AND pid<>pg_backend_pid();" >/dev/null 2>&1 || true
-    env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d postgres -c "DROP DATABASE IF EXISTS $PGDATABASE;"
-    env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d postgres -c "CREATE DATABASE $PGDATABASE OWNER $PGUSER;"
-    pg_restore --clean --no-acl --no-owner -j "$RESTORE_JOBS" -h "$PG_CONN_HOST" -p "$PGPORT" -U "$PGUSER" -d "$PGDATABASE" backup/*.dump 2>"$PWD/backup/pg_restore.log" || true
-    if ! [ "$(env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d "$PGDATABASE" -tAc "SELECT count(*) FROM res_users" 2>/dev/null)" -gt 0 ] 2>/dev/null; then
-        echo "ERROR: restore incomplete (res_users empty) — see $PWD/backup/pg_restore.log" >&2
+    # The dump is raw prod: live mail server, crons, fetchmail. Restored under
+    # the real name, it is live before it is neutralized: a running Odoo's cron
+    # worker runs prod's overdue jobs on it (real mail to real people), and its
+    # writes can make `odoo neutralize` fail on a serialization conflict, leaving
+    # the copy live for good. So the staging name, renamed only once neutral.
+    STAGING_DB="${PGDATABASE}_restoring"
+    echo "Restoring backup to staging database '$STAGING_DB'... ($RESTORE_JOBS jobs, errors: $PWD/backup/pg_restore.log)"
+    env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d postgres -c "DROP DATABASE IF EXISTS $STAGING_DB WITH (FORCE);"
+    env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d postgres -c "CREATE DATABASE $STAGING_DB OWNER $PGUSER;"
+    pg_restore --clean --no-acl --no-owner -j "$RESTORE_JOBS" -h "$PG_CONN_HOST" -p "$PGPORT" -U "$PGUSER" -d "$STAGING_DB" backup/*.dump 2>"$PWD/backup/pg_restore.log" || true
+    if ! [ "$(env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d "$STAGING_DB" -tAc "SELECT count(*) FROM res_users" 2>/dev/null)" -gt 0 ] 2>/dev/null; then
+        env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d postgres -c "DROP DATABASE IF EXISTS $STAGING_DB WITH (FORCE);"
+        echo "ERROR: restore incomplete (res_users empty) — see $PWD/backup/pg_restore.log; '$PGDATABASE' left as it was" >&2
         exit 1
     fi
-    echo "Backup restored successfully to database '$PGDATABASE'"
-    echo "Neutralizing database '$PGDATABASE' (odoo neutralize)..."
-    odoo neutralize -c "$ODOO_CONF" -d "$PGDATABASE"
+    echo "Neutralizing '$STAGING_DB' (odoo neutralize)..."
+    if ! odoo neutralize -c "$ODOO_CONF" -d "$STAGING_DB"; then
+        env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d postgres -c "DROP DATABASE IF EXISTS $STAGING_DB WITH (FORCE);"
+        echo "ERROR: neutralization failed — the raw prod copy was dropped, '$PGDATABASE' left as it was" >&2
+        exit 1
+    fi
     echo "Applying dev fixups..."
-    env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d "$PGDATABASE" -f "$DEV_FIXUP_SQL" || true
+    env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d "$STAGING_DB" -f "$DEV_FIXUP_SQL" || true
+    echo "Replacing '$PGDATABASE' with '$STAGING_DB'..."
+    env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d postgres -c "DROP DATABASE IF EXISTS $PGDATABASE WITH (FORCE);"
+    env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d postgres -c "ALTER DATABASE $STAGING_DB RENAME TO $PGDATABASE;"
+    echo "Backup restored and neutralized into database '$PGDATABASE'"
     # Stop the local cluster only if this script started it
     if [ "$STARTED_CLUSTER" = true ]; then
         pg_ctl stop
