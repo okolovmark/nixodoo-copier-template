@@ -5,6 +5,8 @@
 # data/neutralize.sql: mail blocked, crons off, O2O backend deactivated, banner
 # on), then the shared $PROJ/nix/scripts/dev-fixup.sql (admin/admin, requeue
 # stuck queue jobs, bump the document sequences past the dump's imported names). Needs the session odoo.conf — wt-start writes it first.
+# All of it runs under wt_<slug>_restoring; the DB takes its real name only once
+# neutralized, so the session's service never sees the raw copy.
 # Idempotent: if wt_<slug> already exists it is reused (re-run wt-start is cheap).
 #
 # Usage: wt-restore.sh <slug>
@@ -15,9 +17,9 @@ SLUG="${1:?usage: wt-restore.sh <slug>}"
 DB="$(db_name_for "$SLUG")"
 CONF="$WT_ENVROOT/$SLUG/odoo.conf"
 
-# Reuse only a COMPLETE restore: database.is_neutralized is written by the
-# very last step of this script, so its absence means an earlier run was
-# interrupted (the old bare-existence check kept reusing such broken DBs).
+# Reuse only a COMPLETE restore: database.is_neutralized is missing on a DB
+# left by an interrupted run of the pre-staging script (the old bare-existence
+# check kept reusing such broken DBs).
 if db_exists "$DB"; then
     if [ "$($PSQL -d "$DB" -tAc "SELECT value FROM ir_config_parameter WHERE key='database.is_neutralized'" 2>/dev/null)" = "true" ]; then
         echo "STATUS: db-reused ($DB)"; exit 0
@@ -37,19 +39,28 @@ RESTORE_LOG="$WT_ENVROOT/$SLUG/pg_restore.log"
 RESTORE_JOBS="${PG_RESTORE_JOBS:-$(( $(nproc 2>/dev/null || echo 4) / 2 ))}"
 if [ "$RESTORE_JOBS" -lt 1 ]; then RESTORE_JOBS=1; fi
 if [ "$RESTORE_JOBS" -gt 4 ]; then RESTORE_JOBS=4; fi
-echo "STATUS: restoring $DB from $(basename "$DUMP") … ($RESTORE_JOBS jobs, errors: $RESTORE_LOG)"
-$PSQL -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='$DB' AND pid<>pg_backend_pid();" >/dev/null 2>&1 || true
-$PSQL -d postgres -c "DROP DATABASE IF EXISTS $DB;" >/dev/null
-$PSQL -d postgres -c "CREATE DATABASE $DB OWNER {{ db_user }};" >/dev/null
-pg_restore --clean --no-acl --no-owner -j "$RESTORE_JOBS" -h localhost -p {{ postgres_port }} -U {{ db_user }} -d "$DB" "$DUMP" 2>"$RESTORE_LOG" || true
+# Restored under the real name, the raw copy is live before it is neutralized: a
+# session service already running on it (a re-run over an incomplete DB) runs
+# prod's overdue crons on it, mailing real people, and its writes can make
+# `odoo neutralize` fail on a serialization conflict. Hence the staging name.
+STAGING_DB="${DB}_restoring"
+echo "STATUS: restoring $STAGING_DB from $(basename "$DUMP") … ($RESTORE_JOBS jobs, errors: $RESTORE_LOG)"
+$PSQL -d postgres -c "DROP DATABASE IF EXISTS $STAGING_DB WITH (FORCE);" >/dev/null
+$PSQL -d postgres -c "CREATE DATABASE $STAGING_DB OWNER {{ db_user }};" >/dev/null
+pg_restore --clean --no-acl --no-owner -j "$RESTORE_JOBS" -h localhost -p {{ postgres_port }} -U {{ db_user }} -d "$STAGING_DB" "$DUMP" 2>"$RESTORE_LOG" || true
 
-[ "$($PSQL -d "$DB" -tAc "SELECT count(*) FROM res_users" 2>/dev/null)" -gt 0 ] 2>/dev/null \
-    || { echo "ERROR: restore incomplete (res_users empty) — see $RESTORE_LOG" >&2; exit 1; }
+[ "$($PSQL -d "$STAGING_DB" -tAc "SELECT count(*) FROM res_users" 2>/dev/null)" -gt 0 ] 2>/dev/null \
+    || { $PSQL -d postgres -c "DROP DATABASE IF EXISTS $STAGING_DB WITH (FORCE);" >/dev/null
+         echo "ERROR: restore incomplete (res_users empty) — see $RESTORE_LOG" >&2; exit 1; }
 
-echo "STATUS: neutralizing $DB (odoo neutralize) …"
-{{ project_dir_var }}="$PROJ" odoo neutralize -c "$CONF"
+echo "STATUS: neutralizing $STAGING_DB (odoo neutralize) …"
+{{ project_dir_var }}="$PROJ" odoo neutralize -c "$CONF" -d "$STAGING_DB" \
+    || { $PSQL -d postgres -c "DROP DATABASE IF EXISTS $STAGING_DB WITH (FORCE);" >/dev/null
+         echo "ERROR: neutralization failed — the raw prod copy was dropped" >&2; exit 1; }
 
 # Dev fixups (psql continues past any table this dump lacks).
-$PSQL -d "$DB" -f "$PROJ/nix/scripts/dev-fixup.sql" || true
+$PSQL -d "$STAGING_DB" -f "$PROJ/nix/scripts/dev-fixup.sql" || true
 
+$PSQL -d postgres -c "DROP DATABASE IF EXISTS $DB WITH (FORCE);" >/dev/null
+$PSQL -d postgres -c "ALTER DATABASE $STAGING_DB RENAME TO $DB;" >/dev/null
 echo "STATUS: db-ready ($DB)"
