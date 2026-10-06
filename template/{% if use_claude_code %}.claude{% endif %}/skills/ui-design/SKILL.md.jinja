@@ -1,0 +1,160 @@
+---
+name: ui-design
+description: "How an Odoo {{ odoo_version }} backend screen gets its look: built-in view elements, field widgets and the bundled Bootstrap utilities, never a per-form stylesheet. Use when designing or restyling a form, list, kanban or dashboard, when turning a mockup (Claude Design, Figma, an HTML prototype) into a view, before adding a .scss/.css file, an assets entry or a styling class, and when reviewing a diff that adds any of them."
+---
+
+# Odoo {{ odoo_version }} UI design: built-in first
+
+A screen's look is assembled from what the web client already ships. A new
+`.scss`/`.css` in the backend bundle is allowed only for an exception listed in
+[references/exceptions.md](references/exceptions.md).
+
+Why:
+- A stylesheet added for one form is ad hoc: that form stops looking like the
+  rest, and the file still loads with `web.assets_backend` on every page.
+- Rules aimed at the web client's own classes (`.o_inner_group`,
+  `.o_list_table`, `.o_form_sheet`, `.o_kanban_record`) break when Odoo
+  changes them; arch, widgets and utilities move with Odoo.
+- Odoo's responsive and mobile layout is tested for its own elements only.
+
+Existing stylesheets in the repo predate this rule: no precedent for new work,
+no cleanup target without a ticket. Website themes and QWeb PDF reports are
+out of scope.
+
+## The ladder
+
+Take the first rung that delivers the intent:
+
+1. **View arch** - `<group string="X">` (the title renders as Odoo's section
+   separator), an outer `<group>` around inner ones for columns (two inner
+   groups get `col-lg-6` each), `<notebook>`/`<page>`, `<separator>`,
+   `<div class="oe_title"><h1>`, an image field with `class="oe_avatar"`,
+   stat buttons in `<div name="button_box" class="oe_button_box">`,
+   `<header>` with `widget="statusbar"`, chatter.
+2. **Widgets** - the table below.
+3. **Bootstrap utilities** on plain `<div>`s in the arch: grid (`row`,
+   `col-*`, `g-*`), `card`, spacing, `border-*`, `text-*`, `bg-*`,
+   `shadow-sm`, `d-flex`, `gap-*`.
+4. **Exception** - an OWL component with its own scoped SCSS (criteria below).
+
+## A mockup is intent, not code
+
+A design from Claude Design, Figma or an HTML prototype says what the screen
+must show. Map each element to the ladder; never port its CSS, hex colours,
+fonts or pixel sizes. An element with no built-in counterpart is dropped or
+named to the user as an exception candidate, before any SCSS is written.
+
+| Mockup element | Built-in |
+|---|---|
+| Section with a heading | `<group string="X">`; coloured card: snippet below |
+| Columns of fields | outer `<group>` + inner `<group>`s, or `row` / `col-*` |
+| Status chip, pill | `widget="badge"` + `decoration-success/warning/danger/info/muted` |
+| Coloured tags | `many2many_tags` + `options="{'color_field': 'color'}"` |
+| Progress, score bar | `progressbar`, `percentpie`, `percentage` |
+| Stage chevrons | `<header>` + `widget="statusbar"` |
+| Switch | `boolean_toggle` |
+| Stars | `priority` |
+| 1..N rating buttons | selection + `widget="radio" options="{'horizontal': true}"` |
+| Corner ribbon | `<widget name="web_ribbon" title="..." bg_color="bg-danger"/>` |
+| KPI tiles on a record | stat buttons, `widget="statinfo"` |
+| Info or warning banner | `<div class="alert alert-warning" role="alert">` |
+| Avatar | image field `class="oe_avatar"`, `many2one_avatar_user` |
+| Deadline colour | `remaining_days` |
+| Card grid | kanban: `oe_kanban_global_click`, `o_kanban_record_top/_headings/_title/_body/_bottom`, `oe_kanban_bottom_left/_right` |
+| Row colouring | `decoration-*` on `<{% if odoo_version in ['16.0', '17.0'] %}tree{% else %}list{% endif %}>`; `optional="show"`, `widget="handle"`, `sum="..."` |
+| Charts | graph and pivot views in an action |
+
+## Bootstrap in this Odoo
+
+{% if odoo_version == '16.0' %}
+- Bootstrap **5.1.3** (banner of `src/odoo/addons/web/static/lib/bootstrap/scss/bootstrap.scss`).
+- Grid classes keep the stock breakpoints (`col-xxl-*` from 1400px). Odoo's
+  own form CSS and the JS screen size (`ui` service) use a separate map,
+  `$o-extra-grid-breakpoints` in `web/static/src/scss/primary_variables.scss`:
+  `vsm` 475px added, `xxl` 1534px.
+- No `fw-semibold` (5.2+): `fw-bold` or `fw-bolder`.
+{% elif odoo_version == '19.0' %}
+- Bootstrap **5.3.3** (banner in `src/odoo/addons/web/static/lib/bootstrap/scss/mixins/_banner.scss`).
+- Stock breakpoints, `xxl` 1400px. `fw-semibold` exists.
+{% else %}
+- Read the version from the banner under `src/odoo/addons/web/static/lib/bootstrap/scss/`
+  and the breakpoints from `web/static/src/scss/primary_variables.scss` before
+  relying on a utility or a breakpoint.
+{% endif %}
+- Odoo adds utilities in `web/static/src/scss/utilities_custom.scss`, among
+  them `rounded-top/-end/-bottom/-start`, `cursor-pointer`, `min-w-0`,
+  `flex-basis-*`, `opacity-*-hover`; read the file for the rest.
+- Border width and colour utilities apply to all four sides. One coloured
+  side: `border-0 border-top border-3 border-info` - `border-0` clears every
+  side, `border-top` restores one, the other three stay `none`.
+- Breakpoints follow the viewport, not the sheet. Three `col-lg-4` cards at a
+  1000px window measured 291px each and truncated many2one values;
+  `col-12 col-xl-4` stacks them below 1200px.
+
+## Coloured section cards without SCSS
+
+Checked in the browser on 16.0 (computed style: top 3px solid, sides `none`):
+
+```xml
+<div class="row g-3 mb-4">
+    <div class="col-12 col-xl-4">
+        <div class="card h-100 border-0 border-top border-3 border-info shadow-sm">
+            <div class="card-body pb-1">
+                <div class="text-uppercase small fw-bold border-bottom pb-2 mb-2">
+                    <i class="fa fa-id-badge text-info me-2" title="Employee"/>Employee
+                </div>
+                <group name="employee_info">
+                    <field name="job_id"/>
+                </group>
+            </div>
+        </div>
+    </div>
+    <!-- next cards: border-warning + text-warning, border-success + text-success -->
+</div>
+```
+
+Out of reach for utilities: a grey 1px frame beside a coloured top (the
+colour applies to every side; `shadow-sm` stands in) and `letter-spacing`.
+Accept the difference.
+
+## When SCSS is allowed
+
+All of these hold:
+- The UI is a new OWL component (field widget, client action) with no
+  built-in counterpart: an editable matrix, a calculator grid. Restyling a
+  standard form, list or kanban never qualifies.
+- Inside it, Bootstrap utilities carry what they can; the SCSS holds only the
+  rest (a sticky column, hover-revealed tools, fixed input widths).
+- The file sits next to the component (`<name>.js`, `.xml`, `.scss`) and every
+  rule nests under the component's root class. Odoo's own classes are touched
+  only inside that root, never scoped by a class put on `<form>`.
+- Colours come from variables (`$o-*`, Bootstrap theme variables,
+  `var(--o-*)`), never hex literals; no `!important`.
+- It has a row in [references/exceptions.md](references/exceptions.md) with
+  one line of why.
+
+## Rejected in review
+
+- Standard `<group>`s wrapped in custom card markup styled from a per-form
+  class (`.o_x_form .o_x_section { ... }`): use the snippet above.
+- A one2many or list restyled through `.o_list_table` (cell padding,
+  `--bs-table-bg`, rounded row groups): decorations and widgets, or ask.
+- Kanban cards repainted with hex colours: standard kanban classes, `badge`,
+  `progressbar`.
+- `style="..."` attributes or `!important` as a way around this skill.
+
+## Verify before calling it done
+
+- Look at it in the browser at mobile (375px), about 1280px and 1600px.
+  Column counts and truncation are measured, not assumed; where a utility
+  combination matters, read `getComputedStyle`, not the class list.
+- After `-u`, read the log for view-validator warnings: an `alert-*` without
+  `role="alert|alertdialog|status"`, an `fa-*` icon with no `title`,
+  `aria-label` or adjacent text, `btn` on a tag other than `a`, `button`,
+  `select` or `input`.
+- A hash-only URL change does not reload the web client, which keeps the old
+  arch: change the query (`/web?r=1#...`).
+{% if odoo_version == '16.0' %}
+- A view written from `odoo shell` stays cached in the running server until
+  `env.registry.clear_caches(); env.registry.signal_changes()` and a commit.
+{% endif %}

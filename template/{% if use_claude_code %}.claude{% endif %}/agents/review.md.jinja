@@ -65,6 +65,11 @@ security / controllers / data / migrations), new dependencies, migrations needed
   all, so a `domain` built on it filters nothing.
 - **Performance**: ORM in loops, read_group, SQL parameterization.
 - **Transactions**: savepoints, parameterization.
+- **UI styling**: a new `.scss`/`.css` or `web.assets_*` stylesheet entry, a
+  `style=` attribute, or a class on `<form>` used as a style scope is a
+  **Major** unless it meets the `ui-design` skill's exception criteria and has
+  a row in its `references/exceptions.md`. Name the built-in replacement from
+  that skill's mockup table.
 - **Views**: inheritance, xpath, XML IDs.
 - **Security**: ACL, record rules, `sudo()` intentional (not a workaround),
   controller `auth=`, multi-company isolation.
