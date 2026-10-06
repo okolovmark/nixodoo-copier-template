@@ -63,6 +63,11 @@ End with one line: `✓ N/N items pass · M flagged · K fixed inline · J need 
 
 - [ ] Root tag is `<odoo noupdate="1">` (or `<odoo>` if data should re-load), **not** nested `<data noupdate="1">` inside bare `<odoo>`
 
+### Views & UI
+
+- [ ] The look comes from arch, widgets and Bootstrap utilities: no new `.scss`/`.css`, `web.assets_*` stylesheet entry or `style=` attribute unless it meets the `ui-design` skill's "When custom code is fine" and the PR description says why
+- [ ] Every changed view passed the `ui-design` phone check (375px: no sideways scroll, values readable, actions reachable without hover, one2many usable)
+
 ### Naming & numbers
 
 - [ ] No `cls` as a local variable (use `model_cls`, `klass`, or a domain-specific name)
