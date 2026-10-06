@@ -20,9 +20,13 @@ Things that surprised somebody once, kept out of [the README](../README.md) so i
   hand-tuned per project, the second because it holds measured actuals. Template
   updates never overwrite either. The estimate anchors ship as a **prior** from
   the project this skill came from — replace them with your own spread once the
-  table has rows. `.claude/skills/ui-design/references/exceptions.md` is
-  generated once the same way: it ships empty and lists the project's own
-  sanctioned stylesheets.
+  table has rows.
+- `nudge-ui-design.py` (PreToolUse on Edit/Write) bounces the first edit of a
+  view arch, an OWL template or a stylesheet in a session with a hint to load
+  the `ui-design` skill; the retried edit passes, and the hook stays quiet for
+  the rest of the session or once the transcript shows the skill loaded. The
+  `dev` and `review` agents preload the skill. `UIDESIGN_NUDGE=0` disables.
+  Corpus: `python3 tests/test_nudge_ui_design.py`.
 - The `deploy` skill writes to production, so its write steps are named scripts
   under `skills/deploy/scripts/` with validated arguments, never inline remote
   commands: that is one permission decision instead of a fresh judgement call

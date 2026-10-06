@@ -1,13 +1,12 @@
 ---
 name: ui-design
-description: "How an Odoo {{ odoo_version }} backend screen gets its look: built-in view elements, field widgets and the bundled Bootstrap utilities, never a per-form stylesheet. Use when designing or restyling a form, list, kanban or dashboard, when turning a mockup (Claude Design, Figma, an HTML prototype) into a view, before adding a .scss/.css file, an assets entry or a styling class, and when reviewing a diff that adds any of them."
+description: "Load before ANY change to an Odoo {{ odoo_version }} view: form, list, kanban, search or wizard arch, an OWL template, a stylesheet. How a backend screen gets its look (built-in view elements, field widgets, the bundled Bootstrap utilities, never a per-form stylesheet) and the phone check every view change passes before it is done. Also for turning a mockup (Claude Design, Figma, an HTML prototype) into a view and for reviewing a diff that touches views or styles."
 ---
 
-# Odoo {{ odoo_version }} UI design: built-in first
+# Odoo {{ odoo_version }} UI design: built-in first, usable on a phone
 
-A screen's look is assembled from what the web client already ships. A new
-`.scss`/`.css` in the backend bundle is allowed only for an exception listed in
-[references/exceptions.md](references/exceptions.md).
+A screen's look is assembled from what the web client already ships, and every
+view change is checked on a phone before it is called done.
 
 Why:
 - A stylesheet added for one form is ad hoc: that form stops looking like the
@@ -15,7 +14,8 @@ Why:
 - Rules aimed at the web client's own classes (`.o_inner_group`,
   `.o_list_table`, `.o_form_sheet`, `.o_kanban_record`) break when Odoo
   changes them; arch, widgets and utilities move with Odoo.
-- Odoo's responsive and mobile layout is tested for its own elements only.
+- Odoo's phone layout is built for its own elements only; custom styles are
+  where it breaks.
 
 Existing stylesheets in the repo predate this rule: no precedent for new work,
 no cleanup target without a ticket. Website themes and QWeb PDF reports are
@@ -34,15 +34,15 @@ Take the first rung that delivers the intent:
 2. **Widgets** - the table below.
 3. **Bootstrap utilities** on plain `<div>`s in the arch: grid (`row`,
    `col-*`, `g-*`), `card`, spacing, `border-*`, `text-*`, `bg-*`,
-   `shadow-sm`, `d-flex`, `gap-*`.
-4. **Exception** - an OWL component with its own scoped SCSS (criteria below).
+   `shadow-sm`, `d-flex`, `gap-*`, display (`d-none d-md-block`).
+4. **Custom component** - only on the terms in "When custom code is fine".
 
 ## A mockup is intent, not code
 
 A design from Claude Design, Figma or an HTML prototype says what the screen
 must show. Map each element to the ladder; never port its CSS, hex colours,
 fonts or pixel sizes. An element with no built-in counterpart is dropped or
-named to the user as an exception candidate, before any SCSS is written.
+raised with the user before any custom code is written.
 
 | Mockup element | Built-in |
 |---|---|
@@ -117,37 +117,65 @@ Out of reach for utilities: a grey 1px frame beside a coloured top (the
 colour applies to every side; `shadow-sm` stands in) and `letter-spacing`.
 Accept the difference.
 
-## When SCSS is allowed
+## On a phone
 
-All of these hold:
-- The UI is a new OWL component (field widget, client action) with no
-  built-in counterpart: an editable matrix, a calculator grid. Restyling a
-  standard form, list or kanban never qualifies.
-- Inside it, Bootstrap utilities carry what they can; the SCSS holds only the
-  rest (a sticky column, hover-revealed tools, fixed input widths).
+{% if odoo_version == '16.0' %}
+Below 768px the web client switches to phone mode (`env.isSmall`,
+`web/static/src/core/ui/ui_service.js`):
+- An action opens its first kanban view instead of the list; without a kanban
+  in its `view_mode` the phone gets the list table.
+- The statusbar folds every stage into one dropdown. The button box shows 2
+  stat buttons (4 up to 991px, 7 from 992px); the rest go under "More".
+- Inner groups stack into one column below 992px.
+{% endif %}
+- An x2many with only an inline list stays a table on the phone. An inline
+  kanban next to it gives cards on the phone and keeps the list on desktop:
+  add one to any one2many people fill in on a phone.
+- Hover-revealed controls have no touch path: a control a phone user needs is
+  always visible.
+- A fixed width (`style="width: ..."`, a wide `min-width`) pushes the page
+  sideways at 375px.
+- Secondary content is hidden on phones with display utilities
+  (`d-none d-md-block`), not with a stylesheet.
+
+## When custom code is fine
+
+An OWL component with its own SCSS is acceptable when the request is very
+specific and nothing like it is likely to be needed on another screen, and no
+built-in renders it: an editable pricing matrix, a calculator grid.
+Restyling a standard form, list or kanban never qualifies; those recur on
+every screen. Say in the PR description why it qualifies.
+
+Written like this:
+- Inside the component, Bootstrap utilities carry what they can; the SCSS
+  holds only the rest (a sticky column, fixed input widths).
 - The file sits next to the component (`<name>.js`, `.xml`, `.scss`) and every
   rule nests under the component's root class. Odoo's own classes are touched
   only inside that root, never scoped by a class put on `<form>`.
 - Colours come from variables (`$o-*`, Bootstrap theme variables,
   `var(--o-*)`), never hex literals; no `!important`.
-- It has a row in [references/exceptions.md](references/exceptions.md) with
-  one line of why.
+- It passes the phone check like any view.
 
 ## Rejected in review
 
 - Standard `<group>`s wrapped in custom card markup styled from a per-form
   class (`.o_x_form .o_x_section { ... }`): use the snippet above.
 - A one2many or list restyled through `.o_list_table` (cell padding,
-  `--bs-table-bg`, rounded row groups): decorations and widgets, or ask.
+  `--bs-table-bg`, rounded row groups): decorations and widgets.
 - Kanban cards repainted with hex colours: standard kanban classes, `badge`,
   `progressbar`.
 - `style="..."` attributes or `!important` as a way around this skill.
 
 ## Verify before calling it done
 
-- Look at it in the browser at mobile (375px), about 1280px and 1600px.
-  Column counts and truncation are measured, not assumed; where a utility
-  combination matters, read `getComputedStyle`, not the class list.
+- Phone: the browser pane's mobile preset (375x812, touch and a mobile user
+  agent), page reloaded after switching. Passes when the page has no sideways
+  scroll (`document.documentElement.scrollWidth <= innerWidth`), field values
+  read without truncation, every action the user needs is reachable without
+  hover, and each one2many is usable (cards or a narrow list).
+- Desktop at about 1280px and 1600px. Column counts and truncation are
+  measured, not assumed; where a utility combination matters, read
+  `getComputedStyle`, not the class list.
 - After `-u`, read the log for view-validator warnings: an `alert-*` without
   `role="alert|alertdialog|status"`, an `fa-*` icon with no `title`,
   `aria-label` or adjacent text, `btn` on a tag other than `a`, `button`,

@@ -65,7 +65,8 @@ End with one line: `✓ N/N items pass · M flagged · K fixed inline · J need 
 
 ### Views & UI
 
-- [ ] No new `.scss`/`.css`, `web.assets_*` stylesheet entry or `style=` attribute unless the `ui-design` skill's exception criteria hold and its `references/exceptions.md` lists it; the look comes from arch, widgets and Bootstrap utilities
+- [ ] The look comes from arch, widgets and Bootstrap utilities: no new `.scss`/`.css`, `web.assets_*` stylesheet entry or `style=` attribute unless it meets the `ui-design` skill's "When custom code is fine" and the PR description says why
+- [ ] Every changed view passed the `ui-design` phone check (375px: no sideways scroll, values readable, actions reachable without hover, one2many usable)
 
 ### Naming & numbers
 

@@ -7,6 +7,7 @@ disallowedTools: Write, Edit
 skills:
   - style
   - testing
+  - ui-design
 memory: project
 ---
 
@@ -65,12 +66,13 @@ security / controllers / data / migrations), new dependencies, migrations needed
   all, so a `domain` built on it filters nothing.
 - **Performance**: ORM in loops, read_group, SQL parameterization.
 - **Transactions**: savepoints, parameterization.
-- **UI styling**: a new `.scss`/`.css` or `web.assets_*` stylesheet entry, a
-  `style=` attribute, or a class on `<form>` used as a style scope is a
-  **Major** unless it meets the `ui-design` skill's exception criteria and has
-  a row in its `references/exceptions.md`. Name the built-in replacement from
-  that skill's mockup table.
 - **Views**: inheritance, xpath, XML IDs.
+- **UI** (`ui-design` skill): a new `.scss`/`.css` or `web.assets_*`
+  stylesheet entry, a `style=` attribute, or a class on `<form>` used as a
+  style scope is a **Major** unless the PR shows it meets "When custom code is
+  fine"; name the built-in replacement from the mockup table. Phone breakers
+  are a **Major** too: a fixed width, a control shown only on hover, a
+  one2many people fill in on a phone with only an inline list.
 - **Security**: ACL, record rules, `sudo()` intentional (not a workaround),
   controller `auth=`, multi-company isolation.
 - **Tests**: coverage, proper cases, `@tagged('post_install', '-at_install')`.
