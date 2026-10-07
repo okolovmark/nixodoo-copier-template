@@ -146,6 +146,24 @@ test('only the person opens a gate by hand', async ($, on) => {
   expect(byYou.text).toContain('gate is open (teams is down)')
 })
 
+test('only the person ends a run', async ($, on) => {
+  engine(on)
+  await $.session.start({ cwd: '/p', surface: 'terminal', isInteractive: true })
+  await $.command.run({ command: 'pipeline-gate', args: 'start KIO-9', ...TYPED })
+  const dev = { tool: 'Agent', description: 'dev', prompt: 'p', subagent_type: 'dev' } as const
+  const bySchedule = await $.command.run({
+    command: 'pipeline-gate',
+    args: 'end',
+    origin: { kind: 'scheduled-trigger' },
+    presentation: TYPED.presentation,
+  })
+  expect(bySchedule.text).toContain('only the person')
+  expect((await $.tool.call(dev)).deny).toContain('grill alignment')
+  const byYou = await $.command.run({ command: 'pipeline-gate', args: 'end', ...TYPED })
+  expect(byYou.text).toContain('the run is ended')
+  expect((await $.tool.call(dev)).deny).toBeUndefined()
+})
+
 test('a pipeline for another task starts over with its gates closed', async ($, on) => {
   engine(on)
   await $.session.start({ cwd: '/p', surface: 'terminal', isInteractive: true })
