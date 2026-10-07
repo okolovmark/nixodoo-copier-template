@@ -1,6 +1,6 @@
 ---
 name: pipeline
-description: "Full Odoo development lifecycle orchestrator. Chains subagents: task reading -> dev -> QC gate (review + validation, loops back to dev) -> docs -> demo GIF -> PR. Three subagents: dev (writes code), review (read-only QC/review), documenter (writes module docs)."
+description: "Full Odoo development lifecycle orchestrator. Chains subagents: task reading -> dev -> QC gate (review + validation, loops back to dev) -> docs -> demo GIF (optional, on the user's yes) -> PR. Three subagents: dev (writes code), review (read-only QC/review), documenter (writes module docs)."
 argument-hint: "[task URL or description]"
 ---
 
@@ -144,6 +144,22 @@ needs from it:
 ## Pipeline Phases
 
 Execute **sequentially**. After each phase, check the result and decide whether to proceed or loop back. Use the **Agent tool** to spawn named subagents.
+
+### Gates as code (the pipeline-gates mod)
+
+When `mcp__pipeline-gates__phase` is listed, the gates are enforced by the mod, not only by this
+text:
+
+- Call `mcp__pipeline-gates__phase` at the start of every phase, with `task` once Phase 1 knows the
+  key. It refuses Phase 2 and later while {% if status_mcp == 'teams' %}the Teams status or {% endif %}the grill gate is closed, and Phase 6
+  and later until the QC verdict passed; the refusal says what is missing.
+- The `dev` agent and every edit under `.worktrees/` are refused until {% if status_mcp == 'teams' %}the Teams status was sent and
+  {% endif %}the user pressed **confirm** (or **mechanical**) in the pipeline pane. `gh pr create` is refused
+  until `mcp__pipeline-gates__qc_verdict` recorded a pass, which it accepts only after a `review`
+  agent and a green test run (more than 0 tests) since the last code change; a later code change
+  voids it.
+- Only the user opens a gate by hand: `/pipeline-gate open <{% if status_mcp == 'teams' %}status|{% endif %}grill|qc> <reason>`. Never ask
+  for that to get past a refusal you can satisfy.
 
 ### Phase 0: Memory Bootstrap
 
@@ -292,6 +308,7 @@ Before spawning any subagent:
      `get_me`, send the status, and
      only **after the send succeeds** proceed to Phase 2. The stage move + the
      *sent* status are a mandatory pair — an unsent status blocks the run.
+     The pipeline-gates mod opens its status gate on that successful send.
 {% endif %}
 
 2. **Grill gate — align before building.** Classify the task:
@@ -301,9 +318,12 @@ Before spawning any subagent:
      until the user explicitly confirms its Alignment Summary** — same
      blocking semantics as the status gate above. Never spawn `dev` on an
      unconfirmed understanding; a wrong domain model costs an engine rework,
-     not a review fix.
+     not a review fix. With the pipeline-gates mod the confirmation is the
+     user's press: once they agree, ask them to press **confirm** in the
+     pipeline pane; a typed "ok" does not open the gate.
    - **Mechanical** (typo, one-field change, clear bugfix with a
-     reproduction) → skip the grill; ask only if a real ambiguity surfaces —
+     reproduction) → skip the grill (with the mod, ask the user to press
+     **mechanical** in the pipeline pane); ask only if a real ambiguity surfaces —
      and a real ambiguity discovered in ANY later phase re-opens a focused
      grill round.
 
@@ -571,6 +591,8 @@ returns no closing block.
   instead of fixing them now. Proceed.
 
 Report: "QC gate: review <summary> · verified <n> (<c> confirmed / <p> plausible / <r> refuted) · tests <N> · test cases <X/Y> — PASS (after <k> fix loops)."
+With the pipeline-gates mod, record the decision with `mcp__pipeline-gates__qc_verdict`: `pass`
+with that report line, or `blocking` with the reason before the fix loop.
 
 ---
 
@@ -606,9 +628,13 @@ Report: "Documentation: <modules> — fragments updated, <n> diagrams, README re
 
 ---
 
-### Phase 5: Demo GIF (MANDATORY)
+### Phase 5: Demo GIF (optional)
 
-After the gate passes, record a demo GIF against this session (`<URL>`). **Do NOT delegate** — you need Chrome tools directly.
+After the gate passes, **ask the user whether this task needs a demo GIF** (one
+question, recommend yes for a UI-visible change, no for a backend-only one). On
+**no**, report "Demo GIF: skipped (user's call)" and go to Phase 6. On **yes**,
+record it against this session (`<URL>`). **Do NOT delegate** — you need Chrome
+tools directly.
 
 **Step 1: Inject caption helper**
 
@@ -892,7 +918,7 @@ Final summary:
 - Development: DONE — <files changed>
 - QC gate: PASS — <review summary> · tests green · test cases X/Y · <N fix loops>
 - Docs: <modules documented — fragments / diagrams / README>
-- Demo GIF: <attached>
+- Demo GIF: <attached / skipped (user's call)>
 - PR: <URL>
 {% if tickets_mcp == 'odoo' %}
 - Odoo task: checklist updated, internal notes posted
