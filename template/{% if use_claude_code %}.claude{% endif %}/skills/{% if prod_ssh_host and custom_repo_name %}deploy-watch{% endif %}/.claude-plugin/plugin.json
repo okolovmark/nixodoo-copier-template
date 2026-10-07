@@ -1,0 +1,7 @@
+{
+  "name": "deploy-watch",
+  "version": "0.1.0",
+  "description": "The deploy skill's T+60 invariant re-check as a timer that survives a restart: a countdown band with run-now and cancel, and a prompt when it is due",
+  "author": { "name": "Mark Okolov" },
+  "types": "./types/index.d.ts"
+}

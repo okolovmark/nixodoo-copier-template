@@ -1,0 +1,8 @@
+// This project's answers to the template: the one file of the mod copier renders.
+export const ANSWERS_FILE = '{{ _copier_conf.answers_file }}'
+export const ADDONS = 'src/{{ custom_repo_name }}'
+export const ADDONS_BRANCH = '{{ odoo_version }}'
+export const ENV_BRANCHES: readonly string[] = ['main', 'master']
+export const DB_NAME = '{{ db_name }}'
+export const SERVICE_SUFFIX = '{{ service_suffix }}'
+export const PORTS = { odoo: '{{ odoo_http_port }}', pg: '{{ postgres_port }}', nginx: '{{ nginx_port }}' } as const

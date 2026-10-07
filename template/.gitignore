@@ -34,3 +34,8 @@ result
 # The deploy lock the deploy skill takes on the prod/test box (a directory in
 # this same checkout there): never committed.
 .deploy-lock/
+
+# What Claude Code lays beside a mod (.claude/skills/<name>/) each time it loads it: the API's
+# types and a tsconfig extending them. Regenerated per build, never committed.
+.claude/skills/*/.claude-plugin/types/
+.claude/skills/*/tsconfig.json

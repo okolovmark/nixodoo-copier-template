@@ -45,6 +45,14 @@ The full inventory behind the summary in [the README](../README.md#what-it-gener
   invariant checks, release the lock — with the announcement and ticket-note
   beats gated on your `status_mcp`/`tickets_mcp` answers) and **estimate** (effort estimates priced from a calibration table of
   your own closed tickets, not from gut feel)
+- **Claude Code mods** (function-hook plugins under `.claude/skills/<name>/`, loaded in a
+  trusted workspace): **odoo-env-band**, a row above the prompt with the checkouts this
+  session works in (env repo, addons, its worktree env: branch, changes, ahead/behind, port)
+  and the odoo / postgres / nginx services, every segment explained on hover;
+  **deploy-watch**, the deploy skill's T+60 re-check as a timer that survives a restart,
+  with a countdown, run-now and cancel; **redact-secrets**, passwords, tokens, keys and URL
+  credentials masked in tool output before the model reads it and before the transcript
+  stores it
 - Optional (asked during generation): custom addons repo wiring, S3 production-backup
   restore with **native Odoo neutralization** (`odoo neutralize` + dev fixups),
   SSH helpers for prod/test servers, OCA `queue_job` wiring

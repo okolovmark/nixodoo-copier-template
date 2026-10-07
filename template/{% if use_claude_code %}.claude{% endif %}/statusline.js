@@ -15,7 +15,7 @@
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
-const { execFileSync, spawn } = require("child_process");
+const { spawn } = require("child_process");
 
 const CACHE_FILE = path.join(os.tmpdir(), "claude-usage-cache.json");
 const LOCK_FILE = CACHE_FILE + ".lock";
@@ -25,12 +25,10 @@ const USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 
 // --- ANSI helpers ---
 const R = "\x1b[0m";
-const BOLD = "\x1b[1m";
 const DIM = "\x1b[2m";
 const GREEN = "\x1b[32m";
 const YELLOW = "\x1b[33m";
 const RED = "\x1b[31m";
-const BLUE = "\x1b[34m";
 
 const heat = (p) => (p >= 80 ? RED : p >= 50 ? YELLOW : GREEN);
 const paint = (color, text) => `${color}${text}${R}`;
@@ -185,10 +183,6 @@ process.stdin.on("end", () => {
 function render(j) {
   const seg = [];
 
-  // git branch (replaces the old long cwd path)
-  const branch = gitRef(j.workspace?.current_dir || j.cwd);
-  if (branch) seg.push(paint(BOLD + BLUE, branch));
-
   // model
   if (j.model?.display_name) seg.push(paint(DIM, j.model.display_name));
 
@@ -241,25 +235,6 @@ function render(j) {
   }
 
   return seg.join("  ");
-}
-
-function gitRef(dir) {
-  if (!dir) return "";
-  const git = (args) => {
-    try {
-      return execFileSync("git", ["-C", dir, ...args], {
-        encoding: "utf8",
-        timeout: 1000,
-        stdio: ["ignore", "pipe", "ignore"],
-      }).trim();
-    } catch {
-      return "";
-    }
-  };
-  const branch = git(["branch", "--show-current"]);
-  if (branch) return branch;
-  const sha = git(["rev-parse", "--short", "HEAD"]); // detached HEAD
-  return sha ? "@" + sha : "";
 }
 
 function readCache() {
