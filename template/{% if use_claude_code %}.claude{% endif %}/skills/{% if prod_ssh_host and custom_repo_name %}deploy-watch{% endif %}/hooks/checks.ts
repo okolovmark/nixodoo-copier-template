@@ -2,8 +2,11 @@ import type { Check } from '../types'
 
 export type Schedule = { pr: number; since: string; title: string; tier: string; host: string; minutes: number }
 
+// Every field that reaches the due prompt is checked to the end: the prompt is read by the model,
+// so nothing free-form (the PR title included) goes into it.
 const TIERS = ['high', 'medium', 'low']
-const SINCE = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?/
+const SINCE = /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/
+const HOST = /^[A-Za-z0-9._-]{1,64}$/
 
 // the tool's and the command's input, checked; a string is the refusal
 export function toSchedule(input: Record<string, unknown>): Schedule | string {
@@ -16,7 +19,9 @@ export function toSchedule(input: Record<string, unknown>): Schedule | string {
   const minutes = input.delay_minutes === undefined ? 60 : Number(input.delay_minutes)
   if (!Number.isFinite(minutes) || minutes < 1 || minutes > 1440) return 'delay_minutes must be between 1 and 1440'
   const host = typeof input.host === 'string' && input.host !== '' ? input.host : 'prod'
-  const title = typeof input.title === 'string' ? input.title.trim() : ''
+  if (!HOST.test(host)) return 'host must be an ssh alias: letters, digits, dot, dash, underscore'
+  // drawn in the band as text, never put in the prompt
+  const title = typeof input.title === 'string' ? input.title.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 120) : ''
   return { pr, since, tier, host, title, minutes }
 }
 
@@ -36,9 +41,8 @@ export function timeLeft(check: Check, now: number): { text: string; isDue: bool
 }
 
 export function duePrompt(check: Check): string {
-  const title = check.title === '' ? '' : ` "${check.title}"`
   return [
-    `deploy-watch: the T+60 re-check is due for PR ${check.pr}${title}`,
+    `deploy-watch: the T+60 re-check is due for PR ${check.pr}`,
     `(deployed ${check.since}, blast radius ${check.tier}, host ${check.host}).`,
     'Run Step 9 of the deploy skill now: the inventory-analysis refresh, then the invariant check with',
     `INV_SINCE="${check.since}" and INV_TIER=${check.tier} against ${check.host}, and post the result to the chat as Step 9 says.`,
