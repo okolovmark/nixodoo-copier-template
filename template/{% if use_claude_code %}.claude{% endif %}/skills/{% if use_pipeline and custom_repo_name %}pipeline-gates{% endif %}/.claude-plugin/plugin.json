@@ -1,0 +1,7 @@
+{
+  "name": "pipeline-gates",
+  "version": "0.1.0",
+  "description": "The pipeline skill's gates as code: no dev agent and no worktree edit before the Teams status and the grill confirmation, no PR before a QC pass that rests on a review and a green test run",
+  "author": { "name": "Mark Okolov" },
+  "types": "./types/index.d.ts"
+}
