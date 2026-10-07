@@ -63,12 +63,27 @@ The project ships Claude Code integration: `CLAUDE.md` (project facts), `.claude
 
 {% if use_kb %}Claude's persistent memory for this project lives in
 [kb](https://github.com/okolovmark/kb): records, tasks and one record per session, in Neo4j.
-The SessionStart hook opens the session and prints the index and the standup, so there is
-nothing to initialise here beyond having `kb` installed:
+The SessionStart hook opens the session and prints the index and the standup. Install kb once,
+then re-run `kb-setup` after every upgrade; it also puts kb's Claude Code plugin (a standup pane
+and a session journal) on `CLAUDE_CODE_PLUGIN_DIRS` in `~/.claude/settings.json`:
 
 ```bash
-kb status     # see the kb README for install and kb-setup
+nix profile install github:okolovmark/kb     # an upgrade: nix profile upgrade kb --refresh
+kb-setup
+kb status
 ```
+
+Map this checkout to its scope in `~/.config/kb/config.toml`, so records made here land in it:
+
+```toml
+[scopes]
+{{ project_name }} = "~/path/to/this/checkout"
+```
+
+A markdown memory from before kb (`state.md`, `nodes/`, `journal/` in Claude's memory folder for
+this project) is imported once with `kb migrate state`, then `nodes`, then `journal`, each with
+`--scope {{ project_name }}` and a `--dry-run` first: the
+[migration guide](https://github.com/okolovmark/kb/blob/main/docs/migration.md).
 {% else %}Initialize Claude's persistent per-project memory once (index, journal, state,
 bootstrap questions — see `.claude/memory-template/README.md`):
 
