@@ -85,9 +85,9 @@ async function fire($: EngineInterface, pr: number, isPress: boolean): Promise<s
   timers.delete(timerKey({ pr, project: root }))
   if (check === undefined) return `deploy-watch: no pending re-check for PR ${pr}.`
   await save($, list.filter(one => !isSame(one, check)))
-  // a press is the person asking for it; the timer speaks as the plugin
-  void $.prompt.submit(isPress ? { text: duePrompt(check), asUser: true } : { text: duePrompt(check) })
-  $.ui.toast(`T+60 for PR ${pr}: the re-check prompt is queued`)
+  // always framed as this plugin's, a press too: the text is built from stored data, not typed by the person
+  void $.prompt.submit({ text: duePrompt(check) })
+  $.ui.toast(`T+60 for PR ${pr}: the re-check prompt is queued${isPress ? '' : ' (timer)'}`)
   return `deploy-watch: the re-check for PR ${pr} is queued as a prompt.`
 }
 
