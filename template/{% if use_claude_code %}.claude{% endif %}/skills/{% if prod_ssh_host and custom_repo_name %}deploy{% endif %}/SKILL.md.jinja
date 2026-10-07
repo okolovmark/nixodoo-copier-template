@@ -531,12 +531,20 @@ later. After Step 7, post an internal note to the task(s) the PR closes.
 ## Step 9 — T+60 re-check (blast radius high only)
 
 An hour of real traffic is what actually exercises the deploy — the T+0 window
-was empty. Right after Step 7, start a background timer (Bash
-`run_in_background`):
+was empty. Right after Step 7, schedule it:
 
-```bash
-sleep 3600
-```
+- **`mcp__deploy-watch__schedule_check` listed** (the `deploy-watch` mod) → call
+  it with `pr`, `deploy_ts` = the `INV_SINCE` of Step 6.5, `tier`, `title` = the
+  PR title. It is kept outside the session, so a restart does not lose it; at
+  T+60 it queues a prompt here, and the band above the prompt shows the
+  countdown with run-now and cancel (`/t60 cancel <PR>`). Tell the user it is
+  scheduled and how to cancel it.
+- **Not listed** → a background timer (Bash `run_in_background`), which dies
+  with the process:
+
+  ```bash
+  sleep 3600
+  ```
 
 When it fires, re-run the Step-6.5 sequence in the same order (project write
 step first, if any, then the check with the same `INV_SINCE=<DEPLOY_TS>` and
@@ -561,6 +569,7 @@ delta is one hour of real traffic on the new code.
   …and show the user the full output.
 
 {% endif %}
-If the session is ending before the timer fires, give the user the exact
-re-check command instead — it is idempotent and can run any time later
+With the background timer, if the session is ending before it fires, give the
+user the exact re-check command instead (a deploy-watch check needs nothing: the
+next session in this project shows it as overdue with run-now) — it is idempotent and can run any time later
 (`INV_SINCE` stays the deploy timestamp).

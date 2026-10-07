@@ -1,0 +1,7 @@
+{
+  "name": "redact-secrets",
+  "version": "0.1.0",
+  "description": "Masks passwords, tokens, keys and URL credentials in tool output before the model reads it and before the transcript (and entire) stores it",
+  "author": { "name": "Mark Okolov" },
+  "types": "./types/index.d.ts"
+}

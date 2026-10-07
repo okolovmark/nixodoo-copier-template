@@ -1,0 +1,9 @@
+{
+  "name": "odoo-env-band",
+  "version": "0.1.0",
+  "description": "A row above the prompt: the addons checkout's branch and dirty state, the local Odoo service, the worktree envs and their ports",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "Mark Okolov"
+  }
+}
