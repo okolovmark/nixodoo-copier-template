@@ -52,9 +52,10 @@ The full inventory behind the summary in [the README](../README.md#what-it-gener
   **deploy-watch**, the deploy skill's T+60 re-check as a timer that survives a restart,
   with a countdown, run-now and cancel; **redact-secrets**, passwords, tokens, keys and URL
   credentials masked in tool output before the model reads it and before the transcript
-  stores it; **pipeline-gates** (with the pipeline), the pipeline's gates as code: no `dev`
+  stores it, `/redact off` taken only from the person; **pipeline-gates** (with the pipeline), the pipeline's gates as code: no `dev`
   agent and no worktree edit before the Teams status and the user's grill press, no
-  `gh pr create` before a QC pass that rests on a review and a green test run, with a phase pane
+  `gh pr create` before a QC pass that rests on a review and a green test run, with a phase pane;
+  only the person opens a gate or ends a run by hand
 - Optional (asked during generation): custom addons repo wiring, S3 production-backup
   restore with **native Odoo neutralization** (`odoo neutralize` + dev fixups),
   SSH helpers for prod/test servers, OCA `queue_job` wiring

@@ -72,3 +72,30 @@ test('a tool record is rewritten only when it held a secret, and /redact off sto
   const raw = await $.tool.call({ tool: 'Bash', command: 'cat .env' })
   expect(raw.ref).toBe(1)
 })
+
+test('only the person turns masking off; anyone turns it back on', async ($, on) => {
+  mock.clock(on)
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('command.register', (_$, e) => ({ value: { command: e.name } }))
+  on('ui.toast', () => ({ value: undefined }))
+  on('tool.call', () => ({ result: { stdout: 'X_TOKEN=abcdef123', stderr: '', interrupted: false }, ref: 1 }))
+  await $.session.start({ cwd: '/p', surface: 'terminal', isInteractive: true })
+  const presentation = { isFullscreen: true, columns: 160 } as const
+
+  const byPeer = await $.command.run({ command: 'redact', args: 'off', origin: { kind: 'peer' }, presentation })
+  expect(byPeer.text).toContain('only the person')
+  expect((await $.tool.call({ tool: 'Bash', command: 'env' })).ref).toBeUndefined()
+
+  const byYou = await $.command.run({ command: 'redact', args: 'off', origin: { kind: 'composer' }, presentation })
+  expect(byYou.text).toContain('OFF for this session')
+  expect((await $.tool.call({ tool: 'Bash', command: 'env' })).ref).toBe(1)
+
+  const onByPlugin = await $.command.run({
+    command: 'redact',
+    args: 'on',
+    origin: { kind: 'plugin', name: 'other' },
+    presentation,
+  })
+  expect(onByPlugin.text).toContain('redact: on;')
+  expect((await $.tool.call({ tool: 'Bash', command: 'env' })).ref).toBeUndefined()
+})

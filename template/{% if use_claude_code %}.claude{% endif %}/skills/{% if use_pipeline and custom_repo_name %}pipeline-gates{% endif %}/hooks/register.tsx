@@ -112,6 +112,10 @@ async function runCommand($: EngineInterface, args: string, isPerson: boolean): 
   const [verb = 'status', name = '', ...rest] = args.trim().split(/\s+/).filter(part => part !== '')
   const current = await read($, run)
   if (verb === 'status') return describe(current)
+  // `end` and `open` let work past the gates; `start` may come from anyone, a new run's gates are closed
+  if ((verb === 'end' || verb === 'open') && !isPerson) {
+    return 'pipeline-gates: only the person at the keyboard ends a run or opens a gate by hand.'
+  }
   if (verb === 'start') {
     // by hand the label is taken as typed: KIO-1834, or a name for a trial run
     await start($, name.toUpperCase().slice(0, 40))
@@ -123,7 +127,6 @@ async function runCommand($: EngineInterface, args: string, isPerson: boolean): 
     return 'pipeline-gates: the run is ended; nothing is gated any more.'
   }
   if (verb === 'open') {
-    if (!isPerson) return 'pipeline-gates: only the person at the keyboard opens a gate by hand.'
     if (!isActive(current)) return describe(current)
     if (!GATES.includes(name as GateName) || rest.length === 0) return USAGE
     await save($, openGate(current, name as GateName, `opened by you: ${rest.join(' ')}`, await $.clock.now()))

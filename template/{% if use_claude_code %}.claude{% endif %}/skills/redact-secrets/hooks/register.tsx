@@ -5,6 +5,9 @@ import { redactText, redactValue } from './redact'
 
 // rows that reach the model and the transcript besides a tool's own result
 const DOORS = new Set(['tool-result', 'tool-message', 'hook-context', 'attachment'])
+// the person's own input: the prompt box, the desktop bridge, an SDK host; never a plugin, a schedule,
+// a task notification or another session
+const PERSON_ORIGINS = new Set(['composer', 'bridge', 'sdk'])
 
 const isOff = atom({ plugin: 'redact-secrets', key: 'isOff' } as const, false)
 const masked = atom({ plugin: 'redact-secrets', key: 'masked' } as const, 0)
@@ -48,6 +51,10 @@ export const register: Register = on => {
 
   on('command.run', { command: 'redact' }, async ($, e) => {
     const verb = e.args.trim()
+    // masking goes off only by the person's hand; anyone may turn it back on
+    if (verb === 'off' && !PERSON_ORIGINS.has(e.origin.kind)) {
+      return { text: 'redact: only the person at the keyboard turns masking off.' }
+    }
     if (verb === 'off' || verb === 'on') await update($, isOff, () => verb === 'off')
     const total = await read($, masked)
     const state = (await read($, isOff)) ? 'OFF for this session' : 'on'
