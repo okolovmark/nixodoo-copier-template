@@ -40,7 +40,7 @@ import {
   testSummary,
   withBlock,
 } from './gates'
-import { HAS_STATUS_GATE } from './config'
+import { HAS_STATUS_GATE, ODOO_WEB_URL, TASK_URL_BASE } from './config'
 
 const PANE = 'pipeline'
 const RUNS_KEPT = 20
@@ -80,11 +80,11 @@ async function start($: EngineInterface, task: string, block: readonly string[] 
   const now = await $.clock.now()
   if (isActive(current) && (task === '' || current.task === '' || task === current.task || hasTask(current, task))) {
     const named = task !== '' && current.task === '' ? { ...current, task } : current
-    const joined = addTasks(named, block, now)
+    const joined = addTasks(named, block, now, ODOO_WEB_URL)
     if (joined !== current) await save($, joined)
     return
   }
-  await save($, addTasks(newRun(task, now, HAS_STATUS_GATE), block, now))
+  await save($, addTasks(newRun(task, now, HAS_STATUS_GATE), block, now, ODOO_WEB_URL))
   void $.ui.open({ id: PANE, title: 'pipeline' })
 }
 
@@ -112,6 +112,12 @@ async function confirmGrill($: EngineInterface, how: string): Promise<void> {
   const at = await $.clock.now()
   await change($, current => openGate(current, 'grill', how, at))
   $.ui.toast(`pipeline-gates: grill gate open (${how})`)
+}
+
+// a block task's link: the record URL it was given, else its key's /tasks/<key> where the project has one
+function taskLink(task: BlockTask): string {
+  if (task.url !== undefined && task.url !== '') return task.url
+  return TASK_URL_BASE === '' ? '' : `${TASK_URL_BASE}${task.key}`
 }
 
 // one grill dialog at a time: a call blocked while it is open waits for the same answer
@@ -224,11 +230,11 @@ export const register: Register = on => {
     await $.tool.register({
       name: 'tasks',
       description:
-        "The block of tasks this pipeline run works through, and where each stands: the user watches it as progress in the pipeline pane and band. A block is one run (one Teams status, one grill alignment), so a task of the block never resets the gates. `add` the block's tasks, each \"KIO-1234\" or \"KIO-1234 short title\" (a pipeline started with several keys has them already). Then move them as the work goes: `active` when you start on a task, `done` when it is finished (its part is in the PR, or it closed without code), `pending` to put one back. Tasks that share one PR are yours to mark.",
+        "The block of tasks this pipeline run works through, and where each stands: the user watches it as progress in the pipeline pane and band. A block is one run (one Teams status, one grill alignment), so a task of the block never resets the gates. `add` the block's tasks, each \"KIO-1234 short title <its _url from the odoo MCP>\" (the URL gives the task an open button in the pane; a pipeline started with several keys has the keys already, add again to give titles and URLs). Then move them as the work goes: `active` when you start on a task, `done` when it is finished (its part is in the PR, or it closed without code), `pending` to put one back. Tasks that share one PR are yours to mark.",
       inputSchema: {
         type: 'object',
         properties: {
-          add: { type: 'array', items: { type: 'string' }, description: 'Tasks of the block, "KIO-1234" or "KIO-1234 short title"' },
+          add: { type: 'array', items: { type: 'string' }, description: 'Tasks of the block: "KIO-1234 short title https://…/web#id=…" (title and URL optional)' },
           active: { type: 'array', items: { type: 'string' }, description: 'Task keys now in work' },
           done: { type: 'array', items: { type: 'string' }, description: 'Task keys finished' },
           pending: { type: 'array', items: { type: 'string' }, description: 'Task keys put back to pending' },
@@ -299,7 +305,7 @@ export const register: Register = on => {
     const added = list(input.add)
     const now = await $.clock.now()
     // added to the run in progress, never a reason to start over; with none, the block starts one
-    if (isActive(await read($, run))) await change($, r => addTasks(r, added, now))
+    if (isActive(await read($, run))) await change($, r => addTasks(r, added, now, ODOO_WEB_URL))
     else await start($, taskKeyIn(added.join(' ').toUpperCase()), added)
     for (const state of TASK_STATES) {
       const keys = list(input[state])
@@ -446,7 +452,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Button, Text } = $.ui.resolve(e)
+    const { Box, Button, Link, Text } = $.ui.resolve(e)
     const current = await read($, run)
     if (!isActive(current)) return <Text dimColor>No pipeline run in this session. /pipeline-gate start [TASK] starts one by hand.</Text>
     const now = await $.clock.now()
@@ -473,6 +479,7 @@ export const register: Register = on => {
         </Text>
         {task.title !== '' && <Text dimColor>{task.title}</Text>}
         {task.state !== 'pending' && <Text dimColor>{`${task.state === 'done' ? 'done' : 'in work'} ${ago(task.at)}`}</Text>}
+        {taskLink(task) !== '' && <Link href={taskLink(task)} label="open in Odoo" />}
       </Box>
     )
     const gateRow = (name: GateName, holds: boolean, extra: RenderChildren) => {

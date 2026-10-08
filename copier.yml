@@ -187,6 +187,12 @@ use_pipeline:
   default: true
   when: "{{ use_claude_code and custom_repo_pattern != '' }}"
 
+task_key_route:
+  type: bool
+  help: Does the production Odoo open a task by its key at /tasks/<key> (OCA project_key's controller)? The pipeline pane then links every block task to Odoo by its key, with no record URL needed.
+  default: false
+  when: "{{ use_pipeline and tickets_mcp == 'odoo' and odoo_prod_url != '' }}"
+
 use_kb:
   type: bool
   help: SessionStart hook printing the kb knowledge-base index and standup into every Claude Code session (needs `kb` from okolovmark/kb installed; silent otherwise)?
