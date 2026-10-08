@@ -2,7 +2,7 @@ import { describe, expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { HAS_STATUS_GATE } from '../hooks/config'
+import { HAS_STATUS_GATE, ODOO_WEB_URL } from '../hooks/config'
 import {
   addTasks,
   blockLine,
@@ -16,6 +16,7 @@ import {
   recordVerdict,
   taskKeyIn,
   taskKeysIn,
+  taskUrlIn,
   testSummary,
 } from '../hooks/gates'
 
@@ -99,6 +100,17 @@ describe('rules', () => {
     expect(run.tasks?.map(task => task.state)).toEqual(['done', 'pending', 'active'])
     expect(blockLine(run)).toBe('1/3 done · 1 in work · 1 pending')
     expect(blockLine(newRun('KIO-1', 0))).toBe('')
+  })
+
+  test('a task link opens only a record in the production web client', async () => {
+    const web = 'https://erp.example.com/web'
+    const record = `${web}#id=33574&model=project.task&view_type=form`
+    expect(taskUrlIn(`KIO-1 title ${record}`, web)).toBe(record)
+    expect(taskUrlIn(`KIO-1 ${web}site#id=1`, web)).toBe('')
+    expect(taskUrlIn('KIO-1 https://evil.example.com/web#id=1', web)).toBe('')
+    expect(taskUrlIn(`KIO-1 ${record}`, '')).toBe('')
+    const run = addTasks(newRun('KIO-1', 0), [`KIO-1 size the sub-assemblies ${record}`], 1, web)
+    expect(run.tasks?.[0]).toMatchObject({ key: 'KIO-1', title: 'size the sub-assemblies', url: record })
   })
 
   test('phases and verdicts refuse what their gates do not allow', async () => {
@@ -316,4 +328,18 @@ test('a block is one run: its tasks keep the gates, and the pane and band show h
 
   await $.tool.call({ tool: 'mcp__pipeline-gates__phase', phase: 2, task: 'KIO-9' })
   expect((await $.tool.call(DEV)).deny).toContain('grill alignment')
+})
+
+test('a block task given its record URL gets an open link in the pane', async ($, on) => {
+  engine(on)
+  await $.session.start({ cwd: '/p', surface: 'desktop', isInteractive: true })
+  const record = `${ODOO_WEB_URL}#id=33574&model=project.task&view_type=form`
+  await $.tool.call({ tool: 'mcp__pipeline-gates__tasks', add: [`KIO-1 first ${record}`, 'KIO-2 second'] })
+  for (const surface of ['desktop', 'mobile'] as const) {
+    const pane = await $.ui.mount({ ...PANE, surface })
+    const links = await pane.findAll({ type: 'Link' })
+    expect(links.map(link => link.props.href)).toEqual(ODOO_WEB_URL === '' ? [] : [record])
+    expect(await pane.find({ text: 'second' })).toBeDefined()
+    await pane.unmount()
+  }
 })

@@ -160,7 +160,8 @@ text:
   agent and a green test run (more than 0 tests) since the last code change; a later code change
   voids it.
 - A block of tasks is one run (one status, one grill alignment): start it with all the keys, or
-  call `mcp__pipeline-gates__tasks` with `add` (`"KIO-1234 short title"`) before the first phase
+  call `mcp__pipeline-gates__tasks` with `add` (`"KIO-1234 short title <its _url>"`, the `_url` the
+  odoo MCP returns for the task: the pane gives it an open-in-Odoo link) before the first phase
   that names another task of the block. Mark each task `active` when you start on it and `done`
   when it is finished (in the PR, or closed without code; several may share one PR): the user
   follows the block's progress in the pipeline pane and band.

@@ -1,3 +1,5 @@
 // This project's answers to the template: the one file of the mod copier renders.
 // Without a Teams status flow in the pipeline skill there is no status gate to wait for.
 export const HAS_STATUS_GATE: boolean = {{ 'true' if status_mcp == 'teams' else 'false' }}
+// The production web client: a block task's link opens only a record there ('' takes none).
+export const ODOO_WEB_URL: string = {{ (prod_web_url or '') | tojson }}

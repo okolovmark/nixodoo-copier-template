@@ -5,7 +5,8 @@ export type Gate = { isOpen: boolean; how: string; at: number }
 
 // one task of the block a run works through, and where it stands; the agent moves it
 export type TaskState = 'pending' | 'active' | 'done'
-export type BlockTask = { key: string; title: string; state: TaskState; at: number }
+// `url`: the task's record in the production web client, '' or absent when none was given
+export type BlockTask = { key: string; title: string; state: TaskState; at: number; url?: string }
 
 // One pipeline run. The seq fields order what happened: a QC pass counts only when the review and
 // the green test run it rests on came after the last code change, and it holds only until the next.

@@ -92,17 +92,29 @@ export function hasTask(run: Run, key: string): boolean {
   return tasksOf(run).some(task => task.key === key)
 }
 
-// Tasks given as "KIO-1234" or "KIO-1234 short title" join the block as pending; one already in it keeps
-// its state and takes a new title when one is given.
-export function addTasks(run: Run, items: readonly string[], now: number): Run {
+// The record URL in a task item, kept only when it opens a record in the production web client
+// (`webUrl`, then `#` or `?`): a link the person clicks never leads anywhere else.
+export function taskUrlIn(item: string, webUrl: string): string {
+  const url = /https:\/\/\S+/.exec(item)?.[0] ?? ''
+  const base = webUrl.replace(/\/+$/, '')
+  return base !== '' && (url.startsWith(`${base}#`) || url.startsWith(`${base}?`)) ? url.slice(0, 500) : ''
+}
+
+// Tasks given as "KIO-1234", "KIO-1234 short title", either with the task's record URL, join the block
+// as pending; one already in it keeps its state and takes a new title or URL when one is given.
+export function addTasks(run: Run, items: readonly string[], now: number, webUrl = ''): Run {
   let tasks = tasksOf(run)
   for (const item of items) {
     const key = taskKeyIn(item.toUpperCase())
     if (key === '') continue
-    const title = item.slice(item.toUpperCase().indexOf(key) + key.length).replace(/^[\s:·,-]+/, '').trim().slice(0, 80)
+    const url = taskUrlIn(item, webUrl)
+    const text = item.replace(/https?:\/\/\S+/g, ' ')
+    const title = text.slice(text.toUpperCase().indexOf(key) + key.length).replace(/^[\s:·,-]+/, '').trim().slice(0, 80)
     const known = tasks.find(task => task.key === key)
-    if (known === undefined) tasks = [...tasks, { key, title, state: 'pending', at: now }]
-    else if (title !== '' && title !== known.title) tasks = tasks.map(task => (task.key === key ? { ...task, title } : task))
+    if (known === undefined) tasks = [...tasks, { key, title, state: 'pending', at: now, url }]
+    else if ((title !== '' && title !== known.title) || (url !== '' && url !== known.url)) {
+      tasks = tasks.map(task => (task.key === key ? { ...task, title: title || task.title, url: url || task.url } : task))
+    }
   }
   return tasks === tasksOf(run) ? run : { ...run, tasks }
 }
