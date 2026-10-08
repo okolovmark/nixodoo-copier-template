@@ -3,18 +3,26 @@ import type { EngineInterface, Register, RenderChildren } from 'claude-code'
 
 import type { Gate, GateName, Run } from '../types'
 import {
+  ASK_CONFIRM,
+  ASK_HEADER,
+  ASK_MECHANICAL,
+  ASK_NOT_YET,
   GATE_LABELS,
   PHASES,
+  askedNote,
   bump,
   closedForDev,
   devRefusal,
   enterPhase,
   filePathOf,
+  grillQuestion,
   isActive,
+  isAwayGrillAnswer,
   isDocPath,
   isOpen,
   isPrCreate,
   isWorktreeCode,
+  mayAskGrill,
   newRun,
   openGate,
   prRefusal,
@@ -92,6 +100,41 @@ async function confirmGrill($: EngineInterface, how: string): Promise<void> {
   const at = await $.clock.now()
   await change($, current => openGate(current, 'grill', how, at))
   $.ui.toast(`pipeline-gates: grill gate open (${how})`)
+}
+
+// one grill dialog at a time: a call blocked while it is open waits for the same answer
+let asking: Promise<string> | null = null
+
+// The grill gate waits on the person. They get a push (on the phone through Remote Control; the engine
+// skips it while they are at the screen) and the engine's own question dialog, which every surface draws,
+// the phone included. Only a press on Confirm or Mechanical opens the gate; Not yet, a dismissal, a dialog
+// that resolved itself while they were away and text typed under Other leave it shut and mute the dialog
+// until the person's next message.
+async function askGrill($: EngineInterface, current: Run, what: string): Promise<string> {
+  const task = current.task || 'pipeline'
+  try {
+    await $.tool.call({ tool: 'PushNotification', message: `${task}: ${what} waits on your grill confirm`, status: 'proactive' })
+  } catch {
+    // notifications off or nowhere to send them: the dialog still asks
+  }
+  let answer = ''
+  try {
+    const options = [ASK_CONFIRM, ASK_MECHANICAL, ASK_NOT_YET]
+    answer = (await $.ui.ask(grillQuestion(task, what), { header: ASK_HEADER, options })).trim()
+  } catch {
+    // dismissed, or a run with no one to ask
+  }
+  if (answer === ASK_CONFIRM) await confirmGrill($, 'confirmed by you in the dialog')
+  else if (answer === ASK_MECHANICAL) await confirmGrill($, 'mechanical task, grill skipped by you in the dialog')
+  else await change($, r => ({ ...r, isAskMuted: true }))
+  return answer
+}
+
+function waitForGrill($: EngineInterface, current: Run, what: string): Promise<string> {
+  asking ??= askGrill($, current, what).finally(() => {
+    asking = null
+  })
+  return asking
 }
 
 function describe(current: Run | null): string {
@@ -190,10 +233,20 @@ export const register: Register = on => {
     await start($, task)
     const current = await read($, run)
     if (!isActive(current)) return { result: describe(current) }
-    const entered = enterPhase(current, Number(input.phase), task, await $.clock.now())
+    const phase = Number(input.phase)
+    let entered = enterPhase(current, phase, task, await $.clock.now())
+    let asked = ''
+    if (typeof entered === 'string' && phase >= 2 && mayAskGrill(current)) {
+      const answer = await waitForGrill($, current, `Phase ${phase}`)
+      const fresh = await read($, run)
+      if (!isActive(fresh)) return { result: describe(fresh) }
+      entered = enterPhase(fresh, phase, task, await $.clock.now())
+      if (typeof entered === 'string' && !isOpen(fresh.grill)) asked = askedNote(answer)
+    }
     if (typeof entered === 'string') {
-      await save($, withBlock(current, `Phase ${String(input.phase)}`, await $.clock.now()))
-      return { result: entered }
+      const latest = await read($, run)
+      if (isActive(latest)) await save($, withBlock(latest, `Phase ${String(input.phase)}`, await $.clock.now()))
+      return { result: asked === '' ? entered : `${entered} ${asked}` }
     }
     await save($, entered)
     return { result: describe(entered) }
@@ -211,6 +264,22 @@ export const register: Register = on => {
   })
 
   on('tool.call', { tool: 'mcp__pipeline-gates__gates' }, async $ => ({ result: describe(await read($, run)) }))
+
+  // a grill dialog that resolved itself while the person was away carries no press: its answer is dropped
+  on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
+    const ran = await next(e)
+    if (!isAwayGrillAnswer(e.questions, ran.result)) return ran
+    const result = { ...(ran.result as object), answers: {} }
+    return ran.context === undefined ? { result } : { result, context: ran.context }
+  })
+
+  // the person's own message lets the grill dialog ask again
+  on('prompt.submit', async ($, e, next) => {
+    if (PERSON_ORIGINS.has(e.origin.kind) && (await read($, run))?.isAskMuted === true) {
+      await change($, r => ({ ...r, isAskMuted: false }))
+    }
+    return next(e)
+  })
 
   // the surface already heads a command's output with the plugin's name
   on('command.run', { command: 'pipeline-gate' }, async ($, e) => ({
@@ -231,9 +300,13 @@ export const register: Register = on => {
       const isWorktreeEdit = path !== null && isWorktreeCode(path)
       if ((isDev || isWorktreeEdit) && closedForDev(current).length > 0) {
         const what = isDev ? 'spawning the dev agent' : `editing ${path}`
-        await save($, withBlock(current, what, await $.clock.now()))
-        $.ui.toast(`pipeline-gates: ${what} blocked`)
-        return { deny: devRefusal(current, what) }
+        const answer = mayAskGrill(current) ? await waitForGrill($, current, what) : null
+        const latest = await read($, run)
+        if (isActive(latest) && closedForDev(latest).length > 0) {
+          await save($, withBlock(latest, what, await $.clock.now()))
+          $.ui.toast(`pipeline-gates: ${what} blocked`)
+          return { deny: devRefusal(latest, what, answer === null || isOpen(latest.grill) ? '' : askedNote(answer)) }
+        }
       }
       if (command !== '' && isPrCreate(command) && !qcHolds(current)) {
         await save($, withBlock(current, 'gh pr create', await $.clock.now()))

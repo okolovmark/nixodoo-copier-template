@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import { HAS_STATUS_GATE } from '../hooks/config'
@@ -23,8 +24,12 @@ const PANE = {
   props: { title: 'pipeline', isFocused: true, bodyColumns: 90, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },
 } as const
 const TYPED = { origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 160 } } as const
+const DEV = { tool: 'Agent', description: 'dev', prompt: 'build it', subagent_type: 'dev' } as const
 
-function engine(on: On, agents: { id: string; type: string }[] = []): void {
+// what the person answers in the grill dialog, and what the mod asked and pushed
+type Person = { answer?: string; isAway?: boolean; questions: string[]; pushes: string[] }
+
+function engine(on: On, agents: { id: string; type: string }[] = [], person?: Person): void {
   mock.store(on)
   mock.clock(on, { now: 1_000_000 })
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
@@ -38,11 +43,22 @@ function engine(on: On, agents: { id: string; type: string }[] = []): void {
   }))
   on('skill.prompt', (_$, e) => ({ text: e.text }))
   on('turn.complete', () => ({ text: '' }))
-  on('tool.call', (_$, e) =>
-    e.tool === 'Bash' && String(e.command).includes('--test-enable')
+  on('prompt.submit', (_$, e) => ({ text: e.text }))
+  on('tool.call', (_$, e) => {
+    if (e.tool === 'AskUserQuestion' && person !== undefined) {
+      const question = e.questions[0]?.question ?? ''
+      person.questions.push(question)
+      const answers = person.answer === undefined ? {} : { [question]: person.answer }
+      return { result: { questions: e.questions, answers, ...(person.isAway === true ? { afkTimeoutMs: 60_000 } : {}) } }
+    }
+    if (e.tool === 'PushNotification' && person !== undefined) {
+      person.pushes.push(e.message)
+      return { result: { message: e.message, pushSent: true } }
+    }
+    return e.tool === 'Bash' && String(e.command).includes('--test-enable')
       ? { result: { stdout: GREEN, stderr: '', interrupted: false } }
-      : { result: { ok: true } },
-  )
+      : { result: { ok: true } }
+  })
   on('ui.render', ($, e) => {
     const { Box } = $.ui.resolve(e)
     return <Box />
@@ -178,4 +194,75 @@ test('a pipeline for another task starts over with its gates closed', async ($, 
   expect((await $.tool.call(dev)).deny).toBeUndefined()
   await $.tool.call({ tool: 'Skill', skill: 'pipeline', args: 'KIO-2' })
   expect((await $.tool.call(dev)).deny).toContain('grill alignment')
+})
+
+// the Teams status sent, so the grill gate is the one left shut
+async function toGrill($: Engine): Promise<void> {
+  await $.session.start({ cwd: '/p', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'Skill', skill: 'pipeline', args: 'KIO-9' })
+  if (HAS_STATUS_GATE) await $.tool.call({ tool: 'mcp__m365__teams_send_chat_message', chatId: '19:status-chat', body: 'status' })
+}
+
+test('a step that waits on the grill gate pushes to the phone and asks; your press opens it', async ($, on) => {
+  const person: Person = { answer: 'Confirm', questions: [], pushes: [] }
+  engine(on, [], person)
+  await $.session.start({ cwd: '/p', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'Skill', skill: 'pipeline', args: 'KIO-9' })
+  if (HAS_STATUS_GATE) {
+    // the Teams status is the agent's to send: no dialog while it is missing
+    expect((await $.tool.call(DEV)).deny).toContain('Teams status')
+    expect(person.questions).toEqual([])
+    await $.tool.call({ tool: 'mcp__m365__teams_send_chat_message', chatId: '19:status-chat', body: 'status' })
+  }
+
+  const entered = await $.tool.call({ tool: 'mcp__pipeline-gates__phase', phase: 2, task: 'KIO-9' })
+  expect(String(entered.result)).toContain('phase 2 Development')
+  expect(person.pushes).toEqual(['KIO-9: Phase 2 waits on your grill confirm'])
+  expect(person.questions[0]).toContain('Do you agree with the Alignment Summary?')
+  expect(String((await $.tool.call({ tool: 'mcp__pipeline-gates__gates' })).result)).toContain('confirmed by you in the dialog')
+  expect((await $.tool.call(DEV)).deny).toBeUndefined()
+  expect(person.questions.length).toBe(1)
+})
+
+test('Mechanical opens the gate for the dev agent waiting on it', async ($, on) => {
+  const person: Person = { answer: 'Mechanical', questions: [], pushes: [] }
+  engine(on, [], person)
+  await toGrill($)
+  expect((await $.tool.call(DEV)).deny).toBeUndefined()
+  expect(String((await $.tool.call({ tool: 'mcp__pipeline-gates__gates' })).result)).toContain('mechanical task')
+})
+
+test('Not yet keeps the gate shut and the dialog quiet until your next message', async ($, on) => {
+  const person: Person = { answer: 'Not yet', questions: [], pushes: [] }
+  engine(on, [], person)
+  await toGrill($)
+  expect((await $.tool.call(DEV)).deny).toContain('answered Not yet')
+  expect((await $.tool.call(DEV)).deny).toContain('grill alignment gate is closed')
+  expect(person.questions.length).toBe(1)
+
+  // a plugin's prompt is not the person's; their own message lets the dialog ask again
+  await $.prompt.submit({ text: 'go on', wait: false, origin: { kind: 'plugin', name: 'other' } })
+  expect((await $.tool.call(DEV)).deny).toBeDefined()
+  expect(person.questions.length).toBe(1)
+  person.answer = 'Confirm'
+  await $.prompt.submit({ text: 'go on', wait: false, origin: { kind: 'bridge' } })
+  expect((await $.tool.call(DEV)).deny).toBeUndefined()
+  expect(person.questions.length).toBe(2)
+})
+
+test('a dialog that resolved itself while you were away, or text under Other, opens nothing', async ($, on) => {
+  const person: Person = { answer: 'Confirm', isAway: true, questions: [], pushes: [] }
+  engine(on, [], person)
+  await toGrill($)
+  expect((await $.tool.call(DEV)).deny).toContain('Nobody answered the grill dialog')
+  expect(String((await $.tool.call({ tool: 'mcp__pipeline-gates__gates' })).result)).toContain('grill alignment: closed')
+})
+
+test('text typed under Other reaches the agent and keeps the gate shut', async ($, on) => {
+  const person: Person = { answer: 'rename the field first', questions: [], pushes: [] }
+  engine(on, [], person)
+  await toGrill($)
+  const phase = await $.tool.call({ tool: 'mcp__pipeline-gates__phase', phase: 2 })
+  expect(String(phase.result)).toContain('the user wrote: "rename the field first"')
+  expect((await $.tool.call(DEV)).deny).toContain('grill alignment gate is closed')
 })

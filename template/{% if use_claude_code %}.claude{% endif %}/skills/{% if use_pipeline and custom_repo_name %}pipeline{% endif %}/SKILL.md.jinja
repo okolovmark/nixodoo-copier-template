@@ -154,7 +154,8 @@ text:
   key. It refuses Phase 2 and later while {% if status_mcp == 'teams' %}the Teams status or {% endif %}the grill gate is closed, and Phase 6
   and later until the QC verdict passed; the refusal says what is missing.
 - The `dev` agent and every edit under `.worktrees/` are refused until {% if status_mcp == 'teams' %}the Teams status was sent and
-  {% endif %}the user pressed **confirm** (or **mechanical**) in the pipeline pane. `gh pr create` is refused
+  {% endif %}the user pressed **confirm** (or **mechanical**): in the pipeline pane, or in the dialog the
+  mod opens, with a push to their phone, when a step waits on the grill gate. `gh pr create` is refused
   until `mcp__pipeline-gates__qc_verdict` recorded a pass, which it accepts only after a `review`
   agent and a green test run (more than 0 tests) since the last code change; a later code change
   voids it.
@@ -319,11 +320,14 @@ Before spawning any subagent:
      blocking semantics as the status gate above. Never spawn `dev` on an
      unconfirmed understanding; a wrong domain model costs an engine rework,
      not a review fix. With the pipeline-gates mod the confirmation is the
-     user's press: once they agree, ask them to press **confirm** in the
-     pipeline pane; a typed "ok" does not open the gate.
+     user's press, never a typed "ok": after the Alignment Summary call
+     `mcp__pipeline-gates__phase` for Phase 2. The mod pushes a notification
+     to the user's phone and asks them in a dialog (Confirm / Mechanical /
+     Not yet); the call goes on once they press, and the pane's **confirm**
+     button does the same. On Not yet, or no answer, stop and wait for them.
    - **Mechanical** (typo, one-field change, clear bugfix with a
-     reproduction) → skip the grill (with the mod, ask the user to press
-     **mechanical** in the pipeline pane); ask only if a real ambiguity surfaces —
+     reproduction) → skip the grill (with the mod, call Phase 2 and the user
+     presses **Mechanical** in the dialog or the pane); ask only if a real ambiguity surfaces —
      and a real ambiguity discovered in ANY later phase re-opens a focused
      grill round.
 

@@ -20,6 +20,9 @@ export type Run = {
   lastGreen: number
   lastTests: string
   blocked: { what: string; at: number }[]
+  // the grill dialog was declined or went unanswered: it asks again only after the person's next message
+  // (absent in a run stored before the dialog existed)
+  isAskMuted?: boolean
   isDone: boolean
 }
 
