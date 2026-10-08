@@ -2,7 +2,7 @@ import { describe, expect, mock, test } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { HAS_STATUS_GATE, ODOO_WEB_URL } from '../hooks/config'
+import { HAS_STATUS_GATE, ODOO_WEB_URL, TASK_URL_BASE } from '../hooks/config'
 import {
   addTasks,
   blockLine,
@@ -338,7 +338,9 @@ test('a block task given its record URL gets an open link in the pane', async ($
   for (const surface of ['desktop', 'mobile'] as const) {
     const pane = await $.ui.mount({ ...PANE, surface })
     const links = await pane.findAll({ type: 'Link' })
-    expect(links.map(link => link.props.href)).toEqual(ODOO_WEB_URL === '' ? [] : [record])
+    // the record URL where one was given, else the key's route where the project has it
+    const byKey = TASK_URL_BASE === '' ? [] : [`${TASK_URL_BASE}KIO-2`]
+    expect(links.map(link => link.props.href)).toEqual([...(ODOO_WEB_URL === '' ? [] : [record]), ...byKey])
     expect(await pane.find({ text: 'second' })).toBeDefined()
     await pane.unmount()
   }

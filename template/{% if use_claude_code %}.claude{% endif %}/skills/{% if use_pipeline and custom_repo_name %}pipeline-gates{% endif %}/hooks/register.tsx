@@ -40,7 +40,7 @@ import {
   testSummary,
   withBlock,
 } from './gates'
-import { HAS_STATUS_GATE, ODOO_WEB_URL } from './config'
+import { HAS_STATUS_GATE, ODOO_WEB_URL, TASK_URL_BASE } from './config'
 
 const PANE = 'pipeline'
 const RUNS_KEPT = 20
@@ -112,6 +112,12 @@ async function confirmGrill($: EngineInterface, how: string): Promise<void> {
   const at = await $.clock.now()
   await change($, current => openGate(current, 'grill', how, at))
   $.ui.toast(`pipeline-gates: grill gate open (${how})`)
+}
+
+// a block task's link: the record URL it was given, else its key's /tasks/<key> where the project has one
+function taskLink(task: BlockTask): string {
+  if (task.url !== undefined && task.url !== '') return task.url
+  return TASK_URL_BASE === '' ? '' : `${TASK_URL_BASE}${task.key}`
 }
 
 // one grill dialog at a time: a call blocked while it is open waits for the same answer
@@ -473,7 +479,7 @@ export const register: Register = on => {
         </Text>
         {task.title !== '' && <Text dimColor>{task.title}</Text>}
         {task.state !== 'pending' && <Text dimColor>{`${task.state === 'done' ? 'done' : 'in work'} ${ago(task.at)}`}</Text>}
-        {task.url !== undefined && task.url !== '' && <Link key={`task-open-${task.key}`} href={task.url} label="open in Odoo" />}
+        {taskLink(task) !== '' && <Link href={taskLink(task)} label="open in Odoo" />}
       </Box>
     )
     const gateRow = (name: GateName, holds: boolean, extra: RenderChildren) => {
