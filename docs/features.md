@@ -55,7 +55,9 @@ The full inventory behind the summary in [the README](../README.md#what-it-gener
   stores it, `/redact off` taken only from the person; **pipeline-gates** (with the pipeline), the pipeline's gates as code: no `dev`
   agent and no worktree edit before the Teams status and the user's grill press, no
   `gh pr create` before a QC pass that rests on a review and a green test run, with a phase pane;
-  only the person opens a gate or ends a run by hand
+  a step that waits on the grill press pushes to the phone and asks in a dialog (Confirm /
+  Mechanical / Not yet); a block of tasks is one run whose progress (done, in work, pending)
+  the pane and band show; only the person opens a gate or ends a run by hand
 - Optional (asked during generation): custom addons repo wiring, S3 production-backup
   restore with **native Odoo neutralization** (`odoo neutralize` + dev fixups),
   SSH helpers for prod/test servers, OCA `queue_job` wiring

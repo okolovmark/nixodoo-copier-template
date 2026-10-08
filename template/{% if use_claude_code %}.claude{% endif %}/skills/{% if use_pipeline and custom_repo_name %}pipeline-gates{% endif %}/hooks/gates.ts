@@ -1,4 +1,4 @@
-import type { Gate, GateName, Run } from '../types'
+import type { BlockTask, Gate, GateName, Run, TaskState } from '../types'
 
 export const PHASES = [
   'Memory bootstrap',
@@ -16,6 +16,13 @@ export const GATE_LABELS: Record<GateName, string> = {
   grill: 'grill alignment',
   qc: 'QC verdict',
 }
+
+// the grill dialog: a press on its first two options opens the gate, as the pane's buttons do
+export const ASK_CONFIRM = 'Confirm'
+export const ASK_MECHANICAL = 'Mechanical'
+export const ASK_NOT_YET = 'Not yet'
+export const ASK_HEADER = 'Grill gate'
+const ASK_TAIL = 'waits on the grill gate. Do you agree with the Alignment Summary?'
 
 const FILE_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
 const WORKTREE = /\/\.worktrees\/(?!_env\/)[A-Za-z0-9][A-Za-z0-9._-]*\//
@@ -41,6 +48,7 @@ export function newRun(task: string, now: number, hasStatusGate = true): Run {
     lastGreen: 0,
     lastTests: '',
     blocked: [],
+    isAskMuted: false,
     isDone: false,
   }
 }
@@ -69,6 +77,54 @@ export function isPrCreate(command: string): boolean {
 
 export function taskKeyIn(text: string): string {
   return TASK_KEY.exec(text)?.[0] ?? ''
+}
+
+// every task key in the text, once each, in order: the block a pipeline started with several takes on
+export function taskKeysIn(text: string): string[] {
+  return [...new Set(text.match(new RegExp(TASK_KEY.source, 'g')) ?? [])]
+}
+
+export function tasksOf(run: Run): BlockTask[] {
+  return run.tasks ?? []
+}
+
+export function hasTask(run: Run, key: string): boolean {
+  return tasksOf(run).some(task => task.key === key)
+}
+
+// Tasks given as "KIO-1234" or "KIO-1234 short title" join the block as pending; one already in it keeps
+// its state and takes a new title when one is given.
+export function addTasks(run: Run, items: readonly string[], now: number): Run {
+  let tasks = tasksOf(run)
+  for (const item of items) {
+    const key = taskKeyIn(item.toUpperCase())
+    if (key === '') continue
+    const title = item.slice(item.toUpperCase().indexOf(key) + key.length).replace(/^[\s:·,-]+/, '').trim().slice(0, 80)
+    const known = tasks.find(task => task.key === key)
+    if (known === undefined) tasks = [...tasks, { key, title, state: 'pending', at: now }]
+    else if (title !== '' && title !== known.title) tasks = tasks.map(task => (task.key === key ? { ...task, title } : task))
+  }
+  return tasks === tasksOf(run) ? run : { ...run, tasks }
+}
+
+// moves the named tasks to `state`; a key not in the block joins it in that state
+export function moveTasks(run: Run, keys: readonly string[], state: TaskState, now: number): Run {
+  const withAll = addTasks(run, keys, now)
+  const wanted = new Set(keys.map(key => taskKeyIn(key.toUpperCase())).filter(key => key !== ''))
+  const tasks = tasksOf(withAll).map(task => (wanted.has(task.key) && task.state !== state ? { ...task, state, at: now } : task))
+  return { ...withAll, tasks }
+}
+
+export function taskCounts(run: Run): Record<TaskState, number> & { total: number } {
+  const tasks = tasksOf(run)
+  const count = (state: TaskState) => tasks.filter(task => task.state === state).length
+  return { pending: count('pending'), active: count('active'), done: count('done'), total: tasks.length }
+}
+
+// "2/11 done · 4 in work · 5 pending", or '' for a run of one task
+export function blockLine(run: Run): string {
+  const counts = taskCounts(run)
+  return counts.total > 1 ? `${counts.done}/${counts.total} done · ${counts.active} in work · ${counts.pending} pending` : ''
 }
 
 // Every `N failed, M error(s) of K tests` line of an Odoo run: green when all are clean and K adds up
@@ -108,14 +164,44 @@ export function withBlock(run: Run, what: string, at: number): Run {
   return { ...run, blocked: [{ what, at }, ...run.blocked].slice(0, 5) }
 }
 
-export function devRefusal(run: Run, what: string): string {
+export function devRefusal(run: Run, what: string, asked = ''): string {
   const names = closedForDev(run).map(name => GATE_LABELS[name])
   const closed = `${names.join(' and ')} ${names.length > 1 ? 'gates are' : 'gate is'}`
   const how = [
     !isOpen(run.status) ? 'the status opens on a successful Teams send (my-status send)' : '',
-    !isOpen(run.grill) ? 'the grill gate opens only when the user presses confirm or mechanical in the pipeline pane' : '',
+    !isOpen(run.grill)
+      ? 'the grill gate opens only when the user presses confirm or mechanical, in the pipeline pane or in the dialog the mod opens when a step waits on it'
+      : '',
   ].filter(part => part !== '')
-  return `pipeline-gates: ${what} is refused, the ${closed} closed: ${how.join('; ')}. A user who decides to go on anyway types /pipeline-gate open <gate> <reason>.`
+  const refusal = `pipeline-gates: ${what} is refused, the ${closed} closed: ${how.join('; ')}. A user who decides to go on anyway types /pipeline-gate open <gate> <reason>.`
+  return asked === '' ? refusal : `${refusal} ${asked}`
+}
+
+// The dialog asks only when the grill gate is the one still shut for dev, and once per message of the
+// person's: after a "not yet" or a dialog nobody answered, a retry is refused without asking again.
+export function mayAskGrill(run: Run): boolean {
+  const closed = closedForDev(run)
+  return closed.length === 1 && closed[0] === 'grill' && run.isAskMuted !== true
+}
+
+export function grillQuestion(task: string, what: string): string {
+  return `${task || 'pipeline'}: ${what} ${ASK_TAIL}`
+}
+
+// An AskUserQuestion that resolved itself while the person was away (afkTimeoutMs) carries no press of
+// theirs: when it is the grill dialog, its answers are dropped.
+export function isAwayGrillAnswer(questions: readonly { header?: string; question: string }[], result: unknown): boolean {
+  const isGrill = questions.some(asked => asked.header === ASK_HEADER && asked.question.endsWith(ASK_TAIL))
+  return isGrill && (result as { afkTimeoutMs?: unknown } | null)?.afkTimeoutMs !== undefined
+}
+
+// what the refusal tells the model after a dialog that did not open the gate
+export function askedNote(answer: string): string {
+  if (answer === ASK_NOT_YET) return 'The user answered Not yet in the grill dialog: stop and wait for them.'
+  if (answer === '') {
+    return 'Nobody answered the grill dialog (dismissed, or it closed while the user was away): tell the user the pipeline waits on their confirm, and stop.'
+  }
+  return `Instead of choosing, the user wrote: "${answer.slice(0, 500)}". That does not open the gate: answer them, then call again.`
 }
 
 // what a QC pass still lacks since the last code change
