@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderChildren } from 'claude-code'
 
-import type { Gate, GateName, Run } from '../types'
+import type { BlockTask, Gate, GateName, Run, TaskState } from '../types'
 import {
   ASK_CONFIRM,
   ASK_HEADER,
@@ -9,13 +9,16 @@ import {
   ASK_NOT_YET,
   GATE_LABELS,
   PHASES,
+  addTasks,
   askedNote,
+  blockLine,
   bump,
   closedForDev,
   devRefusal,
   enterPhase,
   filePathOf,
   grillQuestion,
+  hasTask,
   isActive,
   isAwayGrillAnswer,
   isDocPath,
@@ -23,13 +26,17 @@ import {
   isPrCreate,
   isWorktreeCode,
   mayAskGrill,
+  moveTasks,
   newRun,
   openGate,
   prRefusal,
   qcEvidence,
   qcHolds,
   recordVerdict,
+  taskCounts,
   taskKeyIn,
+  taskKeysIn,
+  tasksOf,
   testSummary,
   withBlock,
 } from './gates'
@@ -40,7 +47,8 @@ const RUNS_KEPT = 20
 const GATES: readonly GateName[] = ['status', 'grill', 'qc']
 // the person's own input: the prompt box, the desktop bridge, an SDK host; never a plugin or another agent
 const PERSON_ORIGINS = new Set(['composer', 'bridge', 'sdk'])
-const USAGE = 'usage: /pipeline-gate [status] | open <status|grill|qc> <reason> | start [TASK-KEY] | end'
+const USAGE = 'usage: /pipeline-gate [status] | open <status|grill|qc> <reason> | start [TASK-KEY ...] | end'
+const TASK_STATES: readonly TaskState[] = ['pending', 'active', 'done']
 
 const run = atom({ plugin: 'pipeline-gates', key: 'run' } as const, null)
 
@@ -65,14 +73,18 @@ async function change($: EngineInterface, apply: (current: Run) => Run): Promise
 }
 
 // A run for another task is a new run with its gates closed again: an earlier run left open (stopped
-// halfway, never ended) must not lend its open gates to the next one.
-async function start($: EngineInterface, task: string): Promise<void> {
+// halfway, never ended) must not lend its open gates to the next one. A block is one run: a task of the
+// block keeps it, and `block` (the keys a pipeline started with) joins it.
+async function start($: EngineInterface, task: string, block: readonly string[] = []): Promise<void> {
   const current = await read($, run)
-  if (isActive(current) && (task === '' || current.task === '' || task === current.task)) {
-    if (task !== '' && current.task === '') await save($, { ...current, task })
+  const now = await $.clock.now()
+  if (isActive(current) && (task === '' || current.task === '' || task === current.task || hasTask(current, task))) {
+    const named = task !== '' && current.task === '' ? { ...current, task } : current
+    const joined = addTasks(named, block, now)
+    if (joined !== current) await save($, joined)
     return
   }
-  await save($, newRun(task, await $.clock.now(), HAS_STATUS_GATE))
+  await save($, addTasks(newRun(task, now, HAS_STATUS_GATE), block, now))
   void $.ui.open({ id: PANE, title: 'pipeline' })
 }
 
@@ -142,6 +154,7 @@ function describe(current: Run | null): string {
   const evidence = qcEvidence(current)
   return [
     `pipeline ${current.task || '(task not set)'} · phase ${current.phase} ${PHASES[current.phase]}`,
+    ...(blockLine(current) === '' ? [] : [`tasks: ${blockLine(current)}`]),
     ...GATES.map(name => {
       const gate = current[name]
       return `${GATE_LABELS[name]}: ${gate === null ? 'closed' : `${gate.how}${gate.isOpen ? '' : ' (closed)'}`}`
@@ -160,8 +173,9 @@ async function runCommand($: EngineInterface, args: string, isPerson: boolean): 
     return 'pipeline-gates: only the person at the keyboard ends a run or opens a gate by hand.'
   }
   if (verb === 'start') {
-    // by hand the label is taken as typed: KIO-1834, or a name for a trial run
-    await start($, name.toUpperCase().slice(0, 40))
+    // by hand the label is taken as typed: KIO-1834, a block of keys, or a name for a trial run
+    const keys = taskKeysIn([name, ...rest].join(' ').toUpperCase())
+    await start($, keys[0] ?? name.toUpperCase().slice(0, 40), keys)
     return describe(await read($, run))
   }
   if (verb === 'end') {
@@ -208,6 +222,20 @@ export const register: Register = on => {
       },
     })
     await $.tool.register({
+      name: 'tasks',
+      description:
+        "The block of tasks this pipeline run works through, and where each stands: the user watches it as progress in the pipeline pane and band. A block is one run (one Teams status, one grill alignment), so a task of the block never resets the gates. `add` the block's tasks, each \"KIO-1234\" or \"KIO-1234 short title\" (a pipeline started with several keys has them already). Then move them as the work goes: `active` when you start on a task, `done` when it is finished (its part is in the PR, or it closed without code), `pending` to put one back. Tasks that share one PR are yours to mark.",
+      inputSchema: {
+        type: 'object',
+        properties: {
+          add: { type: 'array', items: { type: 'string' }, description: 'Tasks of the block, "KIO-1234" or "KIO-1234 short title"' },
+          active: { type: 'array', items: { type: 'string' }, description: 'Task keys now in work' },
+          done: { type: 'array', items: { type: 'string' }, description: 'Task keys finished' },
+          pending: { type: 'array', items: { type: 'string' }, description: 'Task keys put back to pending' },
+        },
+      },
+    })
+    await $.tool.register({
       name: 'gates',
       description: 'The current pipeline run: phase, the three gates, and what the QC gate still lacks.',
       inputSchema: { type: 'object', properties: {} },
@@ -215,7 +243,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'pipeline-gate',
       description: 'The pipeline gates: status, or open a gate by hand with a reason',
-      argumentHint: '[status | open <status|grill|qc> <reason> | start [TASK] | end]',
+      argumentHint: '[status | open <status|grill|qc> <reason> | start [TASK ...] | end]',
     })
     await restore($)
     if (isActive(await read($, run))) void $.ui.open({ id: PANE, title: 'pipeline' })
@@ -265,6 +293,21 @@ export const register: Register = on => {
 
   on('tool.call', { tool: 'mcp__pipeline-gates__gates' }, async $ => ({ result: describe(await read($, run)) }))
 
+  on('tool.call', { tool: 'mcp__pipeline-gates__tasks' }, async ($, e) => {
+    const input = e as unknown as Record<string, unknown>
+    const list = (value: unknown) => (Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [])
+    const added = list(input.add)
+    const now = await $.clock.now()
+    // added to the run in progress, never a reason to start over; with none, the block starts one
+    if (isActive(await read($, run))) await change($, r => addTasks(r, added, now))
+    else await start($, taskKeyIn(added.join(' ').toUpperCase()), added)
+    for (const state of TASK_STATES) {
+      const keys = list(input[state])
+      if (keys.length > 0) await change($, r => moveTasks(r, keys, state, now))
+    }
+    return { result: describe(await read($, run)) }
+  })
+
   // a grill dialog that resolved itself while the person was away carries no press: its answer is dropped
   on('tool.call', { tool: 'AskUserQuestion' }, async ($, e, next) => {
     const ran = await next(e)
@@ -290,7 +333,10 @@ export const register: Register = on => {
   on('tool.call', async ($, e, next) => {
     const tool = String(e.tool)
     const input = e as unknown as Record<string, unknown>
-    if (tool === 'Skill' && input.skill === 'pipeline') await start($, taskKeyIn(String(input.args ?? '')))
+    if (tool === 'Skill' && input.skill === 'pipeline') {
+      const keys = taskKeysIn(String(input.args ?? ''))
+      await start($, keys[0] ?? '', keys)
+    }
 
     const current = await read($, run)
     const path = filePathOf(tool, input)
@@ -366,6 +412,7 @@ export const register: Register = on => {
     if (!isActive(current) || e.props.hasSurvey) return below
     const { Box, Button, Text } = $.ui.resolve(e)
     const hint = { scope: 'pipeline-gates', underline: true }
+    const counts = taskCounts(current)
     const mark = (gate: Gate | null, holds: boolean) => (holds && isOpen(gate) ? '✓' : '○')
 
     return (
@@ -375,7 +422,8 @@ export const register: Register = on => {
           <Text color="cyan">ⓘ</Text>
           <Text dimColor>
             This session runs the pipeline: its phase and the gates the pipeline-gates mod enforces. Teams status and grill
-            gate the dev agent and worktree edits, the QC verdict gates gh pr create. open = the pipeline pane.
+            gate the dev agent and worktree edits, the QC verdict gates gh pr create. For a block of tasks, done/total.
+            open = the pipeline pane.
           </Text>
         </Box>
         {below}
@@ -386,6 +434,7 @@ export const register: Register = on => {
           <Text bold hover={hint}>
             {current.task || 'task?'}
           </Text>
+          {counts.total > 1 && <Text color={counts.done === counts.total ? 'green' : 'cyan'} hover={hint}>{`${counts.done}/${counts.total}`}</Text>}
           <Text hover={hint}>{`${current.phase} ${PHASES[current.phase]}`}</Text>
           <Text color={isOpen(current.status) ? 'green' : 'yellow'} hover={hint}>{`status ${mark(current.status, true)}`}</Text>
           <Text color={isOpen(current.grill) ? 'green' : 'yellow'} hover={hint}>{`grill ${mark(current.grill, true)}`}</Text>
@@ -412,6 +461,20 @@ export const register: Register = on => {
       </Box>
     )
     const evidence = qcEvidence(current)
+    const tasks = tasksOf(current)
+    const counts = taskCounts(current)
+    const taskRow = (task: BlockTask) => (
+      <Box key={`task-${task.key}`} flexDirection="row" columnGap={1}>
+        <Text color={task.state === 'done' ? 'green' : task.state === 'active' ? 'cyan' : undefined} dimColor={task.state === 'pending'}>
+          {task.state === 'done' ? '✓' : task.state === 'active' ? '●' : '○'}
+        </Text>
+        <Text bold={task.state === 'active'} dimColor={task.state === 'pending'}>
+          {task.key}
+        </Text>
+        {task.title !== '' && <Text dimColor>{task.title}</Text>}
+        {task.state !== 'pending' && <Text dimColor>{`${task.state === 'done' ? 'done' : 'in work'} ${ago(task.at)}`}</Text>}
+      </Box>
+    )
     const gateRow = (name: GateName, holds: boolean, extra: RenderChildren) => {
       const gate = current[name]
       const isUp = holds && isOpen(gate)
@@ -430,9 +493,23 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column" rowGap={1}>
         <Box key="pipeline-head" flexDirection="column">
-          <Text bold>{`pipeline ${current.task || '(task not set yet)'}`}</Text>
+          <Text bold>{`pipeline ${current.task || '(task not set yet)'}${tasks.length > 1 ? ` · block of ${tasks.length}` : ''}`}</Text>
           <Text dimColor>{`started ${ago(current.startedAt)} · dev ${closedForDev(current).length === 0 ? 'allowed' : 'gated'} · PR ${qcHolds(current) ? 'allowed' : 'gated'}`}</Text>
         </Box>
+        {tasks.length > 1 &&
+          card(
+            'pipeline-tasks',
+            <Box flexDirection="column">
+              <Text bold>Tasks</Text>
+              <Box flexDirection="row">
+                <Text color="green">{'■'.repeat(counts.done)}</Text>
+                <Text color="cyan">{'■'.repeat(counts.active)}</Text>
+                <Text dimColor>{'□'.repeat(counts.pending)}</Text>
+              </Box>
+              <Text dimColor>{blockLine(current)}</Text>
+              {tasks.map(task => taskRow(task))}
+            </Box>,
+          )}
         {card(
           'pipeline-phases',
           <Box flexDirection="column">

@@ -4,14 +4,18 @@ import type { On } from 'claude-code'
 
 import { HAS_STATUS_GATE } from '../hooks/config'
 import {
+  addTasks,
+  blockLine,
   enterPhase,
   isDocPath,
   isWorktreeCode,
+  moveTasks,
   newRun,
   openGate,
   qcHolds,
   recordVerdict,
   taskKeyIn,
+  taskKeysIn,
   testSummary,
 } from '../hooks/gates'
 
@@ -22,6 +26,11 @@ const PANE = {
   component: 'Pane',
   requestId: 'pipeline',
   props: { title: 'pipeline', isFocused: true, bodyColumns: 90, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },
+} as const
+const BAND = {
+  plugin: 'pipeline-gates',
+  component: 'AbovePrompt',
+  props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 120, scroll: { offset: 0, bodyRows: 9 }, view: {} },
 } as const
 const TYPED = { origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 160 } } as const
 const DEV = { tool: 'Agent', description: 'dev', prompt: 'build it', subagent_type: 'dev' } as const
@@ -76,6 +85,20 @@ describe('rules', () => {
     expect(isWorktreeCode('/p/src/odoo-addons-16/a.py')).toBe(false)
     expect(isDocPath(`${WT}/m/readme/DESCRIPTION.md`)).toBe(true)
     expect(taskKeyIn('run the pipeline for KIO-1834 please')).toBe('KIO-1834')
+  })
+
+  test('a block: its keys, titles and states', async () => {
+    expect(taskKeysIn('block KIO-1844, KIO-1845 and KIO-1441, again KIO-1844')).toEqual(['KIO-1844', 'KIO-1845', 'KIO-1441'])
+    let run = addTasks(newRun('KIO-1', 0), ['KIO-1', 'kio-2 rename the field', 'not a key'], 1)
+    expect(run.tasks?.map(task => [task.key, task.title, task.state])).toEqual([
+      ['KIO-1', '', 'pending'],
+      ['KIO-2', 'rename the field', 'pending'],
+    ])
+    expect(addTasks(run, ['KIO-1'], 2)).toBe(run)
+    run = moveTasks(moveTasks(run, ['KIO-1', 'KIO-3'], 'active', 3), ['KIO-1'], 'done', 4)
+    expect(run.tasks?.map(task => task.state)).toEqual(['done', 'pending', 'active'])
+    expect(blockLine(run)).toBe('1/3 done · 1 in work · 1 pending')
+    expect(blockLine(newRun('KIO-1', 0))).toBe('')
   })
 
   test('phases and verdicts refuse what their gates do not allow', async () => {
@@ -265,4 +288,32 @@ test('text typed under Other reaches the agent and keeps the gate shut', async (
   const phase = await $.tool.call({ tool: 'mcp__pipeline-gates__phase', phase: 2 })
   expect(String(phase.result)).toContain('the user wrote: "rename the field first"')
   expect((await $.tool.call(DEV)).deny).toContain('grill alignment gate is closed')
+})
+
+test('a block is one run: its tasks keep the gates, and the pane and band show how far it got', async ($, on) => {
+  engine(on)
+  await $.session.start({ cwd: '/p', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'Skill', skill: 'pipeline', args: 'block KIO-1, KIO-2 and KIO-3' })
+  await $.command.run({ command: 'pipeline-gate', args: 'open status down', ...TYPED })
+  await $.command.run({ command: 'pipeline-gate', args: 'open grill agreed', ...TYPED })
+
+  // a task of the block is the same run; one outside it starts over
+  expect(String((await $.tool.call({ tool: 'mcp__pipeline-gates__phase', phase: 2, task: 'KIO-2' })).result)).toContain('phase 2 Development')
+  await $.tool.call({ tool: 'mcp__pipeline-gates__tasks', add: ['KIO-4 rename the field'], active: ['KIO-1', 'KIO-2'] })
+  const moved = await $.tool.call({ tool: 'mcp__pipeline-gates__tasks', done: ['KIO-1'] })
+  expect(String(moved.result)).toContain('tasks: 1/4 done · 1 in work · 2 pending')
+  expect((await $.tool.call(DEV)).deny).toBeUndefined()
+
+  for (const surface of ['desktop', 'mobile'] as const) {
+    const pane = await $.ui.mount({ ...PANE, surface })
+    expect(await pane.find({ text: '1/4 done · 1 in work · 2 pending' })).toBeDefined()
+    expect(await pane.find({ text: 'rename the field' })).toBeDefined()
+    await pane.unmount()
+    const band = await $.ui.mount({ ...BAND, surface })
+    expect(await band.find({ text: '1/4' })).toBeDefined()
+    await band.unmount()
+  }
+
+  await $.tool.call({ tool: 'mcp__pipeline-gates__phase', phase: 2, task: 'KIO-9' })
+  expect((await $.tool.call(DEV)).deny).toContain('grill alignment')
 })

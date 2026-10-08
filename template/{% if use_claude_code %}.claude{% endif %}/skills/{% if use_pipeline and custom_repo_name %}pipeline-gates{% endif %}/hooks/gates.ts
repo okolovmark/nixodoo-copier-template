@@ -1,4 +1,4 @@
-import type { Gate, GateName, Run } from '../types'
+import type { BlockTask, Gate, GateName, Run, TaskState } from '../types'
 
 export const PHASES = [
   'Memory bootstrap',
@@ -77,6 +77,54 @@ export function isPrCreate(command: string): boolean {
 
 export function taskKeyIn(text: string): string {
   return TASK_KEY.exec(text)?.[0] ?? ''
+}
+
+// every task key in the text, once each, in order: the block a pipeline started with several takes on
+export function taskKeysIn(text: string): string[] {
+  return [...new Set(text.match(new RegExp(TASK_KEY.source, 'g')) ?? [])]
+}
+
+export function tasksOf(run: Run): BlockTask[] {
+  return run.tasks ?? []
+}
+
+export function hasTask(run: Run, key: string): boolean {
+  return tasksOf(run).some(task => task.key === key)
+}
+
+// Tasks given as "KIO-1234" or "KIO-1234 short title" join the block as pending; one already in it keeps
+// its state and takes a new title when one is given.
+export function addTasks(run: Run, items: readonly string[], now: number): Run {
+  let tasks = tasksOf(run)
+  for (const item of items) {
+    const key = taskKeyIn(item.toUpperCase())
+    if (key === '') continue
+    const title = item.slice(item.toUpperCase().indexOf(key) + key.length).replace(/^[\s:·,-]+/, '').trim().slice(0, 80)
+    const known = tasks.find(task => task.key === key)
+    if (known === undefined) tasks = [...tasks, { key, title, state: 'pending', at: now }]
+    else if (title !== '' && title !== known.title) tasks = tasks.map(task => (task.key === key ? { ...task, title } : task))
+  }
+  return tasks === tasksOf(run) ? run : { ...run, tasks }
+}
+
+// moves the named tasks to `state`; a key not in the block joins it in that state
+export function moveTasks(run: Run, keys: readonly string[], state: TaskState, now: number): Run {
+  const withAll = addTasks(run, keys, now)
+  const wanted = new Set(keys.map(key => taskKeyIn(key.toUpperCase())).filter(key => key !== ''))
+  const tasks = tasksOf(withAll).map(task => (wanted.has(task.key) && task.state !== state ? { ...task, state, at: now } : task))
+  return { ...withAll, tasks }
+}
+
+export function taskCounts(run: Run): Record<TaskState, number> & { total: number } {
+  const tasks = tasksOf(run)
+  const count = (state: TaskState) => tasks.filter(task => task.state === state).length
+  return { pending: count('pending'), active: count('active'), done: count('done'), total: tasks.length }
+}
+
+// "2/11 done · 4 in work · 5 pending", or '' for a run of one task
+export function blockLine(run: Run): string {
+  const counts = taskCounts(run)
+  return counts.total > 1 ? `${counts.done}/${counts.total} done · ${counts.active} in work · ${counts.pending} pending` : ''
 }
 
 // Every `N failed, M error(s) of K tests` line of an Odoo run: green when all are clean and K adds up
