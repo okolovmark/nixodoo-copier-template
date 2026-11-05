@@ -66,6 +66,9 @@ def project(adapter_path=ADAPTER):
         fh.write("#!/bin/bash\necho ran > \"$PROJECT_DIR/fanout-ran\"\n")
     with open(f"{root}/.copier-answers.yml", "w") as fh:
         fh.write("project_dir_var: PROJECT_DIR\n")
+    with open(f"{root}/.agents/hooks/deploy-allow.json", "w") as fh:
+        json.dump({"merge_repos": ["acme/addons", "acme/env"], "hosts": ["prod", "box1.lan"],
+                   "prod_service": "odoo.service"}, fh)
     os.chmod(f"{root}/.agents/hooks/claude_hook.py", stat.S_IRWXU)
     return root
 
@@ -175,6 +178,14 @@ def main():
         ("ask", "read_file on ~/.ssh/id_rsa prompts user", "pre", "read_file", {"Path": ssh_key}),
         ("ask", "read_file outside project in HOME prompts user", "pre", "read_file", {"Path": home_file}),
         ("ask", "call_mcp_tool unlink prompts user", "pre", "call_mcp_tool", {"ServerName": "kaertech-odoo", "ToolName": "unlink"}),
+        # deploy allow-list: repos, host aliases and unit from deploy-allow.json (the copier answers)
+        ("allow", "gh pr merge -R one of the project's repos is allowed", "pre", "run_command", {"CommandLine": "gh pr merge 42 -R acme/addons --merge --match-head-commit 0123456789abcdef0123456789abcdef01234567"}),
+        ("ask", "gh pr merge -R a repo outside the answers prompts user", "pre", "run_command", {"CommandLine": "gh pr merge 42 -R kaertech-dev/odoo-addons-16 --merge --match-head-commit 0123456789abcdef0123456789abcdef01234567"}),
+        ("allow", "deploy lock on a test alias from the answers is allowed", "pre", "run_command", {"CommandLine": "bash .claude/skills/deploy/scripts/prod-deploy-lock.sh box1.lan status"}),
+        ("ask", "deploy lock on an alias outside the answers prompts user", "pre", "run_command", {"CommandLine": "bash .claude/skills/deploy/scripts/prod-deploy-lock.sh odoo1.kepi status"}),
+        ("allow", "module deploy to prod is allowed", "pre", "run_command", {"CommandLine": "bash .claude/skills/deploy/scripts/prod-deploy-modules.sh prod -u acme_base"}),
+        ("allow", "stopping the answers' Odoo unit on prod is allowed", "pre", "run_command", {"CommandLine": "ssh -A -F .ssh/config prod 'systemctl --user stop odoo.service'"}),
+        ("ask", "a raw user@ip ssh prompts user", "pre", "run_command", {"CommandLine": "ssh kaertech@172.18.32.68 'cat /tmp/odoo-deploy.lock 2>/dev/null || true'"}),
     ]
     failures = 0
     for want, label, mode, tool, args in cases:
@@ -188,6 +199,12 @@ def main():
         ok = out == ""
         failures += not ok
         print(f"  {'ok  ' if ok else 'FAIL'} {label}" + ("" if ok else f": got {out!r}"))
+    bare = project(adapter_path)
+    os.remove(f"{bare}/.agents/hooks/deploy-allow.json")
+    out = call(bare, "pre", "run_command", {"CommandLine": "bash .claude/skills/deploy/scripts/prod-deploy-lock.sh prod status"}).strip()
+    ok = classify(out) == "ask"
+    failures += not ok
+    print(f"  {'ok  ' if ok else 'FAIL'} without deploy-allow.json a deploy script prompts" + ("" if ok else f": got {out!r}"))
     ok = not os.path.exists(f"{root}/fanout-ran")
     failures += not ok
     print(f"  {'ok  ' if ok else 'FAIL'} the Claude-only entire fan-out never runs")

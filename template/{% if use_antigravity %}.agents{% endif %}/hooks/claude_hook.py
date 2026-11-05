@@ -123,35 +123,44 @@ FORBIDDEN_PYTHON_ATTRS = {
     "write_text", "write_bytes", "touch", "popen", "system", "spawn", "exec",
     "fork", "kill", "killpg", "urlopen", "urlretrieve", "home", "expanduser",
 }
-WHITELISTED_DEPLOY_RES = (
-    re.compile(
-        r"^gh\s+pr\s+merge\s+\d+\s+"
-        r"(?:(?:-R|--repo)\s+(?:kaertech-dev/odoo-addons-16|kaertech-dev/kaertech-odoo-16|okolovmark/nixodoo-copier-template)\s+)?"
-        r"(?:--merge|--squash(?:\s+--delete-branch)?)\s+--match-head-commit\s+[0-9a-f]{40}$"
-    ),
-    re.compile(r'^bash\s+"?\S*\.claude/skills/deploy/scripts/prod-requeue-jobs\.sh"?\s+(?:prod|test|--apply)$'),
-    re.compile(
-        r'^bash\s+"?\S*\.claude/skills/deploy/scripts/prod-refresh-inventory-analysis\.sh"?\s+(?:prod|test|--apply)$'
-    ),
-    re.compile(
-        r'^bash\s+"?\S*\.claude/skills/deploy/scripts/prod-deploy-modules\.sh"?\s+'
-        r"(?:prod|prod-local|odoo[1-4]\.kepi)\s+(?:-u|-i)\s+[a-z0-9_,]+(?:\s+--link-addons)?$"
-    ),
-    re.compile(
-        r'^bash\s+"?\S*\.claude/skills/deploy/scripts/prod-deploy-lock\.sh"?\s+'
-        r"(?:prod|prod-local|odoo[1-4]\.kepi)\s+(?:acquire|status|release|mark-failed)"
-        r"(?:\s+\d+)?(?:\s+--wait\s+\d+)?(?:\s+--force)?$"
-    ),
-    re.compile(
-        r'^ssh\s+-A\s+-F\s+"?\S*\.ssh/config"?\s+prod\s+\x27systemctl\s+--user\s+(?:stop|start)\s+odoo\.service\x27$'
-    ),
-    re.compile(
-        r"^ssh\s+-o\s+BatchMode=yes\s+kaertech@172\.18\.32\.68\s+'cat\s+/tmp/odoo-deploy\.lock\s+2>/dev/null\s+\|\|\s+true'$"
-    ),
-    re.compile(
-        r"^ssh\s+kaertech@172\.18\.32\.68\s+'cd\s+/home/kaertech/kaertech-odoo-16\s+&&\s+git\s+fetch\s+-q\s+origin\s+&&\s+git\s+show\s+origin/main:.claude/skills/deploy-checks/scripts/post_deploy_check\.py\s+\|\s+odoo\s+shell\s+-c\s+odoo\.conf\s+-d\s+odoo\s+--no-http'$"
-    ),
-)
+def deploy_allow_res(path=Path(__file__).with_name("deploy-allow.json")):
+    """The deploy skill's commands that run without a prompt. The project's repos, its ssh host
+    aliases and its Odoo unit come from deploy-allow.json, rendered from the copier answers; a
+    missing or broken file leaves only `gh pr merge` without -R, and every deploy script prompts."""
+    try:
+        allow = json.loads(path.read_text())
+    except (OSError, ValueError):
+        allow = {}
+    def alt(names):
+        return "|".join(re.escape(name) for name in names) or r"(?!)"  # (?!) matches nothing
+
+    repos, hosts = alt(allow.get("merge_repos", [])), alt(allow.get("hosts", []))
+    service = re.escape(allow.get("prod_service") or "odoo.service")
+    script = r'^bash\s+"?\S*\.claude/skills/deploy/scripts/'
+    return (
+        re.compile(
+            r"^gh\s+pr\s+merge\s+\d+\s+"
+            rf"(?:(?:-R|--repo)\s+(?:{repos})\s+)?"
+            r"(?:--merge|--squash(?:\s+--delete-branch)?)\s+--match-head-commit\s+[0-9a-f]{40}$"
+        ),
+        re.compile(rf'{script}prod-requeue-jobs\.sh"?\s+(?:{hosts}|--apply)$'),
+        re.compile(rf'{script}prod-refresh-inventory-analysis\.sh"?\s+(?:{hosts}|--apply)$'),
+        re.compile(
+            rf'{script}prod-deploy-modules\.sh"?\s+'
+            rf"(?:{hosts})\s+(?:-u|-i)\s+[a-z0-9_,]+(?:\s+--link-addons)?$"
+        ),
+        re.compile(
+            rf'{script}prod-deploy-lock\.sh"?\s+'
+            rf"(?:{hosts})\s+(?:acquire|status|release|mark-failed)"
+            r"(?:\s+\d+)?(?:\s+--wait\s+\d+)?(?:\s+--force)?$"
+        ),
+        re.compile(
+            rf'^ssh\s+-A\s+-F\s+"?\S*\.ssh/config"?\s+prod\s+\x27systemctl\s+--user\s+(?:stop|start)\s+{service}\x27$'
+        ),
+    )
+
+
+WHITELISTED_DEPLOY_RES = deploy_allow_res()
 
 PHASES = (
     "Memory bootstrap",
