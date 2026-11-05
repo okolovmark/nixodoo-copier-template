@@ -22,6 +22,11 @@ dependencies = [
     # tags are passed. It has to sit here rather than in the dev extras because
     # flake.nix builds the interpreter from workspace.deps.default.
     "odoo-test-helper",
+
+    # Not in Odoo's requirements.txt either. attachment_indexation reads the text of
+    # a PDF attachment through it; without it every PDF is stored with no indexed
+    # content, so a content search never finds it, and only a start-up warning says so.
+    "pdfminer.six",
 ]
 {% if python_version in ['3.13', '3.14'] %}
 
