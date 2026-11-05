@@ -27,6 +27,13 @@ dependencies = [
     # a PDF attachment through it; without it every PDF is stored with no indexed
     # content, so a content search never finds it, and only a start-up warning says so.
     "pdfminer.six",
+{% if odoo_major | int <= 17 %}
+
+    # Odoo {{ odoo_major }}'s odoo/modules/module.py imports pkg_resources, which
+    # setuptools 81 removes: with setuptools >= 81 in the env Odoo does not boot.
+    # Nothing else holds it back (gevent and zope.* only need some setuptools).
+    "setuptools<81",
+{% endif %}
 ]
 {% if python_version in ['3.13', '3.14'] %}
 
