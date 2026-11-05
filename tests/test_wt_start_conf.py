@@ -44,7 +44,7 @@ COMMON_SRC = SRC.with_name("wt-common.sh.jinja")
 
 BASE = dict(
     odoo_version="16.0", odoo_major="16", use_queue_job=True, db_user="odoo", db_password="odoo",
-    postgres_port=16432, service_suffix="", backup_s3_bucket="bucket",
+    postgres_port=16432, service_suffix="", backup_s3_bucket="bucket", queue_job_channels="root:3",
 )
 
 
@@ -230,6 +230,13 @@ def the_queue_job_runner_reaches_the_session():
     c = sections(render(use_queue_job=True))["queue_job"]
     assert c == {"channels": "root:3", "host": "$HOST", "port": "$PORT"}, c
     assert "queue_job" not in sections(render(use_queue_job=False))
+
+
+@case
+def queue_job_channels_follow_the_answer():
+    # a channel with a capacity of its own (root.ai_help:2) is an answer, not a prod-only edit
+    c = sections(render(queue_job_channels="root:3,root.ai_help:2"))["queue_job"]
+    assert c["channels"] == "root:3,root.ai_help:2", c
 
 
 @case

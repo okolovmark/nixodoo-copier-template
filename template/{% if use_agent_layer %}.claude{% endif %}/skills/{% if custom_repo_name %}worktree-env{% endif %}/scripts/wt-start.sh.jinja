@@ -148,7 +148,7 @@ workers = 0
 {% if use_queue_job %}
 
 [queue_job]
-channels = root:3
+channels = {{ queue_job_channels }}
 host = $HOST
 port = $PORT
 {% endif %}
