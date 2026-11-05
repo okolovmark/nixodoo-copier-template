@@ -344,6 +344,7 @@
                     pkgs.uv
                     pkgs.git
                     pkgs.ccze
+                    pkgs.pre-commit
                 ];
 
 {% if prod_ssh_host %}
@@ -373,6 +374,8 @@
                     makeWrapper ${pkgs.ruff}/bin/ruff $out/bin/ruff
                     makeWrapper ${pkgs.uv}/bin/uv $out/bin/uv
                     makeWrapper ${pkgs.git}/bin/git $out/bin/git
+                    # the addons repo's git hook calls it (wt-bootstrap installs the hook)
+                    makeWrapper ${pkgs.pre-commit}/bin/pre-commit $out/bin/pre-commit
 
                     # PostgreSQL client tools bound to the project-local cluster
                     for tool in psql pg_dump pg_restore createdb dropdb; do

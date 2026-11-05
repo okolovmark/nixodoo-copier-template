@@ -19,10 +19,29 @@ const BAND = {
   },
 } as const
 
+const PANE = {
+  plugin: 'odoo-env-band',
+  component: 'Pane',
+  requestId: 'odoo-wts',
+  props: {
+    title: 'Worktree envs',
+    isFocused: true,
+    bodyColumns: 100,
+    placement: 'dock',
+    scroll: { offset: 0, bodyRows: 30 },
+    view: {},
+  },
+} as const
+
 type Use = { tool_use_id: string; tool: string; input: Record<string, unknown> }
 
 // what the band asked the system to open
 const opened: string[][] = []
+// the pane's open/close calls, and the scripts it spawned
+const panes: string[] = []
+const spawned: { argv: string[]; cwd: string | undefined }[] = []
+// how the next spawned script ends: what it writes, its exit code
+let script = { stdout: 'wt env done\n', stderr: '', code: 0 }
 
 // two worktree envs on the machine (kio-1 up, kio-2 down); pg up
 function engine(on: On, cwd: string, history: Use[] = []): void {
@@ -56,6 +75,22 @@ function engine(on: On, cwd: string, history: Use[] = []): void {
             ? '# branch.oid cccc\n# branch.head main\n# branch.upstream origin/main\n# branch.ab +1 -0\n1 .M x\n'
             : '# branch.oid bbbb\n# branch.head kio-1-feature\n? x.py\n'
     return { value: { exitCode: 0, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('process.spawn', async function* (_$, e) {
+    spawned.push({ argv: [...e.argv], cwd: e.cwd })
+    if (script.stdout !== '') yield { stream: 'stdout' as const, text: script.stdout }
+    if (script.stderr !== '') yield { stream: 'stderr' as const, text: script.stderr }
+    // a call on $ is answered { value }, a streaming one by its chunks and then that
+    return { value: { code: script.code, signal: null } }
+  })
+  on('ui.panes', () => ({ value: [] }))
+  on('ui.open', (_$, e) => {
+    panes.push(`open ${e.id}`)
+    return { value: { isPlaced: true } }
+  })
+  on('ui.close', (_$, e) => {
+    panes.push(`close ${e.id}`)
+    return { value: undefined }
   })
   on('ui.log', () => ({ value: undefined }))
   on('session.start', (_$, e) => ({ cwd: e.cwd }))
@@ -108,7 +143,7 @@ describe('parsers', () => {
   })
 })
 
-test('a session that works in neither: services, and the other envs as a count', async ($, on) => {
+test('a session that works in neither: services, and every env as a count beside the pane button', async ($, on) => {
   engine(on, PROJECT)
   await $.session.start({ cwd: PROJECT, surface: 'desktop', isInteractive: true })
   await $.tool.call({ tool: 'Bash', command: 'true' })
@@ -120,7 +155,8 @@ test('a session that works in neither: services, and the other envs as a count',
     const texts = (await ui.findAll({ type: 'Text' })).map(text => text.text)
     expect(texts[0]).toBe(`pg :${PORTS.pg} ●`)
     expect(texts.some(text => /^(odoo|nginx) :/.test(text))).toBe(false)
-    expect(await ui.find({ text: '2 other wt envs' })).toBeDefined()
+    expect(await ui.find({ text: 'wts 2' })).toBeDefined()
+    expect((await ui.find({ key: 'wts-open' }))?.props.label).toBe('open')
     // no tips: nothing reveals on hover, nothing underlines
     expect(JSON.stringify(await ui.drawn())).not.toMatch(/"hover"|"display":"none"/)
     await ui.unmount()
@@ -150,9 +186,9 @@ test('an edit in a worktree and git in addons, earlier in the transcript, show b
   expect((await ui.find({ key: 'wt-open-kio-1' }))?.props.label).toBe('open')
   await ui.press({ key: 'wt-open-kio-1' })
   expect(opened).toEqual([['xdg-open', 'http://wt_kio_1_102026.localhost:2701/web']])
-  // a bar between each two groups: pg, env, addons, the worktree, the other envs
+  // a bar between each two groups: pg, env, addons, the worktree, every env's count and pane button
   expect(await ui.findAll({ type: 'Text', text: '│' })).toHaveLength(4)
-  expect(await ui.find({ text: '1 other wt env' })).toBeDefined()
+  expect(await ui.find({ text: 'wts 2' })).toBeDefined()
   expect(JSON.stringify(await ui.drawn())).not.toMatch(/"hover"|"display":"none"/)
   await ui.unmount()
   // and a link on the terminal
@@ -162,4 +198,83 @@ test('an edit in a worktree and git in addons, earlier in the transcript, show b
     label: 'open',
   })
   await term.unmount()
+})
+
+test("the band's open button brings up the pane", async ($, on) => {
+  engine(on, PROJECT)
+  await $.session.start({ cwd: PROJECT, surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'Bash', command: 'true' })
+  panes.length = 0
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await ui.press({ key: 'wts-open' })
+  expect(panes).toEqual(['open odoo-wts'])
+  await ui.unmount()
+})
+
+test('the pane lists every env, mine and the others, each with its open and a tear down', async ($, on) => {
+  engine(on, PROJECT, [{ tool_use_id: 'a', tool: 'Edit', input: { file_path: '/p/.worktrees/kio-1/m/x.py' } }])
+  await $.session.start({ cwd: PROJECT, surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'Bash', command: 'true' })
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    const texts = (await ui.findAll({ type: 'Text' })).map(text => text.text)
+    expect(texts).toEqual(expect.arrayContaining(['kio-1', ':2701 ●', 'wt_kio_1_102026', 'kio-2', ':2702 ○', 'wt_kio_2']))
+    expect(await ui.find({ key: 'wts-stop-kio-1' })).toBeDefined()
+    expect(await ui.find({ key: 'wts-stop-kio-2' })).toBeDefined()
+    expect(await ui.find({ key: 'wts-start' })).toBeDefined()
+    if (surface === 'terminal')
+      expect((await ui.findAll({ type: 'Link' })).map(link => link.props.href)).toEqual([
+        'http://wt_kio_1_102026.localhost:2701/web',
+        'http://wt_kio_2.localhost:2702/web',
+      ])
+    else expect((await ui.find({ key: 'wts-open-kio-2' }))?.props.label).toBe('open')
+    await ui.unmount()
+  }
+  // the phone draws no field: the list without the start
+  const phone = await $.ui.mount({ ...PANE, surface: 'mobile' })
+  expect(await phone.find({ key: 'wts-stop-kio-2' })).toBeDefined()
+  expect(await phone.find({ key: 'wts-start' })).toBeUndefined()
+  await phone.unmount()
+})
+
+test('tear down waits for its confirm, then runs wt-stop.sh on that env from the project', async ($, on) => {
+  engine(on, PROJECT)
+  await $.session.start({ cwd: PROJECT, surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'Bash', command: 'true' })
+  spawned.length = 0
+  script = { stdout: 'stopping kio-2\nwt env kio-2 removed\n', stderr: '', code: 0 }
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await ui.press({ key: 'wts-stop-kio-2' })
+  expect(spawned).toEqual([])
+  // no takes it back
+  await ui.press({ key: 'wts-stop-no-kio-2' })
+  expect(await ui.find({ key: 'wts-stop-yes-kio-2' })).toBeUndefined()
+  await ui.press({ key: 'wts-stop-kio-2' })
+  expect(await ui.find({ text: 'tear down? a dirty worktree is kept' })).toBeDefined()
+  await ui.press({ key: 'wts-stop-yes-kio-2' })
+  expect(spawned).toEqual([{ argv: ['bash', '/p/.claude/skills/worktree-env/scripts/wt-stop.sh', 'kio-2'], cwd: '/p' }])
+  // the script's last line is the pane's word, and the env is back to its tear down button
+  expect(await ui.find({ text: 'wt env kio-2 removed' })).toBeDefined()
+  expect(await ui.find({ key: 'wts-stop-kio-2' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the field starts an env by its slug; a failed script shows its last line, a bad slug runs nothing', async ($, on) => {
+  engine(on, PROJECT)
+  await $.session.start({ cwd: PROJECT, surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'Bash', command: 'true' })
+  spawned.length = 0
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    script = { stdout: 'restoring\n', stderr: 'wt-start: the desktop worktree guard refuses .worktrees/\n', code: 4 }
+    await ui.input({ key: 'wts-start', text: ' kio-9 ' })
+    expect(await ui.find({ text: 'wt-start.sh kio-9 failed: wt-start: the desktop worktree guard refuses .worktrees/' })).toBeDefined()
+    await ui.input({ key: 'wts-start', text: 'not a slug' })
+    expect(await ui.find({ text: "not a worktree slug: 'not a slug'" })).toBeDefined()
+    await ui.unmount()
+  }
+  expect(spawned).toEqual([
+    { argv: ['bash', '/p/.claude/skills/worktree-env/scripts/wt-start.sh', 'kio-9'], cwd: '/p' },
+    { argv: ['bash', '/p/.claude/skills/worktree-env/scripts/wt-start.sh', 'kio-9'], cwd: '/p' },
+  ])
 })

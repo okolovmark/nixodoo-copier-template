@@ -16,10 +16,16 @@ export type WtEnv = {
   port: string
   db: string
   isActive: boolean
-  // this session works in it; only these are drawn, the rest are a count
+  // this session works in it: drawn in the band; every env, this one included, is listed in the pane
   isMine: boolean
   git: GitStatus | null
 }
+
+// a wt-start.sh or wt-stop.sh the pane runs on one env
+export type WtJob = { slug: string; action: 'start' | 'stop' }
+
+// the pane's last word on a job: what it is doing, what it did, or the script's last line when it failed
+export type PaneNote = { text: string; isError: boolean }
 
 export type EnvSnapshot = {
   // the env repo (the project itself) and the main addons checkout, when this session works in them
@@ -31,6 +37,13 @@ export type EnvSnapshot = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'odoo-env-band': { snapshot: EnvSnapshot | null; touched: Touched }
+    'odoo-env-band': {
+      snapshot: EnvSnapshot | null
+      touched: Touched
+      // the env whose Tear Down waits for its confirm
+      armed: string | null
+      jobs: WtJob[]
+      note: PaneNote | null
+    }
   }
 }

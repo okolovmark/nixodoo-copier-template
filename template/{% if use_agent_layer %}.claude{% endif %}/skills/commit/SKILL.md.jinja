@@ -91,6 +91,14 @@ churn lines around the real change.
   <file>`, write your change as a unified diff, `git apply --recount` — a Bash
   `git` call does not trigger the edit hook.
 
+## pre-commit at commit time
+
+The addons repo runs its `.pre-commit-config.yaml` hooks (the commit stage) on every
+commit; `wt-bootstrap.sh` installs the git hook. A fixer that rewrote a staged file
+fails the commit: read what it changed, `git add` it, commit again. A check that
+fails is fixed, not skipped: `--no-verify` only on the user's word. Hooks in stage
+`manual` run only on `pre-commit run --hook-stage manual`.
+
 ## Examples
 
 ```

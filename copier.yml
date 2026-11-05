@@ -123,6 +123,13 @@ use_queue_job:
   help: Wire OCA queue_job in (addons.yaml entry, server_wide_modules, [queue_job] channels)?
   default: false
 
+queue_job_channels:
+  type: str
+  help: "[queue_job] channels of every odoo.conf the project writes (prod/test via create-odoo-config, each worktree session), e.g. root:3,root.ai_help:2 to give one channel a capacity of its own"
+  default: "root:3"
+  when: "{{ use_queue_job }}"
+  validator: "{% if not (queue_job_channels | regex_search('^root[A-Za-z0-9_.:=, ]*$')) %}Channels start with root and read like root:3,root.sub:2{% endif %}"
+
 default_repo_pattern:
   type: str
   help: Git URL pattern for addon repos in addons.yaml ('{}' is replaced by the repo key)
