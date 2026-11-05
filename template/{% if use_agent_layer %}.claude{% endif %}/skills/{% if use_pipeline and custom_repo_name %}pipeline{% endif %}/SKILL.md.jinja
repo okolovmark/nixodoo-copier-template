@@ -457,8 +457,13 @@ Before spawning any subagent:
      start-work flow runs it (an untagged record is tagged first). Read the body of every
      knowledge record it lists, `kb show <id>`, before the grill and the brief: a line is
      the record's title, what binds the task is in its body.
-   - **A tag change runs it again.** Every change to the area tags of the run's record or of
-     a block task's record (`kb edit <id> --tag <area>`) is followed at once by
+   - **Type tags, once the grill settles what the work does** (a migration, a data fix by SQL
+     or script, a refactor): the run's record and each block task's record get that type,
+     `kb edit <id> --tag migration` (`kb tags` lists the types). `kb context` pulls a type's
+     knowledge records from any area, so a rule another module's run left for that kind of
+     work reaches this task only through its type tag.
+   - **A tag change runs it again.** Every change to the tags of the run's record or of a
+     block task's record, area or type (`kb edit <id> --tag <tag>`), is followed at once by
      `kb context <id>` and `kb show` of each knowledge record the new list adds. After a
      child has started, those records go to it with `SendMessage`, and
      `kb append <WIP_ID> "rules [<ids>] sent to child <session id>"`.
@@ -652,9 +657,14 @@ Before spawning any subagent:
    means the record has no area tag: `kb edit <WIP_ID> --tag <area>` (`kb tags` lists the
    areas), then again. A kb that has no `context` command yet: say so in one line and go on.
    Read the body of every knowledge record it lists, `kb show <id>`, before the grill and the
-   brief. Every later change to the area tags of the run's record or of a block task's
-   record is followed at once by `kb context <id>` and `kb show` of each knowledge record
-   the new list adds. After a child has started, those records go to it with `SendMessage`,
+   brief. Once the grill settles what the work does (a migration, a data fix by SQL or
+   script, a refactor), the run's record and each block task's record get that type,
+   `kb edit <id> --tag migration` (`kb tags` lists the types): `kb context` pulls a type's
+   knowledge records from any area, so a rule another module's run left for that kind of
+   work reaches this task only through its type tag. Every later change to the tags of the
+   run's record or of a block task's record, area or type, is followed at once by
+   `kb context <id>` and `kb show` of each knowledge record the new list adds. After a
+   child has started, those records go to it with `SendMessage`,
    and `kb append <WIP_ID> "rules [<ids>] sent to child <session id>"`.
 {% endif %}
 {% if status_mcp == 'teams' %}
