@@ -2,7 +2,7 @@
 {% set repo_org = custom_repo_pattern | regex_replace('.*[:/]([^/]+)/\\{\\}.*', '\\1') if custom_repo_pattern else 'my-org' %}
 ---
 name: pipeline
-description: "Full Odoo development lifecycle orchestrator, in two sessions: a mother (task reading, kb context, grill, status, ticket with test cases, brief) starts a child session (worktree env -> dev -> QC gate (review + validation, loops back to dev) -> docs -> demo GIF (optional, on the user's yes) -> PR) and afterwards verifies the PR, deploys on the user's command and closes the ticket. Without a session tool the whole pipeline runs in one session. Subagents: dev (writes code), review (read-only QC/review), documenter (writes module docs)."
+description: "Full Odoo development lifecycle orchestrator, in two sessions: a mother (task reading, kb context, grill, status, ticket with test cases, brief) starts a child session (worktree env -> dev -> QC gate (review + validation, loops back to dev) -> docs{% if use_release_notes %} -> release note{% endif %} -> demo GIF (optional, on the user's yes) -> PR) and afterwards verifies the PR, deploys on the user's command and closes the ticket. Without a session tool the whole pipeline runs in one session. Subagents: dev (writes code), review (read-only QC/review), documenter (writes module docs)."
 argument-hint: "[task URL or description] | child <TASK-KEYS>"
 ---
 
@@ -25,7 +25,7 @@ that deploys and closes.
 | Session | Runs | Hands over |
 |---------|------|------------|
 | **mother** | Phase 0, Phase 1 (the task, what kb knows, the grill, the status, the ticket with test cases), then the brief and the child's start; afterwards the PR and CI check, the deploy on the user's command, Phase 7 | the brief |
-| **child** | its own worktree env, Phase 2 dev, 3 QC gate, 4 docs, 5 demo GIF, 6 PR, a session note | the report |
+| **child** | its own worktree env, Phase 2 dev, 3 QC gate, 4 docs{% if use_release_notes %}, 4b release note{% endif %}, 5 demo GIF, 6 PR, a session note | the report |
 
 - **Which one is this session?** A child is started with a pipeline brief: its title starts
   with `[child] `, and it loads this skill with `child <TASK-KEYS>`. A child follows
@@ -1049,6 +1049,24 @@ re-spawn naming the violation. Append returns to the running lists; hold
 `PR_DESCRIPTION` for Phase 6.
 
 Report: "Documentation: <modules> — fragments updated, <n> diagrams, README regenerated."
+{% if use_release_notes %}
+
+### Phase 4b: Release note
+
+Right after Documentation, in this session (not a subagent: the note needs the
+run's context, the ticket, the grill and the test cases), follow the
+**`release-note`** skill: write `{{ module_prefix }}_release_notes/notes/<key>.html` in
+`<WT>` for a change users will see, or record that there is none. The file is
+part of the PR; the deploy loads it unpublished and the deployer publishes it.
+Add the path to `ALL_FILES_CHANGED`.
+
+It runs inside Phase 4: no `phase` call of its own. A note file is no code
+change (the loader skips a file it cannot read and logs it), so writing one
+leaves the QC pass standing, and no review or test run reads it: the skill's
+own checks are the only ones it gets.
+
+Report: "Release note: `notes/<key>.html` — <title>" or "Release note: none — <why>."
+{% endif %}
 
 ---
 
@@ -1488,6 +1506,9 @@ Final summary:
 - Development: DONE — <files changed>
 - QC gate: PASS — <review summary> · tests green · test cases X/Y · <N fix loops>
 - Docs: <modules documented — fragments / diagrams / README>
+{% if use_release_notes %}
+- Release note: <notes/<key>.html — title / none — why>
+{% endif %}
 - Demo GIF: <attached / skipped (user's call)>
 - PR: <URL>
 {% if tickets_mcp == 'odoo' %}

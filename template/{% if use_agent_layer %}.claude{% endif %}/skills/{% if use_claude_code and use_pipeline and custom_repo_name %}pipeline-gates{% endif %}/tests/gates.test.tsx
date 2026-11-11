@@ -3,7 +3,7 @@ import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import type { BlockTask } from '../types'
-import { HAS_STATUS_GATE, ODOO_WEB_URL, TASK_URL_BASE, TICKET_PREFIXES } from '../hooks/config'
+import { HAS_STATUS_GATE, ODOO_WEB_URL, RELEASE_NOTES_DIR, TASK_URL_BASE, TICKET_PREFIXES } from '../hooks/config'
 import {
   addTasks,
   blockLine,
@@ -109,6 +109,13 @@ describe('rules', () => {
     expect(isWorktreeCode('/p/src/odoo-addons-16/a.py')).toBe(false)
     expect(isDocPath(`${WT}/m/readme/DESCRIPTION.md`)).toBe(true)
     expect(taskKeyIn(`run the pipeline for ${K}-1834 please`)).toBe(`${K}-1834`)
+  })
+
+  test('a release note file is a doc path where the project runs release notes, and only the note', () => {
+    const note = `${WT}${RELEASE_NOTES_DIR || '/acme_release_notes/notes/'}kio_12.html`
+    expect(isDocPath(note)).toBe(RELEASE_NOTES_DIR !== '')
+    expect(isDocPath(note.replace('/notes/', '/models/'))).toBe(false)
+    expect(isDocPath(note.replace('.html', '.py'))).toBe(false)
   })
 
   test('a product code is no task key: task numbers carry no leading zero', () => {

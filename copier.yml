@@ -244,6 +244,12 @@ task_key_route:
   default: false
   when: "{{ use_pipeline and tickets_mcp == 'odoo' and odoo_prod_url != '' and task_keys }}"
 
+use_release_notes:
+  type: bool
+  help: Does the production Odoo run <module_prefix>_release_notes (model release.note, a user-facing note per task, loaded unpublished from the notes/<key>.html file its PR adds and published by its Deployed by user)? The pipeline then writes the note after Documentation, the deploy stamps the deployer on it, and a note file never voids a QC pass. The project carries the release-note skill that says how to write one
+  default: false
+  when: "{{ use_pipeline and tickets_mcp == 'odoo' }}"
+
 use_kb:
   type: bool
   help: SessionStart hook printing the kb knowledge-base index and standup into every Claude Code session (needs `kb` from okolovmark/kb installed; silent otherwise)?

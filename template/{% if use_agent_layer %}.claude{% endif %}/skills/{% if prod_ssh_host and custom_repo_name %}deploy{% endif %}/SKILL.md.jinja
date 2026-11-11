@@ -1,7 +1,7 @@
 {% set repo_org = custom_repo_pattern | regex_replace('.*[:/]([^/]+)/\\{\\}.*', '\\1') if custom_repo_pattern else 'my-org' %}
 ---
 name: deploy
-description: "Merge an approved addons PR and deploy it to the Odoo PRODUCTION server under the box's deploy lock{% if status_mcp == 'teams' %}, announcing it in the maintenance Teams chat{% endif %}{% if use_queue_job %}, then requeue stuck queue jobs{% endif %}: mergeable? -> blast-radius tag -> plan -> deploy lock (waits up to 30 min on another developer's deploy) -> merge -> {% if status_mcp == 'teams' %}notify start -> {% endif %}deploy over SSH{% if use_queue_job %} -> requeue enqueued/started queue.jobs{% endif %} -> invariant check (T+0, and T+60 for high blast radius){% if status_mcp == 'teams' %} -> notify result{% endif %} -> release the lock{% if tickets_mcp == 'odoo' %} -> note the exact deploy commands on the task{% endif %}. Use when the user says 'merge PR N and deploy', or 'deploy PR N' for an already-merged PR. That command is the approval: the skill prints the plan and the exact prod commands and stops only on an anomaly."
+description: "Merge an approved addons PR and deploy it to the Odoo PRODUCTION server under the box's deploy lock{% if status_mcp == 'teams' %}, announcing it in the maintenance Teams chat{% endif %}{% if use_queue_job %}, then requeue stuck queue jobs{% endif %}: mergeable? -> blast-radius tag -> plan -> deploy lock (waits up to 30 min on another developer's deploy) -> merge -> {% if status_mcp == 'teams' %}notify start -> {% endif %}deploy over SSH{% if use_queue_job %} -> requeue enqueued/started queue.jobs{% endif %} -> invariant check (T+0, and T+60 for high blast radius){% if status_mcp == 'teams' %} -> notify result{% endif %} -> release the lock{% if use_release_notes %} -> stamp the PR's release notes with the deployer{% endif %}{% if tickets_mcp == 'odoo' %} -> note the exact deploy commands on the task{% endif %}. Use when the user says 'merge PR N and deploy', or 'deploy PR N' for an already-merged PR. That command is the approval: the skill prints the plan and the exact prod commands and stops only on an anomaly."
 argument-hint: "[PR number or URL] [prod{% if test_ssh_hosts %}|<test alias>{% endif %} — default prod]"
 ---
 
@@ -9,7 +9,7 @@ argument-hint: "[PR number or URL] [prod{% if test_ssh_hosts %}|<test alias>{% e
 
 Beats: **mergeable? -> blast-radius tag -> plan -> deploy lock -> merge -> {% if status_mcp == 'teams' %}notify start -> {% endif %}deploy on prod{% if use_queue_job %} -> requeue stuck
 queue jobs{% endif %} -> invariant check (T+0; T+60 again for high blast radius){% if status_mcp == 'teams' %} ->
-notify result{% endif %} -> release the lock{% if tickets_mcp == 'odoo' %} -> note the exact commands on the task{% endif %}**. Runs commands on the
+notify result{% endif %} -> release the lock{% if use_release_notes %} -> stamp the release notes{% endif %}{% if tickets_mcp == 'odoo' %} -> note the exact commands on the task{% endif %}**. Runs commands on the
 **production** server. The user's command — "merge PR N and deploy", or
 "deploy PR N" for a PR already merged — is the approval: Step 3 prints the plan
 and the exact commands and goes on, stopping only when the plan holds something
@@ -512,6 +512,41 @@ bash "${{ project_dir_var }}/.claude/skills/deploy/scripts/prod-deploy-lock.sh" 
   sound — on their explicit command, never yours.
 - `LOCK_MISMATCH` → the lock is not yours (held for another PR): do not touch
   it; report.
+{% if use_release_notes %}
+
+## Step 7.5 — Stamp the release notes, hand them to the deployer
+
+Only after a **successful** deploy to `prod`, and only when the PR added or
+changed a `{{ module_prefix }}_release_notes/notes/*.html` file (Step 1's file list). The
+deploy's module update loaded each such file as an **unpublished** Release Note
+(`release-note` skill). Nobody can publish it until **Deployed by** is set, and
+then only that person can, so this step is what makes the note publishable.
+{% if test_ssh_hosts %}
+A deploy to a test alias skips this step: the Odoo connector is production, and
+the notes a test box loaded are announced to nobody.
+{% endif %}
+
+- **Keys** = the `key:` header line of each such file at the merge commit
+  (`git -C "$REPO" show "$MC:<path>" | sed -n 's/^key: *//p'`).
+- Over the Odoo connector (signed in as you, the deployer):
+  `search_read` `release.note` `[["key", "in", [<keys>]]]`, fields
+  `["key", "name", "is_published", "deployer_id"]`. For each with an empty
+  `deployer_id`: `write {"deployer_id": <your uid>}` with the quiet context
+  (`odoo-tickets` → Connection & context flags). The module allows a Release
+  Notes Manager to set it only when empty and only to themselves; an
+  AccessError means your account lacks that group, so say so and leave it to an
+  administrator.
+- A key with no record: the loader skipped the file, and says why in an
+  `ERROR` line of the deploy output (`Release note file <name> skipped: …`, one
+  of the lines Step 7 shows the user), or the module was not in the update.
+  Report it with that line; never create the note by hand.
+- A note that already has another deployer, or is already published, is
+  left as it is: report it.
+
+Then tell the user{% if status_mcp == 'teams' %} (not the Teams chat){% endif %}, with each note's `_url`: "Read the
+release note and press **Publish** when it is right: that sends the OdooBot
+chat to the users of <models>." Publishing is theirs to do, never this skill's.
+{% endif %}
 {% if tickets_mcp == 'odoo' %}
 
 ## Step 8 — Record the exact commands on the Odoo task
