@@ -1,0 +1,8 @@
+{
+  "name": "session-env-browser",
+  "private": true,
+  "description": "Pin of playwright-cli for worktree-env/scripts/wt-browser.sh; flake.nix builds it from package-lock.json",
+  "dependencies": {
+    "@playwright/cli": "0.1.24"
+  }
+}

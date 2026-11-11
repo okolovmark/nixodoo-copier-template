@@ -2,7 +2,7 @@
 {% set repo_org = custom_repo_pattern | regex_replace('.*[:/]([^/]+)/\\{\\}.*', '\\1') if custom_repo_pattern else 'my-org' %}
 ---
 name: pipeline
-description: "Full Odoo development lifecycle orchestrator, in two sessions: a mother (task reading, kb context, grill, status, ticket with test cases, brief) starts a child session (worktree env -> dev -> QC gate (review + validation, loops back to dev) -> docs{% if use_release_notes %} -> release note{% endif %} -> demo GIF (optional, on the user's yes) -> PR) and afterwards verifies the PR, deploys on the user's command and closes the ticket. Without a session tool the whole pipeline runs in one session. Subagents: dev (writes code), review (read-only QC/review), documenter (writes module docs)."
+description: "Full Odoo development lifecycle orchestrator, in two sessions: a mother (task reading, kb context, grill, status, ticket with test cases, brief) starts a child session (worktree env -> dev -> QC gate (review + validation, loops back to dev) -> docs{% if use_release_notes %} -> release note{% endif %} -> demo video (optional, on the user's yes) -> PR) and afterwards verifies the PR, deploys on the user's command and closes the ticket. Without a session tool the whole pipeline runs in one session. Subagents: dev (writes code), review (read-only QC/review), documenter (writes module docs)."
 argument-hint: "[task URL or description] | child <TASK-KEYS>"
 ---
 
@@ -25,7 +25,7 @@ that deploys and closes.
 | Session | Runs | Hands over |
 |---------|------|------------|
 | **mother** | Phase 0, Phase 1 (the task, what kb knows, the grill, the status, the ticket with test cases), then the brief and the child's start; afterwards the PR and CI check, the deploy on the user's command, Phase 7 | the brief |
-| **child** | its own worktree env, Phase 2 dev, 3 QC gate, 4 docs{% if use_release_notes %}, 4b release note{% endif %}, 5 demo GIF, 6 PR, a session note | the report |
+| **child** | its own worktree env, Phase 2 dev, 3 QC gate, 4 docs{% if use_release_notes %}, 4b release note{% endif %}, 5 demo video, 6 PR, a session note | the report |
 
 - **Which one is this session?** A child is started with a pipeline brief: its title starts
   with `[child] `, and it loads this skill with `child <TASK-KEYS>`. A child follows
@@ -197,7 +197,12 @@ needs from it:
   Re-running `wt-start.sh <slug>` refreshes the env (idempotent). A mother never brings
   up an env of its own.
 - **Phases 2–6** edit/test/PR using those: `git -C <WT> …`, `{{ odoo_cmd }} -c <CONF> …`,
-  browser `<URL>`. All code/git happens in `<WT>`, never in `src/{{ custom_repo_name }}`.
+  the session's browser on `<URL>`. All code/git happens in `<WT>`, never in `src/{{ custom_repo_name }}`.
+- **The session's UI** is driven through `wt-browser.sh <slug>` (worktree-env skill, "The
+  session browser"): the env's own headless Chrome, no pane to keep visible. It serves
+  UI validation, the phone check, the `dev` agent's look at its change and the demo
+  video. The built-in browser is for production, tickets and other sites, and for a
+  session env only when `wt-browser.sh` exits 5 (Check 2, step 5).
 - **Phase 7** does NOT tear the env down on its own — the worktree is kept so
   the task can continue. `wt-stop.sh <slug>` runs ONLY when the user says the
   session is finished, and only after you ask (see Phase 7 Step 0).
@@ -804,7 +809,7 @@ A child starts from a brief, loads this skill with `child <TASK-KEYS>`, and runs
 2. **Its env.** Phase 1 step 8 with the brief's slug, which captures `<WT>`, `<CONF>`, `<URL>`,
    `<DB>` and `<PORT>`{% if use_kb %}; `kb append <WIP_ID> "env <slug>"`{% endif %}.
 3. **Phases 2–6** as written below: dev, the QC gate (every test case of the brief), docs, the
-   demo GIF (the child asks the user itself), the PR.
+   demo video (the child asks the user itself), the PR.
 4. **An ambiguity** → one short question to the mother with `SendMessage`, then end the turn
    and carry on when the answer comes. Never re-open the Alignment Summary on your own.
 {% if use_kb %}
@@ -819,7 +824,7 @@ A child starts from a brief, loads this skill with `child <TASK-KEYS>`, and runs
        PR <url> · CI <green | running | red: <check>> · QC <the gate report line>
        Tasks: <KEY> done | partial: <what is left> | blocked: <why>
        Env: <slug>, kept at <WT>
-       Demo GIF: attached | skipped
+       Demo video: attached | skipped (<reason>)
        FILES_CHANGED: <ALL_FILES_CHANGED>
        OPEN_THREADS: <ALL_OPEN_THREADS, or "none">
        DECISIONS: <ALL_DECISIONS, or "none">
@@ -846,6 +851,8 @@ Spawn the **`dev`** subagent:
 > in the module's `tests/` dir, `tests/__init__.py` updated.
 > Run only the test classes you touch (your definition, "Token economy"); the
 > whole suite and the tours run in the QC gate.
+> The env is `<slug>`: any look at the UI, the phone check included, goes through
+> `wt-browser.sh <slug>`.
 > When done, return the structured closing block (FILES_CHANGED / OPEN_THREADS / DECISIONS).
 
 The `dev` agent has style, code-patterns and ui-design preloaded. A slice of a big task is its own
@@ -921,7 +928,7 @@ first-line verdicts:
 Minor findings and Nits are not verified. A `verify` agent is read-only and
 returns no closing block. The fix brief waits for every verdict.
 
-**Check 2 — validation.** Run directly (NOT via subagent) — you need Chrome browser tools and this session's running Odoo. Everything here targets THIS session (`<CONF>` / `<DB>` / `<URL>`), never another session.
+**Check 2 — validation.** Run directly (NOT via subagent): it needs this session's running Odoo and its browser. Everything here targets THIS session (`<CONF>` / `<DB>` / `<URL>`), never another session.
 
 0. Backend checks run against THIS session from its conf — `{{ odoo_cmd }} shell -c <CONF> --no-http`
    with the check on stdin, or `psql -d <DB>` for plain reads — never over the Odoo
@@ -954,9 +961,19 @@ returns no closing block. The fix brief waits for every verdict.
    … of N tests`).
 3. Check for ERROR, CRITICAL, test failures, tracebacks.
 4. Start this session's Odoo: `systemctl --user start odoo{{ service_suffix }}-wt@<slug>.service`
-5. **Browser UI testing**: navigate to `<URL>` (login `admin`/`admin`) → affected
-   module/menu → verify new fields visible, test buttons, check flows →
-   `read_console_messages` for JS errors.
+5. **Browser UI testing** in the session's own browser (worktree-env skill, "The session
+   browser"):
+   ```bash
+   B="${{ project_dir_var }}/.claude/skills/worktree-env/scripts/wt-browser.sh"
+   bash "$B" <slug> open     # then log in: admin/admin, or the user of the role under test
+   ```
+   → affected module/menu → verify new fields visible, test buttons, check flows
+   (`snapshot`, `find`, `click`, `fill`) → `bash "$B" <slug> console error` for JS errors.
+   - **Exit 5** (the tool cannot run here): do this step in the built-in browser on
+     `<URL>` and name the reason in the gate report. With the built-in browser's pane
+     hidden (`tabs_context`) the web client renders nothing: stop and report, never pass
+     the gate on a page that did not render.
+   - Never the Chrome extension for a session env.
 {% if tickets_mcp == 'odoo' %}
 {% if task_software_fields %}
 6. **Test Case Verification (MANDATORY)** — verify EVERY test case from the
@@ -966,8 +983,10 @@ returns no closing block. The fix brief waits for every verdict.
    - **Read over the Odoo connector** (production): `search_read` `project.task.testcase` by `task_id`,
      fields `["id", "name", "state", "passed", "steps_to_execute", "expected_results"]`
    - **Execute each**: backend via the Odoo shell on the session
-     (`{{ odoo_cmd }} shell -c <CONF>`) or Python tests; UI via Chrome on `<URL>`; access
-     control via `with_user()` in shell or by switching users in browser.
+     (`{{ odoo_cmd }} shell -c <CONF>`) or Python tests; UI through `wt-browser.sh` on
+     `<URL>`, as a user who holds the role the test case names (worktree-env skill, "As a
+     real user"); access control via `with_user()` in shell or a second user's session
+     (`--as <label>`).
    - **Mark over the Odoo connector** (per `odoo-tickets`): passed → `write {"passed": true,
      "state": "done"}`; failed → keep `todo`, add details to `comments`.
    - **Post summary internal note**: "Test Case Verification: X/Y passed.
@@ -980,8 +999,10 @@ returns no closing block. The fix brief waits for every verdict.
    - **Read over the Odoo connector** (production): the latest `Test Cases`
      note (`mail.message` search as in Phase 1 step 0).
    - **Execute each**: backend via the Odoo shell on the session
-     (`{{ odoo_cmd }} shell -c <CONF>`) or Python tests; UI via Chrome on `<URL>`; access
-     control via `with_user()` in shell or by switching users in browser.
+     (`{{ odoo_cmd }} shell -c <CONF>`) or Python tests; UI through `wt-browser.sh` on
+     `<URL>`, as a user who holds the role the test case names (worktree-env skill, "As a
+     real user"); access control via `with_user()` in shell or a second user's session
+     (`--as <label>`).
    - **Post a `Test Case Verification` note** (per `odoo-tickets`): "X/Y
      passed", then per case passed / failed (what failed) / not applicable,
      and any fixes.
@@ -1070,76 +1091,92 @@ Report: "Release note: `notes/<key>.html` — <title>" or "Release note: none �
 
 ---
 
-### Phase 5: Demo GIF (optional)
+### Phase 5: Demo video (optional)
 
-After the gate passes, **ask the user whether this task needs a demo GIF** (one
+After the gate passes, **ask the user whether this task needs a demo video** (one
 question, recommend yes for a UI-visible change, no for a backend-only one). On
-**no**, report "Demo GIF: skipped (user's call)" and go to Phase 6. On **yes**,
-record it against this session (`<URL>`). **Do NOT delegate** — you need Chrome
-tools directly.
+**no**, report "Demo video: skipped (user's call)" and go to Phase 6. On **yes**,
+record it in this session's env. **Do NOT delegate**: the scenario is written from the
+path this session validated.
 
-**Step 1: Inject caption helper**
+The demo is a second, scripted pass: a scenario replays the validated path with the
+recording on. Tool and commands: worktree-env skill, "The session browser" and
+"Recording a demo".
 
-Before recording, inject a caption overlay helper via `javascript_tool`:
-```javascript
-window._addCaption = function(text) {
-    let el = document.getElementById('demo-caption');
-    if (!el) {
-        el = document.createElement('div');
-        el.id = 'demo-caption';
-        el.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);' +
-            'z-index:99999;background:rgba(0,0,0,0.85);color:#fff;font-size:22px;' +
-            'font-weight:600;padding:12px 32px;border-radius:8px;text-align:center;' +
-            'pointer-events:none;max-width:80%;box-shadow:0 4px 12px rgba(0,0,0,0.3);';
-        document.body.appendChild(el);
-    }
-    el.textContent = text;
-    el.style.display = 'block';
-};
+| | |
+|---|---|
+| Shows | the task's UI test cases, in the order a user meets them |
+| User in frame | a user who holds the role the test case names: the task's requester when they hold it, else an active user who does. A test case about admin settings runs as admin. Role not named in the test case: ask the user, never guess |
+| Two roles | each part under its own user, in that user's session; every part opens with the title card |
+| Opening | the title card: task key and title, the role, "test copy" (`demo.title`) |
+| Captions | English, non-technical, at the bottom of the frame (`demo.step`, `demo.caption`); a callout on the element a step is about (`demo.callout`); the cursor shows by itself |
+| Left in frame | the "This database is neutralized." banner, placeholder app icons |
+| Format | `<TASK-KEY>_demo.mp4`: H.264, 1280x720, 25 fps; target under 90 s |
+| Raw files | `.worktrees/_env/<slug>/browser/` (WebM, scenario, sheet, snapshots): they go with the env |
+
+**Step 1: The user in frame**
+
+For each role the demo shows, pick the user (table above), set a throwaway password on
+them in the session DB (worktree-env skill, "As a real user") and log in through
+`wt-browser.sh`: the first role in the env's
+session, another in its own (`--as <label>`). Admin logs in as `admin`/`admin`. The
+throwaway password is typed into the login form only: never into the scenario or any
+other file{% if tickets_mcp == 'odoo' %}, the ticket{% endif %}{% if status_mcp == 'teams' %}, Teams{% endif %}{% if use_kb %}, kb{% endif %} or the PR.
+
+**Step 2: Write the scenario**
+
+Copy `.claude/skills/worktree-env/scripts/demo-scenario.js` to
+`.worktrees/_env/<slug>/browser/<TASK-KEY>_demo.js` and replace its steps with the
+validated path, using the locators that worked in Check 2.
+
+- The scenario prepares its own starting data before `demo.start()` (through the UI, or
+  `page.request.post` to the session's RPC as the logged-in user), so a second take needs
+  nothing an earlier one left.
+- Steps, captions, callouts and pauses: one caption per thing the viewer should notice,
+  in the words of the people who asked for the change.
+
+**Step 3: Record**
+
+```bash
+B="${{ project_dir_var }}/.claude/skills/worktree-env/scripts/wt-browser.sh"
+bash "$B" <slug> record "${{ project_dir_var }}/.worktrees/_env/<slug>/browser/<TASK-KEY>_demo.js" <TASK-KEY>
+# a second role's part, in that user's session, added to the same file:
+bash "$B" <slug> --as <label> record <part2.js> <TASK-KEY> --append
 ```
 
-**Important**: Re-inject this helper after every page navigation (it gets lost on page load).
+Read the `SHEET:` image it prints (nine frames across the video): the title card, every
+step and its caption are there, and nothing the task is not about. A scenario that fails
+is fixed and recorded again; past 90 s, cut steps or pauses.
 
-**Step 2: Record frames with captions**
-
-1. Call `gif_creator` with `action: start_recording`
-2. For each step of the demo:
-   a. Navigate or interact with the UI
-   b. Wait for page to load
-   c. Call `javascript_tool` to inject caption: `window._addCaption('Step description here')`
-   d. Take a `screenshot` (this captures the frame WITH the caption overlay)
-   e. Take an extra `screenshot` for pause effect (same caption stays visible)
-3. Captions must be **non-technical, client-friendly** descriptions, e.g.:
-   - "Team Dashboard — viewing team workload"
-   - "Gantt Chart — new multi-project selector and Export button"
-   - "Overlap Warning — scheduling conflicts detected"
-   - "Project Settings — new Access Control tab"
-
-**Step 3: Export GIF**
-
-```
-gif_creator action: export
-  filename: <TASK-KEY>_demo.gif
-  download: true
-  options: { showClickIndicators: true, showActionLabels: false,
-             showProgressBar: true, showWatermark: false, quality: 8 }
-```
-
-Set `showActionLabels: false` because we use custom caption overlays instead.
+**The tool cannot run** (exit 5 from `open` or `record`), or the recording still fails
+after the scenario was fixed twice: report "Demo video: skipped (<reason>)" and go to Phase 6.
+No GIF and no recording in another browser replaces it.
 
 {% if tickets_mcp == 'odoo' %}
-**Step 4: Attach the GIF to the task over the Odoo connector**
+**Step 4: Attach the video to the task over the Odoo connector**
 
-The GIF downloads to the browser's downloads folder. Attach programmatically (per `odoo-tickets` → Attachments): `begin_upload` the file to the task, then `message_post` an internal note describing the demo with `attachment_ids` pointing at it. If the file can't be located locally, ask the user to drag-drop it.
+Per `odoo-tickets` → Attachments: `begin_upload` `<TASK-KEY>_demo.mp4` to the task, then
+`message_post` an internal note describing the demo with `attachment_ids` pointing at it.
 
-Report: "Demo GIF recorded and attached."
+- **The upload fails**, or the connector has no `begin_upload` (a video is never sent as
+  base64): report it with the file's path; the file stays in the env folder and Phase 6
+  goes on.
+- **A new take after a fix round**: a new attachment and a new note; the earlier video
+  stays on the task.
+- **Never on the GitHub PR**: the frames show data of the production copy.
+{% if status_mcp == 'teams' %}
+- **Teams**: a message about the demo carries the link to the task, never the file.
+{% endif %}
+
+Report: "Demo video: attached" · "Demo video: skipped (<reason>)" · "Demo video: not
+attached (<why>), file at <path>".
 {% else %}
-**Step 4: Hand the GIF over**
+**Step 4: Hand the video over**
 
-The GIF downloads to the browser's downloads folder — tell the user where it
-is so they can attach it wherever the work is tracked.
+Tell the user where `<TASK-KEY>_demo.mp4` is so they can attach it wherever the work is
+tracked. Never on the GitHub PR: the frames show data of the production copy.
 
-Report: "Demo GIF recorded."
+Report: "Demo video: recorded, at <path>" · "Demo video: skipped (<reason>)".
 {% endif %}
 
 ---
@@ -1509,7 +1546,7 @@ Final summary:
 {% if use_release_notes %}
 - Release note: <notes/<key>.html — title / none — why>
 {% endif %}
-- Demo GIF: <attached / skipped (user's call)>
+- Demo video: <attached / skipped (<reason>)>
 - PR: <URL>
 {% if tickets_mcp == 'odoo' %}
 - Odoo task: {% if task_software_fields %}checklist updated, {% endif %}internal notes posted

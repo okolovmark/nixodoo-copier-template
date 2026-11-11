@@ -17,10 +17,13 @@ The wt-restore.sh cases run it with psql, pg_restore and odoo stubbed on a
 worktree with a scripted git history. The wt-stop.sh cases share wt-test.sh's stubs.
 The --env-repo cases run wt-start.sh, wt-stop.sh and wt-list.sh on a project that is
 a real git repo, git stubbed for the addons repo only.
+The wt-browser.sh cases run it with playwright-cli, Chrome, ffmpeg and ffprobe stubbed, on a
+PATH that holds nothing else of this machine.
 CI runs this file once per push (the wt-scripts job); it needs jinja2, bash, flock and git.
 """
 
 import itertools
+import json
 import os
 import pathlib
 import re
@@ -1983,6 +1986,453 @@ def without_pre_commit_on_path_or_a_config_the_repo_is_left_alone():
             proc = subprocess.run(cmd, capture_output=True, text=True, env=env)
             assert proc.returncode == 0, proc.stdout + proc.stderr
             assert not (repo / ".git/hooks/pre-commit").exists() and not events.exists(), kwargs
+
+
+BROWSER_SRC = SRC.with_name("wt-browser.sh.jinja")
+DEMO_HELPERS = SRC.with_name("demo-helpers.js")
+DEMO_SCENARIO = SRC.with_name("demo-scenario.js")
+BROWSER_URL = "http://wt_x_110526.localhost:2701"
+
+# playwright-cli: logs each call (argv, cwd, the two variables the script exports), answers
+# `--json list` from sessions.json, opens a session into it, and on run-code writes the WebM
+# the composed scenario names.
+PW_STUB = r'''
+import json, os, pathlib, re, sys
+root = pathlib.Path(os.environ["WT_STUB_ROOT"])
+argv = sys.argv[1:]
+with open(root / "pw.calls", "a") as fh:
+    fh.write(json.dumps({"argv": argv, "cwd": os.getcwd(), "browsers": os.environ.get("PLAYWRIGHT_BROWSERS_PATH"),
+                         "no_update": os.environ.get("NO_UPDATE_NOTIFIER")}) + "\n")
+sessions = root / "sessions.json"
+opened = json.loads(sessions.read_text()) if sessions.exists() else []
+session = next((a[3:] for a in argv if a.startswith("-s=")), "default")
+command = next((a for a in argv if not a.startswith("-")), "")
+if command == "list":
+    print(json.dumps({"browsers": [{"name": name, "status": "open"} for name in opened]}))
+elif command == "open":
+    rc = int(os.environ.get("STUB_OPEN_RC", "0"))
+    if rc == 0 or os.environ.get("STUB_OPEN_STARTS"):
+        sessions.write_text(json.dumps(opened + [session]))
+    sys.exit(rc)
+elif command == "run-code":
+    text = pathlib.Path(next(a.split("=", 1)[1] for a in argv if a.startswith("--filename="))).read_text()
+    (root / "run.js").write_text(text)
+    rc = int(os.environ.get("STUB_RUN_RC", "0"))
+    if rc == 0 and not os.environ.get("STUB_NO_VIDEO"):
+        pathlib.Path(json.loads(re.search(r"\)\(page, (\{.*\})\);", text).group(1))["video"]).write_bytes(b"webm")
+    sys.exit(rc)
+'''
+# ffmpeg: logs its argv and writes its last argument, the output; ffprobe prints a duration.
+FFMPEG_STUB = r'''
+import json, os, pathlib, sys
+root = pathlib.Path(os.environ["WT_STUB_ROOT"])
+with open(root / "ffmpeg.calls", "a") as fh:
+    fh.write(json.dumps(sys.argv[1:]) + "\n")
+pathlib.Path(sys.argv[-1]).write_bytes(b"x" * 524288)
+'''
+
+
+def browser_project(root, cli=True, chrome=True, recorder=True, converter=True, duration="22.7", env_lines=None):
+    """Lay out a project at `root` with the rendered wt-browser.sh and an env `x` (DB wt_x_110526,
+    port 2701). playwright-cli, Chrome, Playwright's ffmpeg, ffmpeg and ffprobe are stubs in the
+    places the script looks, each left out on demand. PATH is a folder of links to the few
+    programs the script runs, so nothing installed on this machine stands in for a stub.
+    Returns the command of a run and its environment."""
+    scripts, tools, profile = root / "scripts", root / "tools", root / ".nix-profile"
+    env_dir = root / ".worktrees/_env/x"
+    for d in (scripts, tools, profile / "bin", profile / "libexec/wt-browser", env_dir):
+        d.mkdir(parents=True)
+    (env_dir / "odoo.conf").write_text("[options]\n")
+    (env_dir / "port").write_text("2701\n")
+    (env_dir / "db").write_text("wt_x_110526\n")
+    if env_lines:
+        (root / ".env").write_text("\n".join(env_lines) + "\n")
+    for src in (BROWSER_SRC, STOP_SRC, COMMON_SRC):
+        (scripts / src.name.removesuffix(".jinja")).write_text(render_script(src))
+    for src in (DEMO_HELPERS, DEMO_SCENARIO):
+        shutil.copy(src, scripts / src.name)
+    for name in ("bash", "env", "cat", "mkdir", "rm", "mv", "find", "head", "stat", "awk", "grep", "dirname"):
+        (tools / name).symlink_to(shutil.which(name))
+    stubs = {tools / "python3": f'#!/usr/bin/env bash\nexec {shlex.quote(sys.executable)} "$@"\n'}
+    python = f"#!{sys.executable}"
+    if cli:
+        stubs[profile / "bin/playwright-cli"] = python + PW_STUB
+    if chrome:
+        stubs[root / "chrome"] = "#!/usr/bin/env bash\n"
+    if recorder:
+        (profile / "share/ms-playwright/ffmpeg-1013").mkdir(parents=True)
+        stubs[profile / "share/ms-playwright/ffmpeg-1013/ffmpeg-linux"] = "#!/usr/bin/env bash\n"
+    if converter:
+        stubs[profile / "libexec/wt-browser/ffmpeg"] = python + FFMPEG_STUB
+        stubs[profile / "libexec/wt-browser/ffprobe"] = f"#!/usr/bin/env bash\necho {duration}\n"
+    for path, text in stubs.items():
+        path.write_text(text)
+        path.chmod(0o755)
+    env = {"HOME": str(root), "WT_TEST_PROJECT_DIR": str(root), "PATH": str(tools), "WT_STUB_ROOT": str(root),
+           "WT_CHROME": str(root / "chrome")}
+    return ["bash", str(scripts / "wt-browser.sh")], env
+
+
+def pw_calls(root):
+    path = root / "pw.calls"
+    return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+
+
+def run_browser(args, extra_env=None, cwd=None, **project):
+    """Run the rendered wt-browser.sh once in a fresh project. Returns (exit code, stdout,
+    stderr, playwright-cli calls without the `list` it asks itself, the project root's files
+    read back by the caller through `keep`)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        cmd, env = browser_project(root, **project)
+        proc = subprocess.run([*cmd, *args], capture_output=True, text=True, env={**env, **(extra_env or {})},
+                              cwd=cwd or tmp)
+        calls = [call for call in pw_calls(root) if "list" not in call["argv"]]
+        return proc.returncode, proc.stdout, proc.stderr, calls
+
+
+@case
+def a_browser_command_runs_in_the_envs_session_and_browser_dir():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        cmd, env = browser_project(root)
+        proc = subprocess.run([*cmd, "x", "--raw", "eval", "document.title"], capture_output=True, text=True, env=env)
+        assert proc.returncode == 0, proc.stderr
+        (call,) = pw_calls(root)
+        browser_dir = root / ".worktrees/_env/x/browser"
+        assert call["argv"] == ["-s=x", "--raw", "eval", "document.title"], call
+        assert pathlib.Path(call["cwd"]) == browser_dir.resolve(), call
+        # the dev profile's registry, where Playwright's own ffmpeg is, and no update check
+        assert call["browsers"] == str(root / ".nix-profile/share/ms-playwright") and call["no_update"] == "1", call
+        config = json.loads((browser_dir / ".playwright/cli.config.json").read_text())
+        assert config["browser"]["launchOptions"] == {"channel": "chrome", "headless": True}, config
+        assert config["network"]["allowedOrigins"] == [BROWSER_URL, "http://wt_x_110526.*.localhost:2701"], config
+
+
+@case
+def a_registry_the_environment_names_is_kept_and_without_the_profiles_it_is_playwrights_default():
+    code, _out, err, calls = run_browser(["x", "snapshot"], extra_env={"PLAYWRIGHT_BROWSERS_PATH": "/elsewhere"})
+    assert code == 0 and calls[0]["browsers"] == "/elsewhere", (code, err, calls)
+    code, _out, err, calls = run_browser(["x", "snapshot"], recorder=False)
+    assert code == 0 and calls[0]["browsers"].endswith("/.cache/ms-playwright"), (code, err, calls)
+
+
+@case
+def open_starts_headless_chrome_at_the_env_with_its_config():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        cmd, env = browser_project(root)
+        proc = subprocess.run([*cmd, "x", "open"], capture_output=True, text=True, env=env)
+        assert proc.returncode == 0, proc.stderr
+        call = pw_calls(root)[-1]
+        config = root / ".worktrees/_env/x/browser/.playwright/cli.config.json"
+        assert call["argv"] == ["-s=x", "open", "--browser=chrome", f"--config={config}", f"{BROWSER_URL}/web"], call
+
+
+@case
+def a_label_names_a_second_session_and_mobile_passes_through():
+    code, _out, err, calls = run_browser(["x", "--as", "phone", "open", "--mobile"])
+    assert code == 0, err
+    argv = calls[-1]["argv"]
+    assert argv[:2] == ["-s=x-phone", "open"] and argv[-2:] == ["--mobile", f"{BROWSER_URL}/web"], argv
+
+
+@case
+def open_keeps_a_session_that_is_open_and_only_goes_to_a_url_given():
+    # playwright-cli's own open restarts the browser, and the login goes with its in-memory profile
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        cmd, env = browser_project(root)
+        assert subprocess.run([*cmd, "x", "open"], capture_output=True, env=env).returncode == 0
+        again = subprocess.run([*cmd, "x", "open"], capture_output=True, text=True, env=env)
+        assert again.returncode == 0 and "session x is open already" in again.stdout, again.stdout + again.stderr
+        there = subprocess.run([*cmd, "x", "open", "--mobile", "/web?debug=1"], capture_output=True, text=True, env=env)
+        assert there.returncode == 0, there.stderr
+        argvs = [call["argv"] for call in pw_calls(root) if "list" not in call["argv"]]
+        assert [argv[1] for argv in argvs] == ["open", "goto"], argvs
+        assert argvs[1] == ["-s=x", "goto", f"{BROWSER_URL}/web?debug=1"], argvs
+        # another label is another session: it is opened
+        other = subprocess.run([*cmd, "x", "--as", "buyer", "open"], capture_output=True, text=True, env=env)
+        assert other.returncode == 0 and pw_calls(root)[-1]["argv"][:2] == ["-s=x-buyer", "open"], other.stderr
+
+
+@case
+def a_path_is_a_url_on_the_env():
+    for command in ("goto", "tab-new", "open"):
+        code, _out, err, calls = run_browser(["x", command, "/web#action=12"])
+        assert code == 0 and calls[-1]["argv"][-1] == f"{BROWSER_URL}/web#action=12", (command, err, calls)
+
+
+@case
+def the_envs_own_urls_pass_as_given():
+    for url in (BROWSER_URL, f"{BROWSER_URL}/web#id=5&model=sale.order", f"{BROWSER_URL}?debug=1",
+                "http://wt_x_110526.buyer.localhost:2701/web", "http://wt_x_110526.user-2.localhost:2701"):
+        code, _out, err, calls = run_browser(["x", "goto", url])
+        assert code == 0 and calls[-1]["argv"] == ["-s=x", "goto", url], (url, err, calls)
+
+
+OUTSIDE = (
+    ["goto", "https://example.com"],
+    ["goto", "http://example.com/"],
+    ["goto", "example.com"],                                           # no scheme: the CLI would add one
+    ["open", "http://wt_x_110526.localhost:2702/web"],                 # another env's port
+    ["goto", "http://wt_y_110526.localhost:2701/web"],                 # another DB
+    ["goto", "https://wt_x_110526.localhost:2701/web"],                # not the env's scheme
+    ["goto", "http://wt_x_110526.localhost:2701@example.com/"],        # userinfo
+    ["goto", "http://wt_x_110526.localhost:2701\\@example.com/"],      # a backslash is a slash to a browser
+    ["goto", "http://wt_x_110526.localhost:2701.example.com/"],
+    ["goto", "http://wt_x_110526.a.b.localhost:2701/"],                # one label, not two
+    ["goto", "http://wt_x_110526.a@b.localhost:2701/"],
+    ["goto", "http://localhost:2701/web"],                             # the DB selector's host
+    ["goto", "file:///etc/passwd"],
+    ["tab-new", "https://example.com"],
+    ["tab-new", "--isolated-context=b", "http://example.com"],
+    ["route", "https://api.example.com/**", "--body=x"],               # a URL of any command
+    ["screenshot", "--filename=http://example.com/x.png"],             # and an option's value
+    ["--raw", "goto", "HTTP://EXAMPLE.COM"],
+)
+
+
+@case
+def a_url_outside_the_env_is_refused_before_playwright_cli_runs():
+    for args in OUTSIDE:
+        code, out, err, calls = run_browser(["x", *args])
+        assert code == 2 and "outside this session env" in err and not calls, (args, code, out, err, calls)
+        assert "built-in browser" in err, err
+
+
+@case
+def a_shared_test_servers_host_suffix_is_the_envs_host():
+    lines = ["WT_HOST_SUFFIX=box1.lan"]
+    code, _out, err, calls = run_browser(["x", "open"], env_lines=lines)
+    assert code == 0 and calls[-1]["argv"][-1] == "http://wt_x_110526.box1.lan:2701/web", (err, calls)
+    code, _out, err, calls = run_browser(["x", "goto", "http://wt_x_110526.buyer.box1.lan:2701/web"], env_lines=lines)
+    assert code == 0, err
+    code, _out, err, calls = run_browser(["x", "goto", f"{BROWSER_URL}/web"], env_lines=lines)
+    assert code == 2 and not calls, (code, err, calls)
+
+
+@case
+def commands_and_options_that_leave_the_envs_browser_are_refused():
+    for args, word in ((["attach", "--cdp=chrome"], "attach"), (["install-browser"], "downloaded"),
+                       (["kill-all"], "every env"), (["-s=other", "snapshot"], "--as <label>"),
+                       (["--session", "other", "snapshot"], "--as <label>"), (["snapshot", "-s", "other"], "--as <label>"),
+                       (["-sother", "snapshot"], "--as <label>"),
+                       (["open", "--headed"], "headless"), (["open", "--browser=firefox"], "headless"),
+                       (["open", "--config=mine.json"], "headless")):
+        code, _out, err, calls = run_browser(["x", *args])
+        assert code == 2 and word in err and not calls, (args, code, err, calls)
+
+
+@case
+def a_missing_slug_command_or_label_is_a_usage_error():
+    for args in ([], ["x"], ["--as", "phone", "open"], ["x", "--as"], ["x", "--as", "phone"], ["x", "--raw"],
+                 ["x", "--as", "Phone", "open"], ["x", "--as", "a.b", "open"], ["x", "--as", "-a", "open"]):
+        code, out, err, calls = run_browser(args)
+        assert code == 2 and "usage: wt-browser.sh" in err and not calls, (args, code, out, err)
+
+
+@case
+def an_env_that_is_not_up_is_named_with_its_start():
+    code, _out, err, calls = run_browser(["nope", "open"])
+    assert code == 1 and "wt-start.sh nope" in err and not calls, (code, err)
+
+
+@case
+def without_playwright_cli_or_chrome_the_script_exits_5_and_names_the_fallback():
+    for project, word in ((dict(cli=False), "playwright-cli is not installed"), (dict(chrome=False), "Google Chrome is not installed")):
+        for args in (["x", "open"], ["x", "snapshot"], ["x", "record", "s.js", "KIO-1"]):
+            code, _out, err, calls = run_browser(args, **project)
+            assert code == 5 and word in err and not calls, (project, args, code, err)
+            assert "UI validation goes to the built-in browser, a demo is skipped" in err, err
+
+
+@case
+def a_browser_that_did_not_start_exits_5_and_a_page_that_did_not_load_keeps_the_clis_code():
+    code, _out, err, calls = run_browser(["x", "open"], extra_env={"STUB_OPEN_RC": "1"})
+    assert code == 5 and "the browser did not start" in err and len(calls) == 1, (code, err, calls)
+    # the browser is up, the env's Odoo did not answer: the tool is fine
+    code, _out, err, _calls = run_browser(["x", "open"], extra_env={"STUB_OPEN_RC": "1", "STUB_OPEN_STARTS": "1"})
+    assert code == 1 and "cannot run here" not in err, (code, err)
+
+
+@case
+def a_command_keeps_playwright_clis_exit_code():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        cmd, env = browser_project(root)
+        (root / ".nix-profile/bin/playwright-cli").write_text("#!/usr/bin/env bash\nexit 7\n")
+        assert subprocess.run([*cmd, "x", "click", "e15"], capture_output=True, env=env).returncode == 7
+
+
+def record(root, env, cmd, *args, scenario="async (page, demo) => {\n  await demo.start();\n};\n", **run):
+    (root / "s.js").write_text(scenario)
+    return subprocess.run([*cmd, *args], capture_output=True, text=True, env=env, cwd=root, **run)
+
+
+def ffmpeg_calls(root):
+    path = root / "ffmpeg.calls"
+    return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+
+
+@case
+def record_runs_the_scenario_with_the_demo_helpers_and_converts_it_to_the_demo_format():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        cmd, env = browser_project(root)
+        browser_dir = root / ".worktrees/_env/x/browser"
+        # a scenario path relative to the caller's cwd
+        proc = record(root, env, cmd, "x", "record", "s.js", "KIO-1")
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert pw_calls(root)[-1]["argv"] == ["-s=x", "--raw", "run-code", "--filename=KIO-1_demo.run.js"], pw_calls(root)
+        ran = (root / "run.js").read_text()
+        assert ran == (browser_dir / "KIO-1_demo.run.js").read_text()
+        # one function of the page: the helpers called with the key, the env's URL and the WebM,
+        # then the scenario with them, the recording stopped whatever it did
+        given = json.loads(re.search(r"\)\(page, (\{.*\})\);", ran).group(1))
+        assert given == {"key": "KIO-1", "url": BROWSER_URL, "video": str(browser_dir / "KIO-1_demo.webm")}, given
+        assert ran.startswith("async page => {\nconst demo = (\n") and DEMO_HELPERS.read_text().rstrip() in ran, ran[:200]
+        body = ran[ran.index("try {"):]
+        # the scenario's trailing semicolon is dropped: it is an argument here
+        assert "return await (\nasync (page, demo) => {\n  await demo.start();\n}\n)(page, demo);" in body, body
+        assert body.rstrip().endswith("} finally {\nawait demo.stop();\n}\n}"), body
+        convert, sheet = ffmpeg_calls(root)
+        assert convert[convert.index("-i") + 1] == "KIO-1_demo.webm" and convert[-1] == "KIO-1_demo.part.mp4", convert
+        for words in (["-c:v", "libx264"], ["-movflags", "+faststart"], ["-an"]):
+            assert " ".join(words) in " ".join(convert), (words, convert)
+        filters = convert[convert.index("-vf") + 1]
+        assert "scale=1280:720" in filters and "pad=1280:720" in filters and "fps=25" in filters \
+            and filters.endswith("format=yuv420p"), filters
+        assert sheet[-1] == "KIO-1_demo.png" and "tile=3x3" in sheet[sheet.index("-vf") + 1], sheet
+        mp4 = browser_dir / "KIO-1_demo.mp4"
+        assert mp4.stat().st_size == 524288 and not (browser_dir / "KIO-1_demo.part.mp4").exists()
+        assert proc.stdout.splitlines() == [f"VIDEO: {mp4}", "DURATION: 23 s", "SIZE: 0.50 MB",
+                                            f"SHEET: {browser_dir / 'KIO-1_demo.png'}"], proc.stdout
+        assert "WARNING" not in proc.stderr, proc.stderr
+
+
+@case
+def a_demo_over_90_seconds_is_kept_with_a_warning():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        cmd, env = browser_project(root, duration="97.3")
+        proc = record(root, env, cmd, "x", "record", "s.js", "KIO-1")
+        assert proc.returncode == 0 and "DURATION: 97 s" in proc.stdout, proc.stdout + proc.stderr
+        assert "WARNING: 97 s is over the 90 s target" in proc.stderr, proc.stderr
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        cmd, env = browser_project(root, duration="90.4")
+        assert "WARNING" not in record(root, env, cmd, "x", "record", "s.js", "KIO-1").stderr
+
+
+@case
+def a_scenario_that_throws_or_records_nothing_exits_1_and_keeps_the_video_there():
+    for stub in ({"STUB_RUN_RC": "1"}, {"STUB_NO_VIDEO": "1"}):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            cmd, env = browser_project(root)
+            assert record(root, env, cmd, "x", "record", "s.js", "KIO-1").returncode == 0
+            proc = record(root, {**env, **stub}, cmd, "x", "record", "s.js", "KIO-1")
+            browser_dir = root / ".worktrees/_env/x/browser"
+            assert proc.returncode == 1 and "did not record" in proc.stderr, (stub, proc.stdout + proc.stderr)
+            assert f"wt-browser.sh x open" in proc.stderr and "KIO-1_demo.run.js" in proc.stderr, proc.stderr
+            # no conversion of a WebM an earlier take left, and that take's mp4 stands
+            assert len(ffmpeg_calls(root)) == 2 and (browser_dir / "KIO-1_demo.mp4").exists(), ffmpeg_calls(root)
+            assert not (browser_dir / "KIO-1_demo.webm").exists() or stub == {"STUB_RUN_RC": "1"}
+
+
+@case
+def append_adds_another_sessions_part_to_the_video_there():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        cmd, env = browser_project(root)
+        browser_dir = root / ".worktrees/_env/x/browser"
+        refused = record(root, env, cmd, "x", "record", "s.js", "KIO-1", "--append")
+        assert refused.returncode == 2 and "record the first part without it" in refused.stderr, refused.stderr
+        assert not pw_calls(root), pw_calls(root)
+        assert record(root, env, cmd, "x", "record", "s.js", "KIO-1").returncode == 0
+        proc = record(root, env, cmd, "x", "--as", "approver", "record", "s.js", "KIO-1", "--append")
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        assert pw_calls(root)[-1]["argv"][0] == "-s=x-approver", pw_calls(root)
+        join = ffmpeg_calls(root)[-2]
+        assert join[join.index("-f") + 1] == "concat" and join[join.index("-c") + 1] == "copy" \
+            and join[-1] == "KIO-1_demo.joined.mp4", join
+        assert not list(browser_dir.glob("KIO-1_demo.part*")) and not (browser_dir / "KIO-1_demo.joined.mp4").exists()
+        assert f"VIDEO: {browser_dir / 'KIO-1_demo.mp4'}" in proc.stdout, proc.stdout
+
+
+@case
+def the_concat_list_names_the_video_there_then_the_new_part():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        cmd, env = browser_project(root)
+        ffmpeg = root / ".nix-profile/libexec/wt-browser/ffmpeg"
+        ffmpeg.write_text(ffmpeg.read_text() + 'if "concat" in sys.argv:\n'
+                          '    (root / "parts.txt").write_text(pathlib.Path(sys.argv[sys.argv.index("-i") + 1]).read_text())\n')
+        assert record(root, env, cmd, "x", "record", "s.js", "KIO-1").returncode == 0
+        assert record(root, env, cmd, "x", "record", "s.js", "KIO-1", "--append").returncode == 0
+        assert (root / "parts.txt").read_text() == "file 'KIO-1_demo.mp4'\nfile 'KIO-1_demo.part.mp4'\n"
+
+
+@case
+def record_refuses_what_is_no_scenario_and_key():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        cmd, env = browser_project(root)
+        for args, word in ((["s.js"], "usage:"), ([], "usage:"), (["s.js", "KIO-1", "more"], "one scenario and one key"),
+                           (["s.js", "../x"], "letters, digits"), (["s.js", "KIO 1"], "letters, digits"),
+                           (["missing.js", "KIO-1"], "no scenario at"), (["s.js", "KIO-1", "--loop"], "unknown option")):
+            proc = record(root, env, cmd, "x", "record", *args)
+            assert proc.returncode == 2 and word in proc.stderr and not pw_calls(root), (args, proc.stderr)
+
+
+@case
+def record_without_its_recorder_or_converter_exits_5():
+    for project, word in ((dict(recorder=False), "Playwright's recording ffmpeg is not in"),
+                          (dict(converter=False), "ffmpeg and ffprobe are not installed")):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            cmd, env = browser_project(root, **project)
+            proc = record(root, env, cmd, "x", "record", "s.js", "KIO-1")
+            assert proc.returncode == 5 and word in proc.stderr and "a demo is skipped" in proc.stderr, proc.stderr
+            assert not pw_calls(root), pw_calls(root)
+            # browsing needs neither
+            assert subprocess.run([*cmd, "x", "snapshot"], capture_output=True, env=env).returncode == 0
+
+
+@case
+def the_demo_helpers_and_the_reference_scenario_fit_what_record_composes():
+    helpers, scenario = DEMO_HELPERS.read_text(), DEMO_SCENARIO.read_text()
+    code = lambda text: "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("//"))
+    # one function expression each, no statement after it
+    assert code(helpers).lstrip().startswith("(page, env) => {") and code(helpers).rstrip().endswith("}"), helpers[:200]
+    assert code(scenario).lstrip().startswith("async (page, demo) => {") and code(scenario).rstrip().endswith("}")
+    # the demo format, and the title card's three parts
+    assert "path: env.video, size: { width: 1280, height: 720 }, fps: 25" in helpers
+    assert "`${env.key} ${title}`" in helpers and "`Shown as: ${role} (test copy)`" in helpers
+    for name in ("start", "stop", "title", "caption", "callout", "step"):
+        assert f"async {name}(" in helpers, name
+        assert name in ("stop", "caption") or f"demo.{name}(" in scenario, name
+    # the scenario starts on the env and never logs in
+    assert "demo.url + '/web'" in scenario and "password" not in code(scenario) and "screencast" not in code(scenario)
+
+
+@case
+def wt_stop_closes_the_envs_browser_sessions_before_it_removes_the_env():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        cmd, env = browser_project(root)
+        assert subprocess.run([*cmd, "x", "open"], capture_output=True, env=env).returncode == 0
+        for name, body in (("psql", ""), ("systemctl", ""), ("git", ""), ("flock", 'exec "$REAL_FLOCK" "$@"\n')):
+            (root / "tools" / name).write_text(f"#!/usr/bin/env bash\n{body}")
+            (root / "tools" / name).chmod(0o755)
+        for name in ("tr", "sed"):
+            (root / "tools" / name).symlink_to(shutil.which(name))
+        proc = subprocess.run(["bash", str(root / "scripts/wt-stop.sh"), "x"], capture_output=True, text=True,
+                              stdin=subprocess.DEVNULL, env={**env, "REAL_FLOCK": shutil.which("flock")})
+        assert proc.returncode == 0 and "STATUS: removed (x)" in proc.stdout, proc.stdout + proc.stderr
+        assert pw_calls(root)[-1]["argv"] == ["-s=x", "close-all"], pw_calls(root)
+        assert not (root / ".worktrees/_env/x").exists()
 
 
 if __name__ == "__main__":

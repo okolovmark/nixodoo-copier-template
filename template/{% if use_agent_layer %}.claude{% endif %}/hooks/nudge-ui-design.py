@@ -43,7 +43,7 @@ except OSError:
 sys.stderr.write(
     f"ui-design: {os.path.basename(path)} is a view or a style. Load the `ui-design` "
     "skill first (Skill tool, skill=\"ui-design\"): built-in arch, widgets and "
-    "Bootstrap utilities before any stylesheet, and the phone check (375px) before "
+    "Bootstrap utilities before any stylesheet, and the phone check before "
     "the view is done. Already loaded? Re-run the edit; this fires once per session.\n"
 )
 sys.exit(2)

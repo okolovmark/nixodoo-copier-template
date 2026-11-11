@@ -372,6 +372,17 @@ async function toPr($: Engine): Promise<void> {
   }
 }
 
+test('Phase 5 is the demo video, and a run that went past it shows it skipped', async ($, on) => {
+  engine(on)
+  await $.session.start({ cwd: '/p', surface: 'desktop', isInteractive: true })
+  await toPr($)
+  await $.tool.call({ tool: 'mcp__pipeline-gates__phase', phase: 6, task: `${K}-9` })
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await pane.find({ text: '5 Demo video (optional) · skipped' })).toBeDefined()
+  expect(JSON.stringify(await pane.drawn())).not.toContain('GIF')
+  await pane.unmount()
+})
+
 test('Phase 7 ends the run, and the gates and the pane say it ended there, with its PR', async ($, on) => {
   engine(on)
   await $.session.start({ cwd: '/p', surface: 'desktop', isInteractive: true })

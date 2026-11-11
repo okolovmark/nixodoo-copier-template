@@ -346,6 +346,81 @@
                     pkgs.ccze
                 ];
 
+{% if dev_in_worktrees %}
+                # Session-env browser (worktree-env's wt-browser.sh). Development only: the
+                # test and production servers carry none of it.
+                #
+                # playwright-cli at the versions nix/playwright-cli/package-lock.json pins,
+                # each tarball fetched by the lock's own integrity hash. The packages are
+                # plain JavaScript with no install step, so they are unpacked where the lock
+                # places them and run by this pin's node. To move the pin: edit
+                # package.json, `npm install --package-lock-only --ignore-scripts` beside it.
+                playwrightCliLock = builtins.fromJSON (builtins.readFile ./nix/playwright-cli/package-lock.json);
+
+                # The ffmpeg Playwright records a screencast with: its own static build
+                # (WebM only), looked up as <PLAYWRIGHT_BROWSERS_PATH>/ffmpeg-<revision>/.
+                # The revision is the one playwright-core's browsers.json names: a lock bump
+                # that changes it needs the new directory name and hashes here. No browser
+                # comes from this path: sessions drive the system's Chrome.
+                playwrightFfmpegRevision = "1013";
+                playwrightFfmpegBuilds = {
+                    x86_64-linux = {
+                        file = "ffmpeg-linux";
+                        hash = "sha256-7phkNNFY90+12cX/EJICbO7bY/Mk/pC1volGCSa3tnk=";
+                    };
+                    aarch64-linux = {
+                        file = "ffmpeg-linux-arm64";
+                        hash = "sha256-RXNg6AOn2NX49/Xs9WKy0zj2tPf4YznQwxk4pFHoh4s=";
+                    };
+                };
+                # Empty on a system without a build above: wt-browser.sh then reports that
+                # recording is unavailable, and browsing still works.
+                playwrightBrowsers =
+                    let build = playwrightFfmpegBuilds.${system} or null;
+                    in pkgs.runCommand "playwright-browsers" { nativeBuildInputs = [ pkgs.unzip ]; } (
+                        "mkdir -p $out\n"
+                        + lib.optionalString (build != null) ''
+                            dir=$out/ffmpeg-${playwrightFfmpegRevision}
+                            mkdir -p $dir
+                            unzip -q ${pkgs.fetchurl {
+                                url = "https://cdn.playwright.dev/dbazure/download/playwright/builds/ffmpeg/${playwrightFfmpegRevision}/${build.file}.zip";
+                                hash = build.hash;
+                            }} -d $dir
+                            chmod +x $dir/ffmpeg-linux
+                            touch $dir/INSTALLATION_COMPLETE
+                        ''
+                    );
+
+                playwrightCli = pkgs.stdenv.mkDerivation {
+                    pname = "playwright-cli";
+                    version = playwrightCliLock.packages."node_modules/@playwright/cli".version;
+                    dontUnpack = true;
+                    nativeBuildInputs = [ pkgs.makeWrapper ];
+                    installPhase = ''
+                        mkdir -p $out/bin
+                    ''
+                    + lib.concatStrings (lib.mapAttrsToList
+                        (path: package: lib.optionalString (path != "") ''
+                            mkdir -p $out/lib/${lib.escapeShellArg path}
+                            tar -xzf ${pkgs.fetchurl { url = package.resolved; hash = package.integrity; }} \
+                                -C $out/lib/${lib.escapeShellArg path} --strip-components=1
+                        '')
+                        playwrightCliLock.packages)
+                    + ''
+                        # NO_UPDATE_NOTIFIER: the version is this pin's, so no daily `npm view`
+                        # and no "update available" notice asking for an npm install.
+                        # SSL_CERT_DIR: under NODE_USE_SYSTEM_CA=1 this node prints "Cannot open
+                        # directory <openssl>/etc/ssl/certs" on every start, as its OpenSSL's
+                        # default directory is not in the store.
+                        makeWrapper ${pkgs.nodejs}/bin/node $out/bin/playwright-cli \
+                            --add-flags $out/lib/node_modules/@playwright/cli/playwright-cli.js \
+                            --set-default PLAYWRIGHT_BROWSERS_PATH ${playwrightBrowsers} \
+                            --set-default NO_UPDATE_NOTIFIER 1 \
+                            --set-default SSL_CERT_DIR ${pkgs.cacert}/etc/ssl/certs
+                    '';
+                };
+
+{% endif %}
 {% if prod_ssh_host %}
                 # SSH connection helpers
                 prodServerHelper = mkScript "prod-server" { };
@@ -377,6 +452,20 @@
                     # only: in devTools it would land in buildInputs, and a python application there
                     # brings its pytestCheckHook into this derivation, whose check then fails.
                     makeWrapper ${pkgs.pre-commit}/bin/pre-commit $out/bin/pre-commit
+{% if dev_in_worktrees %}
+
+                    # Session-env browser (wt-browser.sh): the pinned playwright-cli, and what
+                    # the script alone reads: ffmpeg for the demo's WebM -> mp4 and the
+                    # directory Playwright's own recording ffmpeg sits in. node and ffmpeg
+                    # stay off PATH: the profile's bin comes first there, and they would
+                    # shadow the developer's own (an nvm node under its npm; a system ffmpeg
+                    # with screen capture, which the headless build lacks).
+                    ln -s ${playwrightCli}/bin/playwright-cli $out/bin/playwright-cli
+                    mkdir -p $out/libexec/wt-browser $out/share
+                    ln -s ${pkgs.ffmpeg-headless}/bin/ffmpeg $out/libexec/wt-browser/ffmpeg
+                    ln -s ${pkgs.ffmpeg-headless}/bin/ffprobe $out/libexec/wt-browser/ffprobe
+                    ln -s ${playwrightBrowsers} $out/share/ms-playwright
+{% endif %}
 
                     # PostgreSQL client tools bound to the project-local cluster
                     for tool in psql pg_dump pg_restore createdb dropdb; do
@@ -411,6 +500,23 @@
                         ${./nix/scripts}/*.sh
                     touch $out
                 '';
+{% if dev_in_worktrees %}
+
+                # nix flake check — the pinned playwright-cli builds from its lock and starts,
+                # and Playwright's recording ffmpeg is where it looks for it
+                checks.playwright-cli = pkgs.runCommand "playwright-cli-starts" { } (''
+                    export HOME=$TMPDIR
+                    version=$(${playwrightCli}/bin/playwright-cli --version)
+                    [ "$version" = ${lib.escapeShellArg playwrightCli.version} ] || {
+                        echo "playwright-cli --version printed '$version'" >&2; exit 1; }
+                ''
+                + lib.optionalString (playwrightFfmpegBuilds ? ${system}) ''
+                    ${playwrightBrowsers}/ffmpeg-${playwrightFfmpegRevision}/ffmpeg-linux -version > /dev/null
+                ''
+                + ''
+                    touch $out
+                '');
+{% endif %}
 
                 # nix run .#<name> for every script in nix/scripts/
                 apps = builtins.mapAttrs

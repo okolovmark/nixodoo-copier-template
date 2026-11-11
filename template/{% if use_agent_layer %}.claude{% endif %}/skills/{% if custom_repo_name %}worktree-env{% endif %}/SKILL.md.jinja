@@ -1,6 +1,6 @@
 ---
 name: worktree-env
-description: "Spin up / list / tear down isolated per-session Odoo {{ odoo_version }} dev environments, each backed by a git worktree of the addons repo with its own port, database (own restore of the prod dump), data_dir and systemd service — so many tasks run in parallel without touching each other. There is no main env: every pipeline run (one task, or a block of tasks) runs in one. Used by the pipeline skill and standalone. Use when asked to start/stop an isolated env, work on a task in parallel, or run something against a throwaway Odoo."
+description: "Spin up / list / tear down isolated per-session Odoo {{ odoo_version }} dev environments, each backed by a git worktree of the addons repo with its own port, database (own restore of the prod dump), data_dir and systemd service — so many tasks run in parallel without touching each other. There is no main env: every pipeline run (one task, or a block of tasks) runs in one. A session's UI is driven in the env's own headless browser (wt-browser.sh), which also records the demo video. Used by the pipeline skill and standalone. Use when asked to start/stop an isolated env, work on a task in parallel, run something against a throwaway Odoo, or look at or click through a session env's UI."
 argument-hint: "[start|stop|list] [slug]"
 ---
 
@@ -20,6 +20,7 @@ proxy and no main database, only the shared postgres cluster
 | DB | `wt_<slug>_<MMDDYY>`, written `<DB>` below: its own restore of the prod dump, `<MMDDYY>` the dump's day from its name (`odoo_2026-10-20-18-30-06.dump` -> `wt_kio_1234_cash_in_cogs_102026`), recorded in `.worktrees/_env/<slug>/db`. An env restored before dated names keeps `wt_<slug>` |
 | Env repo | `.worktrees/_envrepo/<slug>`, only with `--env-repo`: this project's own repo on branch `<slug>`, off origin's default branch |
 | HTTP | `http://<DB>.localhost:<PORT>`, port auto-allocated in **{{ (odoo_major | int + 11) * 100 }}–{{ (odoo_major | int + 11) * 100 + 99 }}** (direct, no nginx) |
+| Browser | `.worktrees/_env/<slug>/browser/`: what `wt-browser.sh` writes (page snapshots, console logs, saved logins, demo files) |
 
 ## Commands
 
@@ -76,6 +77,9 @@ Invoke by absolute path under `${{ project_dir_var }}/.claude/skills/worktree-en
   (see the gotchas). TERM or HUP to a test run is passed on to Odoo (its clean stop); a
   terminal's Ctrl-C reaches Odoo itself; whatever Odoo got, it is sent a TERM 30 s later if
   it still runs, and the script exits 128 + the signal.
+- **`wt-browser.sh <slug> [--as <label>] <playwright-cli command...>`** — the env's own
+  browser: `playwright-cli` driving the system's Chrome, headless, held to the env's URL.
+  See [The session browser](#the-session-browser).
 - `wt-link.sh <tree> <farm>` / `wt-restore.sh <slug>` — internals used by `wt-start`.
 
 **Slug** = kebab branch name, conventionally `<kio-key-lower>-<short-desc>`
@@ -123,6 +127,87 @@ WT_DUMP=<a dump outside backup/> bash .claude/skills/worktree-env/scripts/wt-sta
 exists reuses it. `wt-start` records the dump it named the DB after
 (`.worktrees/_env/<slug>/dump`), so `wt-restore` takes that file even if `backup/` changes
 meanwhile.
+
+## The session browser
+
+`wt-browser.sh` is how a session env's UI is driven: UI validation, the phone check, a
+`dev` agent's look at its own change, the demo video. It needs no visible pane.
+Production, tickets and other sites stay with the built-in browser and the Odoo connector.
+
+```bash
+B="${{ project_dir_var }}/.claude/skills/worktree-env/scripts/wt-browser.sh"
+bash "$B" <slug> open                                   # Chrome, headless, at <URL>/web
+bash "$B" <slug> fill "input[name=login]" admin
+bash "$B" <slug> fill "input[name=password]" admin --submit
+bash "$B" <slug> snapshot                               # the page as a tree; refs (e15) are what click and fill take
+bash "$B" <slug> find "Confirm"                         # only the nodes that match
+bash "$B" <slug> click e15
+bash "$B" <slug> console error                          # JS errors since the page loaded
+bash "$B" <slug> --raw eval "document.title"            # --raw: the value alone
+bash "$B" <slug> close
+```
+
+- **Commands** are `playwright-cli`'s, passed as given: `playwright-cli --help`, and
+  `playwright-cli --help <command>`. A target is a snapshot ref, a CSS selector or a
+  Playwright locator (`"getByRole('button', { name: 'Confirm' })"`). `open`, `goto` and
+  `tab-new` take a path (`/web`) as a URL on this env. A `goto` that changes only the
+  `#hash` does not route the web client: click through the menus, or change the query
+  (`/web?r=1#...`).
+- **Output paths are relative to `.worktrees/_env/<slug>/browser/`**, the script's cwd:
+  a snapshot is `.playwright-cli/page-<time>.yml` there, a `screenshot --filename=x.png`
+  lands there. The folder goes with the env (`wt-stop.sh` also closes its sessions).
+- **Held to the env.** A URL argument on another host is refused (exit 2); the allowed
+  hosts are `<DB>.localhost:<PORT>` and `<DB>.<label>.localhost:<PORT>`. The browser itself
+  requests nothing else either (the CLI's `allowedOrigins`): fonts, analytics and other
+  outside resources of the prod copy's pages show in `console` as
+  `net::ERR_BLOCKED_BY_CLIENT` and are no defect, nor is a `500` on `/web/image/...`
+  (attachments are not seeded). Neither check is a sandbox: code given to `run-code`
+  navigates where it likes. `attach`, `install-browser`, `kill-all`, `-s` and `open`'s
+  `--browser`, `--config`, `--headed` are refused.
+- **Sessions.** A session is one browser with its own cookies: `<slug>` by default,
+  `<slug>-<label>` with `--as <label>` (a second user, the phone). `open` on a session that
+  is open keeps it, login included, and only goes to the URL given; `close` ends it,
+  `close-all` every session of the env. A headless session shuts down after an hour
+  without commands: `open` again and log in again. `list` shows the env's sessions.
+- **Phone.** `--as phone open --mobile`: 360x732, touch, a mobile user agent, the web
+  client's phone layout.
+- **One login for several sessions.** `state-save <name>.json` in a logged-in session,
+  `state-load <name>.json` then `goto /web` in another: the second session is that user
+  without typing the password again.
+- **As a real user.** A UI test case or a demo runs as a user who holds the role, not as
+  admin: set a throwaway password on that user in the session DB (below, "Several users
+  side by side"), log in through `fill`, and keep the password out of every file, ticket,
+  message, kb record and PR. The next restore resets it.
+- **Exit 5 means the tool cannot run here**: `playwright-cli` or Chrome
+  (`/opt/google/chrome/chrome`) is missing, or the browser did not start (a Chrome newer
+  than the pinned playwright-core drives). The message says which. UI validation then
+  goes to the built-in browser; a demo is skipped. `open` exits with `playwright-cli`'s
+  own code when the browser started and the page did not load (the env's Odoo is down).
+- **Versions.** `playwright-cli` is pinned in `nix/playwright-cli/package-lock.json` and
+  built by the flake into the dev profile with its node, Playwright's recording ffmpeg and
+  an ffmpeg for the mp4; Chrome is the system's. A test or production profile has none of
+  it. A new pin comes through the template.
+
+### Recording a demo
+
+`wt-browser.sh <slug> [--as <label>] record <scenario.js> <KEY> [--append]` runs a
+scenario in the session, which is open and logged in, and writes
+`.worktrees/_env/<slug>/browser/<KEY>_demo.mp4`: H.264, 1280x720, 25 fps. It prints
+`VIDEO:`, `DURATION:`, `SIZE:` and `SHEET:` (`<KEY>_demo.png`, nine frames across the
+video in one image: Read it to check the take), and a `WARNING:` past 90 s.
+
+- A scenario is one function `async (page, demo) => { ... }`; `scripts/demo-scenario.js`
+  is the reference, `scripts/demo-helpers.js` the `demo` it gets: `demo.url`,
+  `demo.start()`, `demo.title(title, role)` (the title card), `demo.caption(text)`,
+  `demo.callout(locator, text)`, `demo.step(text, action)`. `page` is Playwright's
+  ([`page.screencast`](https://playwright.dev/docs/api/class-screencast) draws the overlays).
+- The scenario never logs in and holds no password: the session it runs in is logged in.
+- `--append` adds the recording to the end of the `<KEY>_demo.mp4` already there. A flow
+  across two users records each part in that user's session:
+  `record part1.js <KEY>`, then `--as <label> record part2.js <KEY> --append`.
+- A scenario that throws, or records nothing, exits 1 with the error; the scenario as it
+  ran is `<KEY>_demo.run.js`, whose lines the error names. Exit 5 here also covers a
+  missing ffmpeg.
 
 ## How it works / gotchas
 
@@ -267,8 +352,9 @@ meanwhile.
   wrapper (wrapped anyway, it finds its caller holding the lock and runs under it).
 - **Reading or checking a session from Claude:** `{{ odoo_cmd }} shell -c <CONF> --no-http`
   with a script on stdin (as a given user: `env = env(user=env.ref('base.user_admin'))`
-  or `record.with_user(user)`), or `psql -d <DB>` for plain reads. There is no
-  local Odoo MCP; the Odoo connector is production, as your own account.
+  or `record.with_user(user)`), or `psql -d <DB>` for plain reads; its UI through
+  `wt-browser.sh`. There is no local Odoo MCP; the Odoo connector is production, as
+  your own account.
 - **The env-repo worktree is for editing and committing, nothing else.** Its `src/`
   is empty (`src/*/` is gitignored) and it has no env of its own, so a tool run from its
   own copy of `.claude/skills/` (find-code's index, `dbfields.py`, the `wt-*.sh`) sees no

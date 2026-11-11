@@ -65,6 +65,10 @@ if db_exists "$DB"; then
 fi
 # A restore killed mid-way leaves its raw staging copy behind.
 drop_db "${DB}_restoring" 2>/dev/null || true
+# The env's browser sessions (wt-browser.sh) would idle for an hour beside a removed env.
+if [ -d "$ENV_DIR/browser" ]; then
+    bash "$WT_SCRIPT_DIR/wt-browser.sh" "$SLUG" close-all >/dev/null 2>&1 || true
+fi
 # Only the env dir this holds the locks of, moved aside in one rename before it is deleted: a
 # wt-start meanwhile makes a new one with new locks, never takes these while they go.
 if [ -n "$LOCKED" ] && [ -d "$ENV_DIR" ]; then

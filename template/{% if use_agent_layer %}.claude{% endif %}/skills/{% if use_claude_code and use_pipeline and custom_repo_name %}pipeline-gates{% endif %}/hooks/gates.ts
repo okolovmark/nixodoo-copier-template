@@ -7,7 +7,7 @@ export const PHASES = [
   'Development',
   'QC gate',
   'Documentation',
-  'Demo GIF (optional)',
+  'Demo video (optional)',
   'Pull request',
   'Memory closure',
 ] as const
