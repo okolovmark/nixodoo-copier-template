@@ -36,25 +36,6 @@ developer connects in claude.ai settings with their own account; nothing in the
 project holds a prod credential.
 {% endif %}
 {% endif %}
-{% if use_antigravity %}
-{% if use_claude_code %}
-
-{% endif %}
-### Google Antigravity
-
-Open this folder as a project in Antigravity. `.agents/` points it at the same instructions,
-`CLAUDE.md` and `.claude/` (skills, `dev`/`review`/`documenter`/`verify` agents, guard hooks),
-and runs the same hooks through an adapter; `.agents/README.md` maps one to the other. Its
-terminal sandbox does not mount `/nix`: turn it off for this project, or the nix toolchain is
-out of reach.
-{% if status_mcp == 'teams' %}
-Microsoft Teams goes through `.agents/plugins/teams-mcp/` (`okolovmark/teams-mcp`).
-{% endif %}
-{% if tickets_mcp == 'odoo' %}
-Production Odoo goes through an MCP plugin you add under `.agents/plugins/`, signed in as
-yourself.
-{% endif %}
-{% endif %}
 
 {% if use_kb %}Claude's persistent memory for this project lives in
 [kb](https://github.com/okolovmark/kb): records, tasks and one record per session, in Neo4j.
@@ -90,7 +71,7 @@ bash .claude/memory-template/scripts/init-memory.sh
 ### Entire CLI installation
 
 Sessions here are recorded by [Entire](https://entire.io): checkpoints on `refs/entire/*`,
-one session record per repository. The {% if use_claude_code %}`.claude/` hooks{% else %}`.agents/hooks.json` hooks{% endif %} call it on every phase and carry on
+one session record per repository. The `.claude/` hooks call it on every phase and carry on
 silently when it is missing, so nothing breaks without it.
 
 Prefer the release artifact over the vendor's one-line installer, which pipes a script from
@@ -109,16 +90,6 @@ The version is not pinned by the flake: it lives on each machine, like Claude Co
 and the CLI nudges you when a newer one exists. 0.11.5 is what this project has been
 verified against; check yours with `entire --version`, and keep the pair you replace for a
 rollback.
-{% if use_antigravity %}
-
-Antigravity needs entire 0.11.3 or later (`entire hooks antigravity`; `.agents/hooks.json`
-already carries its entry). entire looks for Antigravity transcripts under
-`~/.gemini/antigravity-cli/brain`, where the `agy` CLI writes them; the Antigravity desktop app
-writes to `~/.gemini/antigravity/brain`. For the app, set
-`ENTIRE_TEST_ANTIGRAVITY_BRAIN_DIR="$HOME/.gemini/antigravity/brain"` in the environment
-entire's hooks run in, for instance with a wrapper `~/.local/bin/entire` that exports it and
-execs the real binary. A reinstall of entire replaces that wrapper.
-{% endif %}
 
 ### Entire and git auto-gc
 

@@ -151,18 +151,12 @@ use_claude_code:
   help: Work in this project with Claude Code? Generates CLAUDE.md and .claude/ (guard hooks, Odoo dev skills, agents) plus the Claude Code-only parts (mods, markdown memory seed)
   default: true
 
-use_antigravity:
-  type: bool
-  help: Work in this project with Google Antigravity? Generates .agents/, which points Antigravity at CLAUDE.md and .claude/ (generated for it too), so both agents work from one set of instructions. Pick either, both or neither
-  default: false
-
 # The shared instruction layer: CLAUDE.md, .claude/ (skills, agents, hooks and the
-# settings.json that wires them) and odools.toml. Generated for either agent, since
-# Antigravity's .agents/ reads it rather than keeping a copy of its own.
+# settings.json that wires them) and odools.toml.
 use_agent_layer:
   type: bool
   when: false
-  default: "{{ use_claude_code or use_antigravity }}"
+  default: "{{ use_claude_code }}"
 
 module_prefix:
   type: str
@@ -185,7 +179,7 @@ readme_gen_source:
 
 status_mcp:
   type: str
-  help: MCP used to post work status to the team (adds the my-status and teams-message skills and the Teams bootstrap questions; Teams goes through the claude.ai Microsoft 365 connector in Claude Code, and through .agents/plugins/teams-mcp in Antigravity)
+  help: MCP used to post work status to the team (adds the my-status and teams-message skills and the Teams bootstrap questions; Teams goes through the claude.ai Microsoft 365 connector)
   default: none
   choices:
     - none

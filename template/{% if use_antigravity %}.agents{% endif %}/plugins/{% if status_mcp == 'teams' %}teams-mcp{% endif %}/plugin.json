@@ -1,5 +1,0 @@
-{
-  "name": "teams-mcp",
-  "displayName": "Microsoft Teams (teams-mcp)",
-  "description": "Microsoft Teams MCP connector (okolovmark/teams-mcp) the teams-message, my-status, deploy and pipeline skills use, signed in as yourself (OAuth)."
-}

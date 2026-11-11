@@ -1,8 +1,0 @@
-{% set repo_org = custom_repo_pattern | regex_replace('.*[:/]([^/]+)/\\{\\}.*', '\\1') if custom_repo_pattern else '' %}
-{% set repos = ([repo_org ~ '/' ~ custom_repo_name, repo_org ~ '/' ~ project_name] if repo_org and custom_repo_name else []) + ['okolovmark/nixodoo-copier-template'] %}
-{% set hosts = ((['prod'] + (['prod-local'] if prod_local_ssh_host else [])) if prod_ssh_host else []) + ((test_ssh_hosts | list) if test_ssh_hosts else []) %}
-{
-  "merge_repos": {{ repos | tojson }},
-  "hosts": {{ hosts | tojson }},
-  "prod_service": {{ ('odoo' ~ service_suffix ~ '.service') | tojson }}
-}
