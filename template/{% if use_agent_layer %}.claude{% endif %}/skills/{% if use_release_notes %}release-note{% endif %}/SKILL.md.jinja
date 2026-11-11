@@ -1,0 +1,155 @@
+{% set action_href = '/odoo/action-' if odoo_major | int >= 18 else '/web#action=' %}
+---
+name: release-note
+description: "Write the user-facing release note for a task as a file in the addons PR ({{ module_prefix }}_release_notes/notes/<key>.html): a short, friendly what-changed page in the style of VS Code's monthly notes, with buttons that open the new screen. Users get it in Odoo as an OdooBot chat once the deployer publishes it. Use in pipeline Phase 4b (after Documentation), or when asked to write, fix or skip a release note for a task."
+---
+
+# Release note
+
+A release note tells the people who use Odoo what changed for them, in their
+words, and takes them straight to it. It is written in the pipeline because
+that is where the context is: the ticket, the grill, the diff, the test cases.
+Written later, at deploy time, it would be vaguer.
+
+## How it reaches users
+
+The engine is the `release_notes` module of
+[okolovmark/nixodoo-addons](https://github.com/okolovmark/nixodoo-addons),
+pulled through `addons.yaml`: the Release Note model, its views, the Publish
+button and the loader. It ships no notes. The project's notes are files in its
+holder module, `{{ module_prefix }}_release_notes` (next section).
+
+1. This skill writes `{{ module_prefix }}_release_notes/notes/<key>.html` in the addons
+   worktree `<WT>`. It ships in the same PR as the code and is reviewed with it.
+2. The deploy updates `{{ module_prefix }}_release_notes` (the PR changed a file in it),
+   which runs the engine's loader. It creates the **Release Note** record
+   **unpublished**. It never overwrites a note that already exists, so later
+   edits are made in Odoo. A file it cannot read (no `---` header, no `key` or
+   `title`, not UTF-8, a key an earlier file already has) gets no record: the
+   loader logs `Release note file <name> skipped: <why>` as an ERROR and the
+   update goes on, so a bad note never stops a deploy and is never announced
+   either.
+{% if prod_ssh_host %}
+3. The `deploy` skill (Step 7.5) stamps **Deployed by** with the person who
+   deployed.
+{% else %}
+3. Whoever deployed sets **Deployed by** to themselves on the note: a Release
+   Notes manager can, while it is empty.
+{% endif %}
+4. That person opens the note in Odoo (Release Notes menu), reads it, checks the
+   buttons, and presses **Publish**. Only they can. Publishing sends an OdooBot
+   direct chat with a link to every active internal user who can read at least
+   one of the note's models. No email.
+
+## The holder module
+
+`{{ module_prefix }}_release_notes`, in the project's addons repo, holds the notes and
+no logic:
+
+- `__manifest__.py`: depends on `release_notes`, loads
+  `data/release_note_load.xml`, carries an `author` and a `license`{% if odoo_version == '20.0' %} (Odoo 20
+  warns about a manifest without either){% endif %};
+- `data/release_note_load.xml`, outside any `noupdate` block so that it runs on
+  every update:
+  `<function model="release.note" name="_load_release_notes"><value>{{ module_prefix }}_release_notes</value></function>`;
+- `notes/`, one `<key>.html` per task;
+- a test that parses every shipped file: the loader only skips a bad file, the
+  test fails on it.
+
+An addons repo that has none yet gets it once, before the first note; the
+recipe is in the engine's README (`src/nixodoo-addons/release_notes/README.rst`,
+Configuration). That is a code change like any other: through dev and the QC
+gate, never in Phase 4b, where only a note file leaves the QC pass standing.
+Installing the holder brings the engine with it.
+
+## When there is no note
+
+Write none when nothing changes for a person using Odoo: compute fixes with no
+visible effect, refactors, migrations, tooling, tests, docs. Say so in the
+phase report ("Release note: none — no user-visible change"). A bug fix users
+noticed does get a short note ("Fixed: …").
+
+## The file
+
+Name: the task key in lower case with `_`: `{{ ticket_prefix | lower }}_1234.html`. One note per task.
+If a later PR of the same task changes what users see and the note is not yet
+on prod, edit the same file; once it is on prod, the text is fixed in Odoo.
+
+```html
+---
+key: {{ ticket_prefix }}-1234
+title: Purchase orders show the vendor's lead time
+summary: The PO form now shows how many days the vendor needs, and warns when the date is too early.
+tags: Purchase Orders
+models: purchase.order
+---
+<h2>Vendor lead time on the purchase order</h2>
+<p>When you pick a vendor, the order now shows how many days they need to
+deliver. If the expected date is earlier than that, a yellow warning tells you
+before you confirm.</p>
+<ul>
+  <li><strong>Where:</strong> Purchase → Orders → any draft order.</li>
+  <li><strong>What to do:</strong> nothing; the warning is a hint, not a block.</li>
+</ul>
+<p><a class="btn btn-primary" href="{{ action_href }}purchase.purchase_rfq">Open Requests for Quotation</a></p>
+```
+
+Header (all lines `name: value`, between the two `---` lines):
+
+| Field | Rule |
+|---|---|
+| `key` | The task key, exactly. The loader matches on it. |
+| `title` | What changed, from the user's side, ≤ 70 chars. Not the ticket title. |
+| `summary` | One sentence, the line users see in the chat. |
+| `tags` | Comma-separated work areas. The engine seeds Sales, Purchase Orders, Inventory, Manufacturing, Projects, Accounting, HR, Maintenance, Quality, Shipping, CRM: use these names; any other name creates a new tag, so add one only for a real new area. |
+| `models` | Comma-separated technical model names, 1–3: the business documents the change is about. They decide who is notified (users who can read one of them), so not every model the diff touches: never `res.partner`, `product.product`, `mail.thread` unless the change is about them. |
+
+## The body
+
+Write for the person in the warehouse, the buyer, the accountant, not for a
+developer. English, whatever the conversation's language: it is prod content.
+
+- **Lead with the benefit**, one `<h2>` per change (most notes have one).
+- **Say where it is** (menu path) and **what to do** in one or two short
+  sentences each. Plain words: "the order", "the button", never field or model
+  names.
+- **A button to the change** when there is a screen to open:
+  `<a class="btn btn-primary" href="{{ action_href }}<module>.<action_xml_id>">…</a>`.
+  The link carries the action's XML id and resolves when clicked; nothing
+  checks it at load. Find the id with `find-code` or the module's views. Write
+  every button as `btn btn-primary`; any other `btn` class is turned into it
+  when the note is saved, because the backend draws `btn-secondary` and the
+  outline variants as bare links. No buttons to records that exist only on one
+  database.
+- **Before/after** in a sentence when a behaviour changed ("Before, … Now, …").
+- Short. A note people read in 30 seconds beats a complete one nobody reads.
+- No scripts, styles, images or iframes: the body goes through Odoo's HTML
+  sanitizer, which keeps headings, paragraphs, lists, links and the `btn`
+  classes.
+
+## Check before handing it on
+
+The note is written after the QC gate, so no review and no test run reads it:
+these checks are the only ones it gets.
+
+- The header parses: `key`, `title` present; tags and models as above.
+- Every `models:` name is a model on prod: the loader drops an unknown name
+  without a word, and a note left with no model cannot be published. The
+  loaded note (below) shows in **Models** what stayed.
+- Every button's XML id exists in the PR or on prod
+  (`python3 .claude/skills/find-code/lsp.py who <xml_id>` or a grep of the
+  module's XML).
+- Load it on the session DB (`<slug>` and `<URL>` are the worktree env's,
+  `worktree-env` skill):
+  ```bash
+  systemctl --user stop odoo{{ service_suffix }}-wt@<slug>.service
+  bash "${{ project_dir_var }}/.claude/skills/worktree-env/scripts/wt-test.sh" <slug> -u {{ module_prefix }}_release_notes
+  systemctl --user start odoo{{ service_suffix }}-wt@<slug>.service
+  ```
+  (`-i` on a DB whose dump is older than the holder: `wt-test.sh` refuses the
+  `-u` and names it.) The output carries no `Release note file … skipped`
+  line, and the note is in Release Notes at `<URL>`: read it there and open
+  each button. A manager gets the body in the text editor, where a click on a
+  button shows its link and that link opens the screen; a user without the
+  manager group clicks the button itself.
+- The file is part of the PR's diff (`git -C <WT> status`).

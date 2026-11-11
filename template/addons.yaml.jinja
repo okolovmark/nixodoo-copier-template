@@ -1,5 +1,6 @@
 # Addon repos cloned + symlinked by `nix run .#update-repos` (Part 2).
 #
+# One YAML document per repo owner ('---' between them), each with its own ENV.
 # Two entry formats:
 #   repo-key:              # tracks branch ENV.ODOO_VERSION
 #     - "module_a"         # symlink only these modules ('*' = all)
@@ -8,7 +9,7 @@
 #     modules:
 #       - "module_a"
 #
-# Repo URL = ENV.DEFAULT_REPO_PATTERN with '{}' replaced by the repo key.
+# Repo URL = its document's ENV.DEFAULT_REPO_PATTERN with '{}' replaced by the repo key.
 # A matching SSH deploy key at ~/.ssh/<repo-key> is used automatically.
 ENV:
   DEFAULT_REPO_PATTERN: "{{ default_repo_pattern }}"
@@ -21,6 +22,23 @@ queue:
 {% endif %}
 # web:
 #   - "web_responsive"
+{% if odoo_version in ['16.0', '20.0'] and (use_release_notes or task_software_fields) %}
+
+---
+# The modules behind use_release_notes and task_software_fields; the repo has
+# branches 16.0 and 20.0 only.
+ENV:
+  DEFAULT_REPO_PATTERN: "https://github.com/okolovmark/{}.git"
+  ODOO_VERSION: "{{ odoo_version }}"
+
+nixodoo-addons:
+{% if use_release_notes %}
+  - "release_notes"
+{% endif %}
+{% if task_software_fields %}
+  - "project_software"
+{% endif %}
+{% endif %}
 {% if custom_repo_name %}
 
 ---
