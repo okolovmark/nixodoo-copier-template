@@ -518,7 +518,7 @@ bash "${{ project_dir_var }}/.claude/skills/deploy/scripts/prod-deploy-lock.sh" 
 
 Only after a **successful** deploy to `prod`, and only when the PR added or
 changed a `{{ module_prefix }}_release_notes/notes/*.html` file (Step 1's file list). The
-deploy's module update loaded each such file as an **unpublished** Release Note
+deploy's update of that holder module loaded each such file as an **unpublished** Release Note
 (`release-note` skill). Nobody can publish it until **Deployed by** is set, and
 then only that person can, so this step is what makes the note publishable.
 {% if test_ssh_hosts %}
@@ -532,13 +532,13 @@ the notes a test box loaded are announced to nobody.
   `search_read` `release.note` `[["key", "in", [<keys>]]]`, fields
   `["key", "name", "is_published", "deployer_id"]`. For each with an empty
   `deployer_id`: `write {"deployer_id": <your uid>}` with the quiet context
-  (`odoo-tickets` → Connection & context flags). The module allows a Release
+  (`odoo-tickets` → Connection & context flags). The `release_notes` engine allows a Release
   Notes Manager to set it only when empty and only to themselves; an
   AccessError means your account lacks that group, so say so and leave it to an
   administrator.
 - A key with no record: the loader skipped the file, and says why in an
   `ERROR` line of the deploy output (`Release note file <name> skipped: …`, one
-  of the lines Step 7 shows the user), or the module was not in the update.
+  of the lines Step 7 shows the user), or the holder module was not in the update.
   Report it with that line; never create the note by hand.
 - A note that already has another deployer, or is already published, is
   left as it is: report it.

@@ -1082,7 +1082,7 @@ part of the PR; the deploy loads it unpublished and the deployer publishes it.
 Add the path to `ALL_FILES_CHANGED`.
 
 It runs inside Phase 4: no `phase` call of its own. A note file is no code
-change (the loader skips a file it cannot read and logs it), so writing one
+change (the `release_notes` loader skips a file it cannot read and logs it), so writing one
 leaves the QC pass standing, and no review or test run reads it: the skill's
 own checks are the only ones it gets.
 

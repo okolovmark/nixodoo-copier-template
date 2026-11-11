@@ -37,7 +37,9 @@ The full inventory behind the summary in [the README](../README.md#what-it-gener
   mother session that grills and deploys and a child session that develops; see
   [ADR 0001](adr/0001-pipeline-mother-and-child-sessions.md); with `use_release_notes`, a
   user-facing release note written after the docs as a file in the PR, which the deploy skill
-  stamps with its deployer), **my-status**
+  stamps with its deployer), **release-note** (with `use_release_notes`: how that note is
+  written, and the holder module `<module_prefix>_release_notes` that keeps the note files for
+  the shared `release_notes` engine), **my-status**
   (status posting, Teams), **teams-message** (readable Teams messages: HTML Teams
   actually renders, recipient verified by email, draft before send),
   **odoo-tickets** (ticket tracking in a prod Odoo),
@@ -75,7 +77,10 @@ The full inventory behind the summary in [the README](../README.md#what-it-gener
   `/tasks/<key>` with `task_key_route`); only the person opens a gate or ends a run by hand
 - Optional (asked during generation): custom addons repo wiring, S3 production-backup
   restore with **native Odoo neutralization** (`odoo neutralize` + dev fixups),
-  SSH helpers for prod/test servers, OCA `queue_job` wiring
+  SSH helpers for prod/test servers, OCA `queue_job` wiring, and on Odoo 16.0 and 20.0 the
+  shared modules of [okolovmark/nixodoo-addons](https://github.com/okolovmark/nixodoo-addons)
+  in `addons.yaml`: `release_notes` with `use_release_notes`, `project_software` with
+  `task_software_fields`
 - `nix flake check` shellchecks every project script
 
 ## Memory
