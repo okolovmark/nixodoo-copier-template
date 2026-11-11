@@ -31,7 +31,7 @@ End with one line: `✓ N/N items pass · M flagged · K fixed inline · J need 
 
 - [ ] Commit message contains the task key ({{ ticket_prefix }}-xxx) in the body — see the `commit` skill
 - [ ] No `installable=True` / `application=False` / `auto_install=False` in `__manifest__.py` — these are framework defaults
-- [ ] `version` is bumped **only** if there's a connected changelog or release; otherwise leave alone
+- [ ] `version`: a PR that adds a migration bumps the manifest to that migration's directory, and that version is new on the base branch: Odoo runs a directory only where `installed < directory <= target`, so a script filed under a version the database already has never runs. Without a migration, bump only for a connected changelog or release
 - [ ] `depends` lists every module whose model/view/group/field you actually use (incl. `{{ module_prefix }}_base` if you use its shared overrides) — and nothing you don't
 - [ ] No leftover debug fields/methods/compute helpers from refactoring (e.g. `res_count` for visual debug)
 - [ ] New module → confirm its tests actually run in your test command (not silently skipped → false-green). Verify by running `--test-enable -u <module>` and seeing the test count
