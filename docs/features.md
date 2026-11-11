@@ -90,19 +90,3 @@ project owns it from then on.
 than in Claude Code's per-user `MEMORY.md`; turn auto-memory off locally
 (`autoMemoryEnabled: false` in `.claude/settings.local.json`) so the harness stops asking for
 memory files there.
-
-## Antigravity
-
-With `use_antigravity = true` the project also works in Google Antigravity: next to Claude Code,
-or alone with `use_claude_code = false`, which keeps `CLAUDE.md` and `.claude/` as the instruction
-source and drops only the Claude Code-only parts (the mods, the markdown memory seed). `.agents/` adds nothing of its own to follow: its rules inline `CLAUDE.md` (and the
-custom repo's), `skills.json` registers `.claude/skills`, the four agents read their
-`.claude/agents` bodies, and `hooks/claude_hook.py` runs the hooks wired in
-`.claude/settings.json` (guards, nudges, ruff, the kb SessionStart) by translating Antigravity's
-payloads. `plugins/workspace-inspector/` adds a `Workspace Customizations` UI panel under
-`Overview → Plugins` (mirrored to `~/.gemini/config/plugins/` by `hooks/claude_hook.py`) showing
-the project's workspace-scoped plugins, MCP servers and tools, custom agents, skills, rules and
-hooks. With `use_entire` it also records Antigravity sessions (entire >= 0.11.3), and with
-`status_mcp = teams` it ships `.agents/plugins/teams-mcp/` (`okolovmark/teams-mcp`). What has no
-Antigravity equivalent (the Claude Code mods, the claude.ai connectors) is spelled out in
-`.agents/rules/antigravity.md`.

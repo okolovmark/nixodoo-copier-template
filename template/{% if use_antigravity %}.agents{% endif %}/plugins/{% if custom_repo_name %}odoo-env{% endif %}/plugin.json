@@ -1,7 +1,0 @@
-{
-  "name": "odoo-env",
-  "displayName": "Odoo Env & Worktrees",
-  "description": "Live status and controls for PostgreSQL, main/addons git checkouts, and isolated Odoo worktree environments (.worktrees/_env), matching the odoo-env-band mod.",
-  "logo": "assets/logo.svg",
-  "version": "1.0.0"
-}

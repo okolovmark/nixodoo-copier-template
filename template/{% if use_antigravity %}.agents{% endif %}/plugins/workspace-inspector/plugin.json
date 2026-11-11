@@ -1,7 +1,0 @@
-{
-  "name": "workspace-inspector",
-  "displayName": "Workspace Customizations",
-  "description": "UI panel in Overview -> Plugins that displays workspace-scoped plugins (.agents/plugins), MCP servers and tools, custom agents, skills, rules, and hooks for the active project.",
-  "logo": "assets/logo.svg",
-  "version": "1.0.0"
-}

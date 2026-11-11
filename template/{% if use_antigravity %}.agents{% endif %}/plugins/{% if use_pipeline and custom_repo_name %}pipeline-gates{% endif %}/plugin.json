@@ -1,7 +1,0 @@
-{
-  "name": "pipeline-gates",
-  "displayName": "Pipeline",
-  "description": "Odoo development pipeline tracker and gate controller: block tasks progress with Odoo links, 8 lifecycle phases, Teams status / grill alignment / QC verdict gates, fix-round counter, and blocked call log.",
-  "logo": "assets/logo.svg",
-  "version": "1.0.0"
-}

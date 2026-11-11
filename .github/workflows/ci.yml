@@ -70,7 +70,6 @@ jobs:
               -d module_prefix=acme -d ticket_prefix=ACME -d extra_ticket_prefixes=AI
               -d status_mcp=teams -d tickets_mcp=odoo
               -d odoo_prod_url=https://odoo.example.com -d use_pipeline=true -d use_entire=true
-              -d use_antigravity=true
               -d backup_s3_bucket=acme-backups -d editor=vscode
               -d prod_ssh_host=203.0.113.1 -d prod_web_url=https://odoo.example.com
               -d prod_local_ssh_host=10.0.0.5
@@ -84,12 +83,6 @@ jobs:
               -d project_name=ci-repo -d odoo_version=17.0
               -d custom_repo_pattern=git@github.com:acme/{}.git
               -d custom_repo_name=acme-addons
-          - name: agy-only-17
-            args: >-
-              -d project_name=ci-agy -d odoo_version=17.0
-              -d use_claude_code=false -d use_antigravity=true
-              -d custom_repo_pattern=git@github.com:acme/{}.git
-              -d custom_repo_name=acme-addons -d use_kb=true
           - name: py314-19
             args: >-
               -d project_name=ci-nineteen -d odoo_version=19.0
@@ -106,14 +99,9 @@ jobs:
       - name: Bash syntax check
         run: |
           shopt -s globstar nullglob
-          for f in /tmp/gen/nix/scripts/*.sh /tmp/gen/.claude/hooks/*.sh /tmp/gen/.claude/skills/**/scripts/*.sh /tmp/gen/.agents/hooks/*.sh; do
+          for f in /tmp/gen/nix/scripts/*.sh /tmp/gen/.claude/hooks/*.sh /tmp/gen/.claude/skills/**/scripts/*.sh; do
             bash -n "$f"
           done
-      - name: Antigravity layer (JSON parses, adapter corpus)
-        run: |
-          shopt -s nullglob
-          for f in /tmp/gen/.agents/*.json /tmp/gen/.agents/plugins/*/*.json /tmp/gen/.agents/plugins/*/sidecars/*/*.json; do python3 -m json.tool "$f" > /dev/null; done
-          python3 tests/test_antigravity_hook.py
       - name: Mods in this render
         id: mods
         run: |
