@@ -113,6 +113,15 @@ security / controllers / data / migrations), new dependencies, migrations needed
   a pinned OCA repo, or another custom module? A parallel implementation of an
   existing seam is a **Major** finding — cite the existing symbol (same
   search discipline as "Symbol verification" below, in reverse).
+- **Override design**: a CRUD override or `action_*` only coordinates, each
+  decision another module may change behind its own private method; a core
+  hook (`_prepare_*`, `_get_*`) is overridden where one exists, not the large
+  public method; the override keeps the base signature and return value and
+  calls `super()` with the caller's values; no plain context key switches a
+  rule off (any RPC caller can send it; `docs/adr/` may record the project's
+  mechanism). Severity follows the failure scenario: what other modules add
+  is dropped, a caller that never uses the feature breaks, a client switches
+  the rule off. A shape preference with no scenario is a Nit.
 - **Comments**: hold added comments to the `style` bar (a reader would break or
   misuse the code without it; 1–2 lines). Flag: provenance in code (who
   decided / dates / ticket keys — belongs in the commit and ticket), rationale

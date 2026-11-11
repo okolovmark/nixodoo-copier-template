@@ -40,6 +40,10 @@ End with one line: `✓ N/N items pass · M flagged · K fixed inline · J need 
 
 - [ ] No `_order = "id"` in model classes — that's the framework default
 - [ ] Every `sudo()` has a documented "why" — and you verified the user actually lacks the permission (not assumed)
+- [ ] A CRUD override or `action_*` only coordinates: each decision, record set and validation another module may want to change sits in its own private method (`code-patterns` skill, "Overrides")
+- [ ] An override keeps the base signature and return value and calls `super()` with the caller's values; where core has a hook (`_prepare_*`, `_get_*`), that is what is overridden, not the large public method
+- [ ] No plain context key switches a rule off (any RPC caller can send it): an argument, a separate method, or the project's own mechanism from `docs/adr/`
+- [ ] No `except Exception: pass` and no silent `return False` on a broken rule: raise `UserError` / `ValidationError`, let the unexpected roll back
 - [ ] `search_count(domain, limit=1)` whenever the result is used as a boolean (`if Model.search_count(...):`)
 - [ ] No `.search([...]).ids` immediately followed by `browse(ids)` — keep the recordset
 - [ ] No `search_read(...)` + manual `(id, name)` tuple normalisation — use `search()` and operate on records
@@ -124,7 +128,7 @@ Report like this:
 
 ```
 Pre-PR check ({{ module_prefix }}_field_tracker, 14 files):
-  ✓ 47/56 items pass
+  ✓ 51/60 items pass
   ⚠ 9 flagged — 6 fixed inline, 3 need decision:
      - manifest defaults specified → removed
      - tag 'post_install' missing on 4 test classes → added
@@ -133,7 +137,7 @@ Pre-PR check ({{ module_prefix }}_field_tracker, 14 files):
      - ORDER BY id in chunked DELETE — design call (drop?)
 ```
 
-If everything passes: `Pre-PR check: ✓ 56/56 items pass.`
+If everything passes: `Pre-PR check: ✓ 60/60 items pass.`
 
 ## Related
 

@@ -247,6 +247,37 @@ class ResUsers(models.Model):
     _inherits = {'res.partner': 'partner_id'}
 ```
 
+## Overrides
+
+A CRUD override (`create` / `write` / `unlink`) or an `action_*` only
+coordinates. Each decision, record set and validation another module may want
+to change sits in its own private method, so that module overrides one small
+method instead of copying the override.
+
+```python
+def write(self, vals):
+    result = super().write(vals)
+    if 'company_id' in vals:
+        self._get_company_followers().write({'company_id': vals['company_id']})
+    return result
+
+def _get_company_followers(self):
+    return self.child_ids
+```
+
+- **Core hook first**: before overriding a large public core method, look for
+  its hook (`_prepare_*`, `_get_*`, `_compute_*`) with `find-code` and override
+  that.
+- **Contract kept**: the base signature (`*args, **kwargs` passed through when
+  the base has them) and return value (`create` returns the records, `write`
+  and `unlink` return `True`); `super()` called with the caller's values unless
+  rewriting them is the feature; no new error or side effect for a caller that
+  does not use the feature.
+- **No plain context key switches a rule off**: any RPC caller can send it.
+  Pass an argument or call a separate method. A flag that has to follow the
+  recordset carries a value no client can send: check `docs/adr/` for the
+  project's mechanism before inventing one.
+
 ## Wizard Template
 
 ```python

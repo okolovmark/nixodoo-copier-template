@@ -207,6 +207,10 @@ line change behavior?" If no, drop it.
 | `Float` for money | `Monetary` + `currency_field` |
 | Missing `ondelete` on `Many2one` | Add `ondelete='restrict'` or `'cascade'` |
 | Generic `Exception` | `UserError` / `ValidationError` |
+| `except Exception: pass`, silent `return False` on a broken rule | Raise `UserError` / `ValidationError`; let the unexpected roll the transaction back |
+| CRUD override / `action_*` deciding, collecting, validating and writing inline | Coordinate only, one private method per step (`code-patterns` "Overrides") |
+| Override changing the base signature or return value, or skipping `super()` | Keep the base contract (`code-patterns` "Overrides") |
+| Plain context key switching a rule off | Argument or separate method; any RPC caller can send the key (`code-patterns` "Overrides") |
 | f-string in `cr.execute()` | `%` for identifiers, `%s` for data (see Python Conventions) |
 | Numeric tuple `(6, 0, [...])` in x2many writes | `Command.set([...])` (see Python Conventions) |
 | Em-dash `—` in code/strings/labels | ASCII `-` (see General) |
