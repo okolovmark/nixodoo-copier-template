@@ -168,12 +168,20 @@ Written like this:
 
 ## Verify before calling it done
 
+{% if dev_in_worktrees %}
+- Phone, on a session env: a mobile session of the env's own browser,
+  `wt-browser.sh <slug> --as phone open --mobile` (360x732, touch and a mobile
+  user agent; worktree-env skill, "The session browser"), logged in through the
+  form or `state-load`. When the script exits 5, the browser pane's mobile
+  preset instead (375x812, page reloaded after switching). Passes when the page has no sideways
+{% else %}
 - Phone: the browser pane's mobile preset (375x812, touch and a mobile user
   agent), page reloaded after switching. Passes when the page has no sideways
+{% endif %}
   scroll (`document.documentElement.scrollWidth <= innerWidth`), field values
   read without truncation, every action the user needs is reachable without
   hover, and each one2many is usable (cards or a narrow list).
-- Desktop at about 1280px and 1600px. Column counts and truncation are
+- Desktop at about 1280px and 1600px{% if dev_in_worktrees %} (`wt-browser.sh <slug> resize 1600 900`){% endif %}. Column counts and truncation are
   measured, not assumed; where a utility combination matters, read
   `getComputedStyle`, not the class list.
 - After `-u`, read the log for view-validator warnings: an `alert-*` without
@@ -193,6 +201,6 @@ Written like this:
   assert the last node's modifiers in a test - Python `Form` ANDs duplicates
   and cannot catch it.
 {% endif %}
-- The browser pane must be visible: hidden, the web client never renders
+- {% if dev_in_worktrees %}In the built-in browser the{% else %}The browser{% endif %} pane must be visible: hidden, the web client never renders
   (blank page under the navbar while RPCs succeed), so check
-  `tabs_context` before reading a blank page as a bug.
+  `tabs_context` before reading a blank page as a bug.{% if dev_in_worktrees %} `wt-browser.sh` needs no pane.{% endif +%}

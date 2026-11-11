@@ -661,7 +661,7 @@ export const register: Register = on => {
             <Text bold>Phases</Text>
             {PHASES.map((name, i) => {
               const reached = (current.phaseAt[i] ?? 0) > 0
-              // a phase passed over without being entered (the optional GIF) reads as skipped, not done
+              // a phase passed over without being entered (the optional demo video) reads as skipped, not done
               const isSkipped = i < current.phase && !reached
               return (
                 <Box flexDirection="row" columnGap={1}>

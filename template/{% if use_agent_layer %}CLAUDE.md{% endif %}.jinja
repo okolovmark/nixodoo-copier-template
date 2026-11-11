@@ -42,6 +42,12 @@ systemctl --user {start|stop|restart|status} postgres{{ service_suffix }}.servic
 # IPv4 loopback HttpCase needs, a dbfilter naming the session DB). Selector:
 # /module_name[:TestClass[.test_method]]; without the leading / it is a tag and runs 0 tests
 bash .claude/skills/worktree-env/scripts/wt-test.sh <slug> -u module_name --test-enable --test-tags /module_name:TestClassName
+
+# A session's UI in its own headless Chrome (playwright-cli commands: open, snapshot, click,
+# fill, console; --as <label> is another session, --as phone open --mobile the phone);
+# record writes .worktrees/_env/<slug>/browser/<KEY>_demo.mp4
+bash .claude/skills/worktree-env/scripts/wt-browser.sh <slug> [--as <label>] <command...>
+bash .claude/skills/worktree-env/scripts/wt-browser.sh <slug> record <scenario.js> <KEY>
 {% else %}
 # Services
 systemctl --user {start|stop|restart|status} odoo{{ service_suffix }}.service postgres{{ service_suffix }}.service nginx{{ service_suffix }}.service
@@ -80,6 +86,17 @@ src/
 - **Before typing `grep -r` over `src/`**: if the pattern is an identifier — method, field, model name, XML id — that is a `find-code` question, not a grep (`python3 .claude/skills/find-code/lsp.py sym|def|refs|model`). It is MRO-aware and answers over the whole tree at once, while a hand-scoped grep silently misses the repos you did not list in the command. grep stays right for plain strings: comments, log lines, data files, message text
 - **Never pipe a "who uses X" search into `head`/`tail`.** *Who consumes this identifier* is only useful answered in full: a truncated list reads as "these are the call sites", so the conclusion drawn from it is wrong rather than merely partial. Output too long to read is the signal to ask `lsp.py refs`, not to cut it. Field report: `grep -rn leave_rendered ... | head -20` hid the two references that decided the answer, and the wrong conclusion reached a ticket before being caught. The find-code nudge hook flags this case even when its session budget is spent
 - Never edit OCA/core code under `src/` (enforced by the guard-readonly hook){% if custom_repo_name %} — extend via a `{{ module_prefix }}_*` module{% endif %}
+{% if dev_in_worktrees %}
+
+## Demo video
+
+A demo of a change is a scripted recording on a session env: `wt-browser.sh <slug> record <scenario.js> <KEY>`{% if use_pipeline %} (pipeline skill, Phase 5;{% else %} ({% endif %} worktree-env skill, "Recording a demo").
+
+- It runs as a user who holds the role the test case names, never as admin unless the case is about admin settings
+- It opens with a title card (task key and title, the role, "test copy") and carries English captions for a non-technical audience
+- File: `<task-key>_demo.mp4` (H.264, 1280x720, 25 fps, under 90 s)
+- It goes to the task it demonstrates{% if tickets_mcp == 'odoo' %} as an attachment with an internal note{% endif %}{% if status_mcp == 'teams' %}; Teams gets a link to the task{% endif %}. Never to a GitHub PR: the frames show data of the production copy
+{% endif %}
 {% if use_kb %}
 
 

@@ -338,6 +338,10 @@ tail -f ${{ project_dir_var }}/.worktrees/_env/<slug>/odoo.log | ccze -A
 
 # Tests on a session (free port, IPv4 loopback for HttpCase, a dbfilter naming its DB):
 bash .claude/skills/worktree-env/scripts/wt-test.sh <slug> -u module_name --test-enable --test-tags /module_name
+
+# A session's UI in its own headless Chrome (playwright-cli commands), and a demo video of it:
+bash .claude/skills/worktree-env/scripts/wt-browser.sh <slug> open
+bash .claude/skills/worktree-env/scripts/wt-browser.sh <slug> record <scenario.js> <KEY>
 {% if prod_ssh_host %}
 
 # Connect to remote servers:

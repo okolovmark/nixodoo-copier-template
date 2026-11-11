@@ -6,7 +6,9 @@ The full inventory behind the summary in [the README](../README.md#what-it-gener
   generation time; every Odoo version runtime-verified end-to-end (clone → lock → build → `-i base`)
 - Nix flake with three installable toolchains (`dev-server`, `test-server`, `prod-server`):
   wrapped `odoo`, `psql`/`pg_dump`/... bound to the project cluster (dev/test; `prod-server`
-  ships Odoo without a proxy or a database client), `ruff`, `uv`, `ccze`
+  ships Odoo without a proxy or a database client), `ruff`, `uv`, `ccze`; with worktree
+  envs, `dev-server` also carries the session-env browser: `playwright-cli` pinned by
+  `nix/playwright-cli/package-lock.json`, Playwright's recording ffmpeg and an ffmpeg
 - Pinnable source management: `repos.yaml` (odoo) + `addons.yaml` (OCA/custom addon repos,
   branch- or commit-pinned) with an addons symlink farm builder
 - Generated configs: `.env`, `odoo.conf` (random master password), systemd user units incl.
@@ -18,7 +20,9 @@ The full inventory behind the summary in [the README](../README.md#what-it-gener
   testing, commit conventions, pre-PR checklist, **semantic code navigation** over the
   official Odoo Language Server (`super()` chains across `_inherit`, XML `ref`/model
   targets, find-usages, model inheritance maps), a debug recipe,
-  isolated worktree envs, an **assess** pass that decides whether an idea is worth
+  isolated worktree envs, each with its own headless browser (`wt-browser.sh`:
+  UI validation, the phone check and a scripted, captioned demo video with no pane to
+  keep visible), an **assess** pass that decides whether an idea is worth
   building at all before anything is specified — go / clarify / kill, where a kill
   is a successful outcome — a **grill** requirements interview for what survives —
   one question at a time, decisions routed to their owner, every exemption and
@@ -29,7 +33,7 @@ The full inventory behind the summary in [the README](../README.md#what-it-gener
   resolve; `adr-number.sh` numbers a record across every branch and worktree, so
   two parallel branches cannot take one number), `dev`/`review`/`verify`/`documenter` agents, a persistent
   **memory template** (journal / state / standup), and optional workflow skills:
-  the **pipeline** orchestrator (task → dev → QC gate → docs → demo GIF → PR, split into a
+  the **pipeline** orchestrator (task → dev → QC gate → docs → demo video → PR, split into a
   mother session that grills and deploys and a child session that develops; see
   [ADR 0001](adr/0001-pipeline-mother-and-child-sessions.md); with `use_release_notes`, a
   user-facing release note written after the docs as a file in the PR, which the deploy skill

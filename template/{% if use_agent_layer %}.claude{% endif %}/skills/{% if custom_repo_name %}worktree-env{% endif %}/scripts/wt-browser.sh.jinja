@@ -1,0 +1,302 @@
+#!/usr/bin/env bash
+# The session env's own browser: playwright-cli driving the system's Chrome, headless, with
+#   - the session named after the env: <slug>, or <slug>-<label> with --as (a second login,
+#     the phone session);
+#   - the cwd .worktrees/_env/<slug>/browser/, where the CLI keeps its page snapshots and
+#     console logs (.playwright-cli/) and a demo's files land; removed with the env;
+#   - requests held to the env's own origin (the CLI's network.allowedOrigins).
+# Commands go to playwright-cli as given (`playwright-cli --help`), except:
+#   - open: Chrome, headless, this env's config; without a URL it opens <URL>/web. A session
+#     that is open already is kept (playwright-cli would restart it, and the login is in
+#     its in-memory profile) and only taken to the URL given;
+#   - open, goto, tab-new: a URL starting with / is one on this env;
+#   - a URL argument on another host is refused (exit 2): the env is
+#     http://<DB>.<WT_HOST_SUFFIX>:<PORT>, one extra label after the DB allowed
+#     (http://<DB>.<label>.<WT_HOST_SUFFIX>:<PORT>, worktree-env skill). Neither this
+#     check nor the allowlist is a sandbox: code given to run-code navigates where it likes;
+#   - -s/--session, attach, install-browser, kill-all and open's --browser, --config and
+#     --headed are refused (exit 2): they leave the env's browser or reach other envs';
+#   - record, below.
+#
+# Usage: wt-browser.sh <slug> [--as <label>] <playwright-cli command...>
+#        wt-browser.sh <slug> [--as <label>] record <scenario.js> <KEY> [--append]
+#   wt-browser.sh kio-1234-x open
+#   wt-browser.sh kio-1234-x snapshot
+#   wt-browser.sh kio-1234-x --as phone open --mobile
+#
+# record runs a demo scenario (demo-scenario.js beside this script is the reference) in the
+# session, which must be open and logged in, and converts what it recorded to
+# <KEY>_demo.mp4 (H.264, 1280x720, 25 fps, yuv420p, faststart) in the browser dir. It prints
+# VIDEO / DURATION / SIZE, and SHEET, nine frames across the video in one image
+# (<KEY>_demo.png), and warns past 90 s. --append adds the recording to the end of the
+# <KEY>_demo.mp4 already there: a flow across two users records each part in that user's
+# session.
+#
+# Exit codes: 1 no such env, or a recording that failed; 2 usage, or a refused URL, command
+# or option; 5 the tool cannot run here (playwright-cli or Chrome missing, the browser did
+# not start; for record also Playwright's ffmpeg, ffmpeg or ffprobe missing); else
+# playwright-cli's own.
+set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/wt-common.sh"
+
+USAGE="usage: wt-browser.sh <slug> [--as <label>] <playwright-cli command...> | record <scenario.js> <KEY> [--append]"
+refuse() { echo "ERROR: $*" >&2; exit 2; }
+unavailable() {
+    echo "ERROR: $1" >&2
+    echo "wt-browser.sh cannot run here (exit 5): UI validation goes to the built-in browser, a demo is skipped" >&2
+    exit 5
+}
+
+SLUG="${1:-}"
+case "$SLUG" in ""|-*) echo "$USAGE" >&2; exit 2 ;; esac
+shift
+LABEL=""
+if [ "${1:-}" = "--as" ]; then
+    LABEL="${2:-}"
+    [[ "$LABEL" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] || refuse "--as takes a label of a-z, 0-9 and -; $USAGE"
+    shift 2
+fi
+[ $# -gt 0 ] || { echo "$USAGE" >&2; exit 2; }
+
+ENV_DIR="$WT_ENVROOT/$SLUG"
+[ -f "$ENV_DIR/odoo.conf" ] && [ -s "$ENV_DIR/port" ] || {
+    echo "ERROR: no session env at $ENV_DIR - run wt-start.sh $SLUG first" >&2; exit 1; }
+DB="$(db_name_for "$SLUG")"
+PORT="$(cat "$ENV_DIR/port")"
+URL="http://$(session_host "$DB"):$PORT"
+SESSION="$SLUG${LABEL:+-$LABEL}"
+BROWSER_DIR="$ENV_DIR/browser"
+
+# Whether $1 is a URL on this env: its origin is <URL>, or <URL> with one label after the DB.
+# The origin is compared as text up to the first / ? or #, so no userinfo (@) or backslash
+# moves the host a browser would read.
+url_on_env() {
+    local authority label
+    case "$1" in http://*) authority="${1#http://}" ;; *) return 1 ;; esac
+    authority="${authority%%[/?#]*}"
+    [ "$authority" != "$DB.$WT_HOST_SUFFIX:$PORT" ] || return 0
+    case "$authority" in
+        "$DB."*".$WT_HOST_SUFFIX:$PORT") ;;
+        *) return 1 ;;
+    esac
+    label="${authority#"$DB."}"
+    label="${label%".$WT_HOST_SUFFIX:$PORT"}"
+    [[ "$label" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]]
+}
+refuse_url() {
+    refuse "$1 is outside this session env ($URL, or http://$DB.<label>.$WT_HOST_SUFFIX:$PORT):" \
+           "wt-browser.sh drives the session env only; production, tickets and other sites go through the built-in browser"
+}
+
+# The command is the first argument that is no option; every URL among the arguments, an
+# option's value included, is one on this env.
+COMMAND="" COMMAND_AT=0 INDEX=0
+for arg in "$@"; do
+    INDEX=$((INDEX + 1))
+    case "$arg" in
+        -s*|--session|--session=*)
+            refuse "the session is this env's ($SESSION): --as <label> names another one" ;;
+        -*) ;;
+        *) [ -n "$COMMAND" ] || { COMMAND="$arg"; COMMAND_AT=$INDEX; } ;;
+    esac
+    value="$arg"
+    case "$arg" in --*=*) value="${arg#*=}" ;; esac
+    if [[ "$value" =~ ^[A-Za-z][A-Za-z0-9+.-]*:// ]]; then
+        url_on_env "$value" || refuse_url "$value"
+    fi
+done
+[ -n "$COMMAND" ] || { echo "$USAGE" >&2; exit 2; }
+case "$COMMAND" in
+    attach) refuse "attach drives a browser that is not this env's: open starts the env's own" ;;
+    install-browser) refuse "sessions drive the system's Chrome: no browser is downloaded" ;;
+    kill-all) refuse "kill-all ends every env's browser: close ends this session, close-all this env's" ;;
+esac
+
+# The dev profile's binary (ffmpeg and ffprobe sit off PATH there, in libexec), else one on PATH.
+PROFILE="$HOME/{{ nix_profile_rel }}"
+tool() {
+    local dir
+    for dir in "$PROFILE/libexec/wt-browser" "$PROFILE/bin"; do
+        [ ! -x "$dir/$1" ] || { echo "$dir/$1"; return 0; }
+    done
+    command -v "$1" 2>/dev/null || true
+}
+PW_CLI="$(tool playwright-cli)"
+[ -n "$PW_CLI" ] || unavailable "playwright-cli is not installed: it comes with the dev profile (nix profile add {{ nix_profile_flag }}.#dev-server)"
+# Where Playwright's chrome channel looks on Linux; it takes no other path.
+CHROME="${WT_CHROME:-/opt/google/chrome/chrome}"
+[ -x "$CHROME" ] || unavailable "Google Chrome is not installed at $CHROME: sessions drive the system's Chrome, install google-chrome-stable"
+# Playwright's registry, where it looks for its own ffmpeg: the dev profile's unless the
+# environment names one, else Playwright's default.
+if [ -z "${PLAYWRIGHT_BROWSERS_PATH:-}" ]; then
+    PLAYWRIGHT_BROWSERS_PATH="$PROFILE/share/ms-playwright"
+    [ -d "$PLAYWRIGHT_BROWSERS_PATH" ] || PLAYWRIGHT_BROWSERS_PATH="${XDG_CACHE_HOME:-$HOME/.cache}/ms-playwright"
+fi
+# NO_UPDATE_NOTIFIER: the version is the template's pin, so no daily `npm view` and no notice
+# asking for an npm install.
+export PLAYWRIGHT_BROWSERS_PATH NO_UPDATE_NOTIFIER=1
+
+# The .playwright dir makes the browser dir the CLI's workspace: its sessions are this env's
+# alone, and `open` reads the config from it.
+CONFIG="$BROWSER_DIR/.playwright/cli.config.json"
+mkdir -p "$BROWSER_DIR/.playwright"
+cat > "$CONFIG" <<EOF
+{
+  "browser": {
+    "browserName": "chromium",
+    "launchOptions": { "channel": "chrome", "headless": true }
+  },
+  "network": {
+    "allowedOrigins": ["$URL", "http://$DB.*.$WT_HOST_SUFFIX:$PORT"]
+  }
+}
+EOF
+
+ARGS=("${@:1:COMMAND_AT-1}")
+REST=("${@:COMMAND_AT+1}")
+cd "$BROWSER_DIR"
+
+# Whether this session's browser is up, by the CLI's own list of this workspace's sessions.
+session_open() {
+    "$PW_CLI" --json list 2>/dev/null | python3 -c '
+import json, sys
+try:
+    browsers = json.load(sys.stdin).get("browsers", [])
+except ValueError:
+    sys.exit(1)
+sys.exit(0 if any(b.get("name") == sys.argv[1] and b.get("status") == "open" for b in browsers) else 1)
+' "$SESSION"
+}
+
+case "$COMMAND" in
+    open|goto|tab-new)
+        HAS_URL=""
+        NAV=()
+        for arg in ${REST[@]+"${REST[@]}"}; do
+            case "$arg" in
+                --browser|--browser=*|--config|--config=*|--headed|--headed=*)
+                    [ "$COMMAND" != open ] || refuse "$arg: a session is Chrome, headless, with this env's config" ;;
+            esac
+            case "$arg" in
+                -*) NAV+=("$arg") ;;
+                /*) NAV+=("$URL$arg"); HAS_URL=1 ;;
+                *)  url_on_env "$arg" || refuse_url "$arg"
+                    NAV+=("$arg"); HAS_URL=1 ;;
+            esac
+        done
+        if [ "$COMMAND" != open ]; then
+            exec "$PW_CLI" -s="$SESSION" ${ARGS[@]+"${ARGS[@]}"} "$COMMAND" ${NAV[@]+"${NAV[@]}"}
+        fi
+        # playwright-cli's open restarts a session that is open, and its login goes with the
+        # in-memory profile: an open session is kept, and only taken to the URL given.
+        if session_open; then
+            echo "STATUS: session $SESSION is open already: kept as it is, login included (close it first for a new one)"
+            [ -n "$HAS_URL" ] || exit 0
+            URL_ONLY=()
+            for arg in "${NAV[@]}"; do
+                case "$arg" in -*) ;; *) URL_ONLY+=("$arg") ;; esac
+            done
+            exec "$PW_CLI" -s="$SESSION" ${ARGS[@]+"${ARGS[@]}"} goto "${URL_ONLY[@]}"
+        fi
+        [ -n "$HAS_URL" ] || NAV+=("$URL/web")
+        RC=0
+        "$PW_CLI" -s="$SESSION" ${ARGS[@]+"${ARGS[@]}"} open --browser=chrome --config="$CONFIG" \
+            ${NAV[@]+"${NAV[@]}"} || RC=$?
+        [ "$RC" -ne 0 ] || exit 0
+        # A browser that is up failed on the page (the env's Odoo is down, say): not the tool.
+        ! session_open || exit "$RC"
+        unavailable "the browser did not start (playwright-cli open exited $RC, its output is above): a Chrome newer than the pinned playwright-core drives is the usual cause" ;;
+    record) ;;
+    *)  exec "$PW_CLI" -s="$SESSION" "$@" ;;
+esac
+
+# --- record <scenario.js> <KEY> [--append] ---
+RECORD_USAGE="usage: wt-browser.sh <slug> [--as <label>] record <scenario.js> <KEY> [--append]"
+SCENARIO="" KEY="" APPEND=""
+for arg in ${REST[@]+"${REST[@]}"}; do
+    case "$arg" in
+        --append) APPEND=1 ;;
+        -*) refuse "unknown option $arg; $RECORD_USAGE" ;;
+        *)  if [ -z "$SCENARIO" ]; then SCENARIO="$arg"
+            elif [ -z "$KEY" ]; then KEY="$arg"
+            else refuse "one scenario and one key; $RECORD_USAGE"; fi ;;
+    esac
+done
+[ -n "$SCENARIO" ] && [ -n "$KEY" ] || refuse "$RECORD_USAGE"
+[[ "$KEY" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || refuse "the key names the files (<KEY>_demo.mp4): letters, digits, - and _ only"
+# The cwd is the browser dir by now: a relative scenario is the caller's.
+case "$SCENARIO" in /*) ;; *) SCENARIO="$OLDPWD/$SCENARIO" ;; esac
+[ -f "$SCENARIO" ] || refuse "no scenario at $SCENARIO"
+
+FFMPEG="$(tool ffmpeg)" FFPROBE="$(tool ffprobe)"
+[ -n "$FFMPEG" ] && [ -n "$FFPROBE" ] || unavailable "ffmpeg and ffprobe are not installed: they come with the dev profile (nix profile add {{ nix_profile_flag }}.#dev-server)"
+PW_FFMPEG="$(find "$PLAYWRIGHT_BROWSERS_PATH"/ffmpeg-* -maxdepth 1 -name 'ffmpeg-*' -type f -perm -u+x 2>/dev/null | head -n 1 || true)"
+[ -n "$PW_FFMPEG" ] || unavailable "Playwright's recording ffmpeg is not in $PLAYWRIGHT_BROWSERS_PATH (ffmpeg-<revision>/): it comes with the dev profile"
+
+NAME="${KEY}_demo"
+MP4="$BROWSER_DIR/$NAME.mp4"
+[ -z "$APPEND" ] || [ -s "$MP4" ] || refuse "--append adds to $MP4, which is not there: record the first part without it"
+rm -f "$NAME.webm" "$NAME.part.mp4" "$NAME.joined.mp4"
+
+# The scenario is called with the page and the demo helpers; the recording is stopped
+# whatever the scenario does. The composed file stays: an error names its lines.
+python3 - "$WT_SCRIPT_DIR/demo-helpers.js" "$SCENARIO" "$NAME.run.js" "$KEY" "$URL" "$BROWSER_DIR/$NAME.webm" <<'PY'
+import json
+import pathlib
+import sys
+
+helpers, scenario, run, key, url, video = sys.argv[1:]
+
+
+def expression(path):
+    return pathlib.Path(path).read_text().rstrip().rstrip(";")
+
+
+pathlib.Path(run).write_text(
+    "async page => {\n"
+    f"const demo = (\n{expression(helpers)}\n)(page, {json.dumps({'key': key, 'url': url, 'video': video})});\n"
+    "try {\n"
+    f"return await (\n{expression(scenario)}\n)(page, demo);\n"
+    "} finally {\n"
+    "await demo.stop();\n"
+    "}\n"
+    "}\n"
+)
+PY
+
+# --raw: the CLI would print the composed file back otherwise; an error still shows.
+RC=0
+"$PW_CLI" -s="$SESSION" --raw run-code --filename="$NAME.run.js" || RC=$?
+if [ "$RC" -ne 0 ] || [ ! -s "$NAME.webm" ]; then
+    echo "ERROR: the scenario did not record $BROWSER_DIR/$NAME.webm (exit $RC). The session must be open" \
+         "and logged in (wt-browser.sh $SLUG${LABEL:+ --as $LABEL} open) and the scenario must call" \
+         "demo.start(); an error above names lines of $BROWSER_DIR/$NAME.run.js, the scenario as it ran" >&2
+    exit 1
+fi
+
+"$FFMPEG" -hide_banner -loglevel error -y -i "$NAME.webm" -an \
+    -vf "scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,fps=25,format=yuv420p" \
+    -c:v libx264 -preset medium -crf 23 -movflags +faststart "$NAME.part.mp4" || {
+    echo "ERROR: ffmpeg could not convert $BROWSER_DIR/$NAME.webm" >&2; exit 1; }
+if [ -n "$APPEND" ]; then
+    printf "file '%s'\n" "$NAME.mp4" "$NAME.part.mp4" > "$NAME.parts.txt"
+    "$FFMPEG" -hide_banner -loglevel error -y -f concat -safe 0 -i "$NAME.parts.txt" -c copy \
+        -movflags +faststart "$NAME.joined.mp4" || {
+        echo "ERROR: ffmpeg could not append to $MP4, left as it was; the new part is $BROWSER_DIR/$NAME.part.mp4" >&2; exit 1; }
+    mv "$NAME.joined.mp4" "$NAME.mp4"
+    rm -f "$NAME.part.mp4" "$NAME.parts.txt"
+else
+    mv "$NAME.part.mp4" "$NAME.mp4"
+fi
+
+DURATION="$("$FFPROBE" -v error -show_entries format=duration -of default=nw=1:nk=1 "$NAME.mp4")"
+SECONDS_LONG="$(LC_ALL=C printf '%.0f' "${DURATION:-0}")"
+echo "VIDEO: $MP4"
+echo "DURATION: $SECONDS_LONG s"
+echo "SIZE: $(LC_ALL=C awk -v bytes="$(stat -c %s "$NAME.mp4")" 'BEGIN { printf "%.2f", bytes / 1048576 }') MB"
+# Nine frames across the whole video in one image: how the take is checked without playing it.
+if [ "$SECONDS_LONG" -gt 0 ] && "$FFMPEG" -hide_banner -loglevel error -y -i "$NAME.mp4" -frames:v 1 \
+        -vf "fps=9/$DURATION,scale=640:-1,tile=3x3" "$NAME.png"; then
+    echo "SHEET: $BROWSER_DIR/$NAME.png"
+fi
+[ "$SECONDS_LONG" -le 90 ] || echo "WARNING: $SECONDS_LONG s is over the 90 s target: cut steps or pauses and record again" >&2

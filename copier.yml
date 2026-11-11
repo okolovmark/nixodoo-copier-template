@@ -227,7 +227,7 @@ task_pr_uri:
 
 use_pipeline:
   type: bool
-  help: Include the pipeline skill (task -> dev -> QC gate -> docs -> demo GIF -> PR orchestrator; runs in isolated worktree envs)?
+  help: Include the pipeline skill (task -> dev -> QC gate -> docs -> demo video -> PR orchestrator; runs in isolated worktree envs)?
   default: true
   when: "{{ use_agent_layer and custom_repo_pattern != '' }}"
 
