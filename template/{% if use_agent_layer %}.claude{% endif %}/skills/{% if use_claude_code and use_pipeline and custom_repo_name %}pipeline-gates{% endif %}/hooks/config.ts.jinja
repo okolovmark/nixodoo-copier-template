@@ -9,3 +9,6 @@ export const TASK_URL_BASE: string = {{ (((odoo_prod_url | default('')).rstrip('
 // A task key is one of the ticket prefixes (ticket_prefix, then extra_ticket_prefixes) and a number:
 // any other word-dash-number in a prompt is not a task. None: any word-dash-number is.
 export const TICKET_PREFIXES: readonly string[] = {{ ([ticket_prefix | default('')] + (extra_ticket_prefixes | default('') | replace(',', ' ')).split()) | map('trim') | map('upper') | reject('equalto', '') | unique | list | tojson }}
+// With use_release_notes, the folder of the addons worktree a task's release note is written to ('' without).
+// The module's loader skips a note it cannot read, so writing one is no code change: it voids no QC pass.
+export const RELEASE_NOTES_DIR: string = {{ (('/' ~ (module_prefix | default('')) ~ '_release_notes/notes/') if (use_release_notes | default(false)) else '') | tojson }}

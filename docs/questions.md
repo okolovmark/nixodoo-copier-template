@@ -28,6 +28,7 @@ Defaults in the table; anything you leave empty turns its feature off. See [the 
 | `task_pr_uri` (prod Odoo runs OCA project_task_pull_request: `pr_uri`, required before the done stage) | `false` → a task closes by its stage move; the PR link goes to a `Progress` note |
 | `use_pipeline` | `true` (asked when a custom addons repo is set) |
 | `extra_ticket_prefixes` (more ticket prefixes the pipeline takes as task keys, e.g. a second project's) | empty → `ticket_prefix` alone |
+| `use_release_notes` (prod Odoo runs `<module_prefix>_release_notes`: `release.note`, loaded unpublished from the `notes/<key>.html` file a PR adds; the project carries the `release-note` skill; asked with the pipeline and Odoo tickets) | `false` → no pipeline Phase 4b, no deploy Step 7.5, and a note file counts as a code change to pipeline-gates |
 | `use_kb` | `false` — SessionStart hook: `kb index` + `kb today` into every session (needs `kb` from okolovmark/kb; silent when absent) |
 | `backup_s3_bucket` | empty → no backup tooling |
 | `prod_ssh_host` (+user/url; `prod_local_ssh_host` adds a `prod-local` alias for the office-LAN address), `test_ssh_hosts` (YAML mapping alias → host, +user/port/url pattern with `{alias}`) | empty → no SSH helpers |

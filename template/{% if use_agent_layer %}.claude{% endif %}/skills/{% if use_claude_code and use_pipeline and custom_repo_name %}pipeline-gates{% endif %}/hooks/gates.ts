@@ -1,5 +1,5 @@
 import type { BlockTask, Gate, GateName, Run, TaskState } from '../types'
-import { TICKET_PREFIXES } from './config'
+import { RELEASE_NOTES_DIR, TICKET_PREFIXES } from './config'
 
 export const PHASES = [
   'Memory bootstrap',
@@ -78,7 +78,12 @@ export function isWorktreeCode(path: string): boolean {
 }
 
 export function isDocPath(path: string): boolean {
-  return DOC_PATH.test(path)
+  return DOC_PATH.test(path) || isReleaseNotePath(path)
+}
+
+// a task's release note, where the project runs release notes: text for the users, written after the QC pass
+export function isReleaseNotePath(path: string): boolean {
+  return RELEASE_NOTES_DIR !== '' && path.includes(RELEASE_NOTES_DIR) && path.endsWith('.html')
 }
 
 // One simple command of a shell line: its words with the quotes taken off, and the here-documents fed

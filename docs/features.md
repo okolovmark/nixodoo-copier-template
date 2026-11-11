@@ -31,7 +31,9 @@ The full inventory behind the summary in [the README](../README.md#what-it-gener
   **memory template** (journal / state / standup), and optional workflow skills:
   the **pipeline** orchestrator (task → dev → QC gate → docs → demo GIF → PR, split into a
   mother session that grills and deploys and a child session that develops; see
-  [ADR 0001](adr/0001-pipeline-mother-and-child-sessions.md)), **my-status**
+  [ADR 0001](adr/0001-pipeline-mother-and-child-sessions.md); with `use_release_notes`, a
+  user-facing release note written after the docs as a file in the PR, which the deploy skill
+  stamps with its deployer), **my-status**
   (status posting, Teams), **teams-message** (readable Teams messages: HTML Teams
   actually renders, recipient verified by email, draft before send),
   **odoo-tickets** (ticket tracking in a prod Odoo),
