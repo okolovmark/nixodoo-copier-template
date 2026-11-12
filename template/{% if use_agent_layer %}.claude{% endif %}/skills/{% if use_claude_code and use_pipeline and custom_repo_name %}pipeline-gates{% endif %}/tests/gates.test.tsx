@@ -47,7 +47,15 @@ const PANE = {
 const BAND = {
   plugin: 'pipeline-gates',
   component: 'AbovePrompt',
-  props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 120, scroll: { offset: 0, bodyRows: 9 }, view: {} },
+  props: {
+    hasSurvey: false,
+    isCollapsed: false,
+    isWorking: false,
+    maxRows: 10,
+    bodyColumns: 120,
+    scroll: { offset: 0, bodyRows: 9 },
+    view: {},
+  },
 } as const
 const TYPED = { origin: { kind: 'composer' }, presentation: { isFullscreen: true, columns: 160 } } as const
 const DEV = { tool: 'Agent', description: 'dev', prompt: 'build it', subagent_type: 'dev' } as const

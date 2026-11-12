@@ -324,7 +324,8 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const table = $.ui.resolve(e)
     const { Box, Button, Link, Text } = table
-    // the mobile app draws no field yet, so no start there
+    // no start from a table without a field (the mobile one's, as Claude Code up to 2.1.300 types it); where
+    // the table has one, the engine decides whether an app is sent the field or an empty Box in its place
     const Input = 'Input' in table ? table.Input : undefined
     const env = await read($, snapshot)
     const armedSlug = await read($, armed)

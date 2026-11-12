@@ -11,6 +11,7 @@ const BAND = {
   component: 'AbovePrompt',
   props: {
     hasSurvey: false,
+    isCollapsed: false,
     isWorking: false,
     maxRows: 10,
     bodyColumns: 120,
@@ -230,10 +231,11 @@ test('the pane lists every env, mine and the others, each with its open and a te
     else expect((await ui.find({ key: 'wts-open-kio-2' }))?.props.label).toBe('open')
     await ui.unmount()
   }
-  // the phone draws no field: the list without the start
+  // the phone gets the same list. The start field there is the engine's call, not the pane's: Claude Code
+  // up to 2.1.300 puts an empty Box in its place on mobile, a later one sends it to an app that draws fields
   const phone = await $.ui.mount({ ...PANE, surface: 'mobile' })
   expect(await phone.find({ key: 'wts-stop-kio-2' })).toBeDefined()
-  expect(await phone.find({ key: 'wts-start' })).toBeUndefined()
+  expect((await phone.find({ key: 'wts-open-kio-2' }))?.props.label).toBe('open')
   await phone.unmount()
 })
 
