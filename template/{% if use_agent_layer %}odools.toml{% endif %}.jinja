@@ -26,7 +26,7 @@ addons_paths = [
 {% if use_queue_job %}
     "${workspaceFolder}/src/queue",
 {% endif %}
-{% if odoo_version in ['16.0', '20.0'] and (use_release_notes or task_software_fields) %}
+{% if odoo_version in ['16.0', '20.0'] and (use_release_notes or task_ai_driven) %}
     "${workspaceFolder}/src/nixodoo-addons",
 {% endif %}
 ]

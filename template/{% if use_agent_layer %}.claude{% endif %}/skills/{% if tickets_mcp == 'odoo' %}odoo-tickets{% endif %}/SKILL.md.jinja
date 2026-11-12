@@ -2,7 +2,7 @@
 {% set deadline_type = 'date' if odoo_version == '16.0' else 'datetime' %}
 ---
 name: odoo-tickets
-description: "How to create, read, update and close prod Odoo tasks over the Odoo connector (claude.ai, your own account): field conventions, internal notes, {% if task_software_fields %}checklist, {% endif %}test cases, attachments (incl. every prod shell / bulk-data script you run), stage moves, start-work flow, handover note, revising title and description before Delivered. Use when creating a ticket, handing a ticket to someone else, taking a ticket into work ('let's start {{ ticket_prefix }}-xxx'), posting progress notes, marking test cases, attaching a script you ran against prod, or closing tickets. Single source of truth for prod task plumbing — pipeline and the memory mirror reference it."
+description: "How to create, read, update and close prod Odoo tasks over the Odoo connector (claude.ai, your own account): field conventions, internal notes, {% if task_ai_driven %}checklist, {% endif %}test cases, attachments (incl. every prod shell / bulk-data script you run), stage moves, start-work flow, handover note, revising title and description before Delivered. Use when creating a ticket, handing a ticket to someone else, taking a ticket into work ('let's start {{ ticket_prefix }}-xxx'), posting progress notes, marking test cases, attaching a script you ran against prod, or closing tickets. Single source of truth for prod task plumbing — pipeline and the memory mirror reference it."
 argument-hint: "[{{ ticket_prefix }}-key or task id] [action]"
 ---
 
@@ -25,7 +25,7 @@ argument-hint: "[{{ ticket_prefix }}-key or task id] [action]"
   `message_post` — with the quiet context**, written `<quiet>` below:
   `{"mail_create_nolog": true, "mail_create_nosubscribe": true,
   "mail_auto_subscribe_no_notify": true}` — add `"tracking_disable": true`
-{% if task_software_fields %}
+{% if task_ai_driven %}
   on stage moves and other tracked fields. Why: the assign-notify guard from
   PR 770 keys off `mail_auto_subscribe_no_notify`, and a ticket write is
   plumbing, not news.
@@ -49,7 +49,7 @@ argument-hint: "[{{ ticket_prefix }}-key or task id] [action]"
   (answers the bare id); `message_post(m, id, body, attachment_ids=a, context=c)` →
   `execute(m, "message_post", [[id]], {"body": body, "message_type": "comment",
   "subtype_xmlid": "mail.mt_note", "attachment_ids": a, "context": c})`.
-- **Cost rule:** never include `description` / {% if task_software_fields %}`solution` / {% endif %}any Html field in
+- **Cost rule:** never include `description` / {% if task_ai_driven %}`solution` / {% endif %}any Html field in
   a multi-record `search_read` — prod descriptions embed base64 images
   (megabytes). Read heavy fields for ONE record at a time, explicit lists only.
 
@@ -73,13 +73,13 @@ take `id=<n>`.
 |---|---|
 | `name` | Imperative summary of the work. No {{ ticket_prefix }} prefix — {% if task_keys %}`project_key` adds it{% else %}the reference `{{ ticket_prefix }}-<id>` carries it{% endif %}. |
 | `project_id` | Default project from `user_identity`. |
-| `stage_id` | {% if task_software_fields %}Backlog (41) for queued work; Development (43) only if work starts immediately. Resolve by name if the board changed.{% else %}Backlog for queued work; Development only if work starts immediately. Resolve the ids by name (`project.task.type`).{% endif %} |
+| `stage_id` | {% if task_ai_driven %}Backlog (41) for queued work; Development (43) only if work starts immediately. Resolve by name if the board changed.{% else %}Backlog for queued work; Development only if work starts immediately. Resolve the ids by name (`project.task.type`).{% endif %} |
 | `user_ids` | `[[6, 0, [<uid>]]]` — **always the human owner**: you (uid from `user_identity`), or the teammate the user hands the task to. Never empty on purpose. An owner who is not you gets a [handover note](#handover-note-assignee-is-not-you). |
-{% if task_software_fields %}
+{% if task_ai_driven %}
 | `task_type` | Honest pick: `bug` (broken behavior) / `feature` (net-new) / `improvement` (enhance existing) / `investigation` / `technical_debt` / `support` / `milestone`. |
 {% endif %}
 | `tag_ids` | **Always set.** `[[6, 0, [ids]]]` on create. ≥1 **area** tag + a **feature/topic** tag for any multi-ticket effort so siblings group. Reuse existing tags — never a near-duplicate. See [Tags](#tags-projecttags). |
-{% if task_software_fields %}
+{% if task_ai_driven %}
 | `tshirt_estimate` | Estimate hours via the **`estimate` skill** first. `{{ hours }}` = those hours (RPC fires no onchange, set it explicitly — and NOT the bucket value). Bucket by hours: ≤2h `xs`, ≤6h `s`, ≤12h `m`, ≤32h `l`, ≤60h `xl`, else `xxl`. |
 | `priority_level` | `"4"` Highest … `"0"` Lowest; default `"1"`. |
 {% else %}
@@ -92,7 +92,7 @@ take `id=<n>`.
 | `date_deadline` (`{{ deadline_type }}`) | The deadline; the status ETA reads it. |
 {% endif %}
 | `description` | **Full copy** of the source content (for memory mirrors: state line verbatim + the journal excerpt / node body), simple HTML (`<p>`, `<code>`), footer `Claude memory item [ID] — see journal/<date>`. |
-{% if task_software_fields %}
+{% if task_ai_driven %}
 | `difficulty`, `knowledge_area_level` | Optional (`easy/medium/hard`, `basic/intermediate/advanced`); defaults are fine. |
 
 Tabs on the form map to: Description → `description`, Technical Solution →
@@ -176,7 +176,7 @@ Set on **every** task you create; back-fill when you touch an untagged sibling.
 **Two layers, both written through `tag_ids`:**
 
 - **Area** (≥1, required) — reuse the coarse vocabulary, never a near-duplicate.
-{% if task_software_fields %}
+{% if task_ai_driven %}
   Current vocab: `Accounting`, `SCM`, `Inventory`, `Manufacturing`, `Purchases`,
   `Sales`, `Quality`, `Project Management`, `Human Resource`, `Engineering`,
   `Website`, `Business Operations`, `Product Lifecycle Management`, plus type-ish
@@ -223,7 +223,7 @@ message_post(model="project.task", res_id=<task_id>,
              context={"mail_create_nosubscribe": true})
 ```
 
-{% if task_software_fields %}
+{% if task_ai_driven %}
 Bold **Category** prefix: `Requirement Change` / `Design Decision` /
 `Bug Fix` / `Review Fix` / `User Feedback` / `Progress` / `Revised` (title and
 description revised before Delivered — see below) / `Deploy` (the exact
@@ -266,7 +266,7 @@ after that `create` or `user_ids` write, post one note per task that names them:
    `email` row per partner, status `sent` (`ready` = still queued, read again).
    `exception` / `bounce` → tell the user.
 
-{% if task_software_fields %}
+{% if task_ai_driven %}
 ## Checklist (`project.task.subtask`)
 
 - Create: `{"task_id": <id>, "name": "<step>", "user_id": <owner uid>}`
@@ -296,7 +296,7 @@ after that `create` or `user_ids` write, post one note per task that names them:
 
 Two more form tabs, each linking to **other `project.task` records**. A linked
 task is a full task — it follows every create convention above (`name`,
-`project_id`, `user_ids`, {% if task_software_fields %}`task_type`, {% endif %}`tag_ids`, estimate, full-copy
+`project_id`, `user_ids`, {% if task_ai_driven %}`task_type`, {% endif %}`tag_ids`, estimate, full-copy
 `description`).
 
 | Tab | Field on `project.task` | Meaning |
@@ -304,7 +304,7 @@ task is a full task — it follows every create convention above (`name`,
 | **Sub-tasks** | `child_ids` (O2M via `parent_id`) | Children of this task — a slice split off the work. |
 | **Blocked By** | `depend_on_ids` (M2M, `tracking=True`) | Tasks that must finish before this one can proceed. |
 
-{% if task_software_fields %}
+{% if task_ai_driven %}
 ⚠️ The **Sub-tasks tab** is `child_ids` (real child tasks) — **not** the
 Checklist model `project.task.subtask` above, despite the name.
 
@@ -314,7 +314,7 @@ write `child_ids` from the parent):
 
 ```
 create(model="project.task", values={"name": "<slice>", "parent_id": <current_id>,
-{% if task_software_fields %}
+{% if task_ai_driven %}
   "project_id": <proj>, "user_ids": [[6, 0, [<uid>]]], "task_type": "...",
   "tag_ids": [[6, 0, [<ids>]]], "tshirt_estimate": "...", "{{ hours }}": <n>,
 {% else %}
@@ -338,7 +338,7 @@ write(model="project.task", ids=[<blocked_id>], values={"depend_on_ids": [[4, bl
 - Reverse field `dependent_ids` ("Block") mirrors `depend_on_ids` — set only
   the blocked side; both tabs populate.
 - Tabs require the project's `allow_subtasks` / `allow_task_dependencies`
-{% if task_software_fields %}
+{% if task_ai_driven %}
   (dependencies also need group `project.group_project_task_dependencies`); the
   prod default project has both.
 {% else %}
@@ -412,7 +412,7 @@ problem really was, and often it was something else. A Delivered ticket is
 what the team searches and counts later, so check it reads true before the
 Delivered write (revising earlier, once the real problem is clear, is fine):
 
-1. Read it: `read` `project.task` `[<id>]` `["name"{% if task_software_fields %}, "task_type"{% endif %}]`, and
+1. Read it: `read` `project.task` `[<id>]` `["name"{% if task_ai_driven %}, "task_type"{% endif %}]`, and
    `search_count` `[["id", "=", <id>], ["description", "ilike", "data:image"]]`.
    `0` → `read` `["description"]` too. `1` → the description carries pasted
    screenshots as base64 (megabytes, see the cost rule): leave it unread and
@@ -420,7 +420,7 @@ Delivered write (revising earlier, once the real problem is clear, is fine):
 2. Hold it against what the work established: the root cause, what changed,
    the PR. It needs revising when the title names the wrong cause, document,
    model or module, or when the scope narrowed, widened or was split off.
-{% if task_software_fields %}
+{% if task_ai_driven %}
    So does a reported `bug` that turned out to be data, setup or user error:
    bug counts are taken from `task_type`.
 {% endif %}
@@ -431,7 +431,7 @@ Delivered write (revising earlier, once the real problem is clear, is fine):
      simple HTML, then the original body unchanged under `<h3>As filed</h3>`,
      so the reporter's words stay searchable. An image-bearing description is
      not rewritten; its revised account goes into the note (step 5).
-{% if task_software_fields %}
+{% if task_ai_driven %}
    - `task_type` — only if it changed.
 4. Show the user the old → new title, the new top of the description and any
    `task_type` change; write on their go, with `<quiet>` + `tracking_disable`.
@@ -453,7 +453,7 @@ Delivered write (revising earlier, once the real problem is clear, is fine):
 {% if task_timeline %}
   3. **set the Planned Dates window** so the ticket lands on the schedule:
      `planned_date_start` = now, `planned_date_end` = now + the estimate
-     ({% if task_software_fields %}`tshirt_estimate`/{% endif %}`{{ hours }}` at ~6 focused h/day), and
+     ({% if task_ai_driven %}`tshirt_estimate`/{% endif %}`{{ hours }}` at ~6 focused h/day), and
      `date_deadline` = the date part of `planned_date_end`. A ticket taken into
      work with no Planned Dates is invisible on the Gantt/dashboard.
   4. **rebalance the user's other deadlines** — the new in-scope work pushes
@@ -461,7 +461,7 @@ Delivered write (revising earlier, once the real problem is clear, is fine):
      Dates windows). See `feedback_rebalance_deadlines_on_scope_growth`.
 {% else %}
   3. **set the deadline**: `date_deadline` = today + the estimate
-     ({% if task_software_fields %}`tshirt_estimate`/{% endif %}`{{ hours }}` at ~6 focused h/day).
+     ({% if task_ai_driven %}`tshirt_estimate`/{% endif %}`{{ hours }}` at ~6 focused h/day).
   4. **rebalance the user's other deadlines** — the new in-scope work pushes
      existing tickets out: run `my-status` `rebalance` (shifts their
      `date_deadline`). See `feedback_rebalance_deadlines_on_scope_growth`.

@@ -44,7 +44,7 @@ Use exactly one of these tags as prefix:
 
 ## Module Name
 
-- Use the **technical** module name (not functional), e.g. `{{ module_prefix }}_project_software`
+- Use the **technical** module name (not functional), e.g. `{{ module_prefix }}_project_ai_driven`
 - If several modules modified: list them or use `various`
 - Avoid cross-module changes in one commit when possible
 
@@ -102,7 +102,7 @@ fails is fixed, not skipped: `--no-verify` only on the user's word. Hooks in sta
 ## Examples
 
 ```
-[FIX] {{ module_prefix }}_project_software: prevent stage change by unauthorized users
+[FIX] {{ module_prefix }}_project_ai_driven: prevent stage change by unauthorized users
 
 Only assignees, task assignors, and the project manager can now change
 task stages. Previously any project user could move tasks between stages.
@@ -111,7 +111,7 @@ task stages. Previously any project user could move tasks between stages.
 ```
 
 ```
-[IMP] {{ module_prefix }}_project_software: add Excel export for gantt chart
+[IMP] {{ module_prefix }}_project_ai_driven: add Excel export for gantt chart
 
 New "Export Excel" button in the gantt toolbar downloads an .xlsx file
 with color-coded task bars per day, frozen panes, and progress %.

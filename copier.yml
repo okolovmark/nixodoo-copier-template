@@ -207,10 +207,13 @@ task_keys:
   default: false
   when: "{{ tickets_mcp == 'odoo' }}"
 
-task_software_fields:
+# The default reads task_software_fields, the name this answer had before: an
+# update carries the recorded answer over, and the answers file then keeps
+# task_ai_driven alone. A fresh project has no such answer and gets false.
+task_ai_driven:
   type: bool
-  help: Does the production Odoo run project_software (project.task fields task_type, tshirt_estimate, priority_level, difficulty, knowledge_area_level, questions, answers, solution; models project.task.testcase and project.task.subtask)? It comes from okolovmark/nixodoo-addons through addons.yaml (branches 16.0 and 20.0; a project on another version needs its own port). Without it the ticket skills never read them; clarifying Q&A, the technical solution and test cases go to internal notes, and there is no checklist
-  default: false
+  help: Does the production Odoo run project_ai_driven (project.task fields task_type, tshirt_estimate, priority_level, difficulty, knowledge_area_level, questions, answers, solution; models project.task.testcase and project.task.subtask)? It comes from okolovmark/nixodoo-addons through addons.yaml (branches 16.0 and 20.0; a project on another version needs its own port). Without it the ticket skills never read them; clarifying Q&A, the technical solution and test cases go to internal notes, and there is no checklist
+  default: "{{ task_software_fields | default(false) }}"
   when: "{{ tickets_mcp == 'odoo' }}"
 
 task_timeline:
