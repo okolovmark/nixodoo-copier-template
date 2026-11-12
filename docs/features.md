@@ -79,8 +79,8 @@ The full inventory behind the summary in [the README](../README.md#what-it-gener
   restore with **native Odoo neutralization** (`odoo neutralize` + dev fixups),
   SSH helpers for prod/test servers, OCA `queue_job` wiring, and on Odoo 16.0 and 20.0 the
   shared modules of [okolovmark/nixodoo-addons](https://github.com/okolovmark/nixodoo-addons)
-  in `addons.yaml`: `release_notes` with `use_release_notes`, `project_software` with
-  `task_software_fields`
+  in `addons.yaml`: `release_notes` with `use_release_notes`, `project_ai_driven` with
+  `task_ai_driven`
 - `nix flake check` shellchecks every project script
 
 ## Memory

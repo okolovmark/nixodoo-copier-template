@@ -2,7 +2,7 @@
 {% set v16 = odoo_version == '16.0' %}
 {% set hours = 'planned_hours' if v16 else 'allocated_hours' %}
 {% set open_domain = '["is_closed", "=", false]' if v16 else '["state", "not in", ["1_done", "1_canceled"]]' %}
-{% set written = (['planned_date_start', 'planned_date_end'] if task_timeline else []) + ['date_deadline', hours] + (['tshirt_estimate'] if task_software_fields else []) %}
+{% set written = (['planned_date_start', 'planned_date_end'] if task_timeline else []) + ['date_deadline', hours] + (['tshirt_estimate'] if task_ai_driven else []) %}
 {% set written_fields = '`' ~ written | join('` / `') ~ '`' %}
 ---
 name: my-status
@@ -133,7 +133,7 @@ guard (step 8).
 
 1–2. Same connector check + uid resolution as list mode.
 3. **Candidate tasks** = all open assigned tasks ordered by **sequence** — same
-{% if task_timeline and task_software_fields %}
+{% if task_timeline and task_ai_driven %}
    `search_read` as send-mode step 3, fields incl. `planned_date_start`,
    `planned_date_end`, `date_deadline`, `{{ hours }}`, `effective_hours`,
    `tshirt_estimate`, `sequence`. The just-added task is in this list.
@@ -171,7 +171,7 @@ guard (step 8).
      or fill a missing one; never force an **earlier** deadline unless the user
      asks.
 {% endif %}
-{% if task_software_fields %}
+{% if task_ai_driven %}
    - estimate: if a task has no `{{ hours }}`/`tshirt_estimate`, set
      `{{ hours }}` to the computed estimate; if scope was added to an existing
      task, bump its estimate to match.
@@ -191,7 +191,7 @@ guard (step 8).
    (`date_deadline` is tracked).
 8. **Scope guard — never exceed:** only the user's **own** open assigned tasks
    (`user_ids` contains the resolved uid, {% if v16 %}`is_closed = false`{% else %}`state` not `1_done` / `1_canceled`{% endif %}); only the
-{% if task_timeline and task_software_fields %}
+{% if task_timeline and task_ai_driven %}
    `planned_date_start` / `planned_date_end` / `date_deadline` / `{{ hours }}`
    / `tshirt_estimate` fields; never another person's tasks, never any other
 {% else %}
@@ -208,7 +208,7 @@ guard (step 8).
 
 - Odoo: **list** and **send** are read-only — only `search_read` /
   `fields_get`. The **single** write path is **rebalance**, and only within its
-  scope guard (rebalance step 8): {% if task_timeline and task_software_fields %}`planned_date_start` / `planned_date_end` /
+  scope guard (rebalance step 8): {% if task_timeline and task_ai_driven %}`planned_date_start` / `planned_date_end` /
   `date_deadline` / `{{ hours }}` / `tshirt_estimate`{% else %}{{ written_fields }}{% endif %} on the user's **own**
   open assigned tasks, via `write` with the quiet + `tracking_disable`
   context (`execute` only as the `odoo-tickets` fallback). Nothing else here writes.

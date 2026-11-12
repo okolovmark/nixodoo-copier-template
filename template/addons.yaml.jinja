@@ -22,10 +22,10 @@ queue:
 {% endif %}
 # web:
 #   - "web_responsive"
-{% if odoo_version in ['16.0', '20.0'] and (use_release_notes or task_software_fields) %}
+{% if odoo_version in ['16.0', '20.0'] and (use_release_notes or task_ai_driven) %}
 
 ---
-# The modules behind use_release_notes and task_software_fields; the repo has
+# The modules behind use_release_notes and task_ai_driven; the repo has
 # branches 16.0 and 20.0 only.
 ENV:
   DEFAULT_REPO_PATTERN: "https://github.com/okolovmark/{}.git"
@@ -35,8 +35,16 @@ nixodoo-addons:
 {% if use_release_notes %}
   - "release_notes"
 {% endif %}
-{% if task_software_fields %}
+{% if task_ai_driven %}
+{% if odoo_version == '16.0' %}
+  - "project_ai_driven"
+  # Transitional: the empty module under project_ai_driven's former name, which
+  # depends on it. It goes with the next release.
   - "project_software"
+{% else %}
+  # The 20.0 branch still carries project_ai_driven under this name.
+  - "project_software"
+{% endif %}
 {% endif %}
 {% endif %}
 {% if custom_repo_name %}
