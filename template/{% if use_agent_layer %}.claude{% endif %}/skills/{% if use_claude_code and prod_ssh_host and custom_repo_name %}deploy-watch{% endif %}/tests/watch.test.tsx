@@ -9,7 +9,15 @@ const SINCE = '2026-10-07 10:00:00'
 const BAND = {
   plugin: 'deploy-watch',
   component: 'AbovePrompt',
-  props: { hasSurvey: false, isWorking: false, maxRows: 10, bodyColumns: 120, scroll: { offset: 0, bodyRows: 9 }, view: {} },
+  props: {
+    hasSurvey: false,
+    isCollapsed: false,
+    isWorking: false,
+    maxRows: 10,
+    bodyColumns: 120,
+    scroll: { offset: 0, bodyRows: 9 },
+    view: {},
+  },
 } as const
 
 type Submitted = { text: string; origin: PromptOrigin }
