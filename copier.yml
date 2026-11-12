@@ -212,7 +212,7 @@ task_keys:
 # task_ai_driven alone. A fresh project has no such answer and gets false.
 task_ai_driven:
   type: bool
-  help: Does the production Odoo run project_ai_driven (project.task fields task_type, tshirt_estimate, priority_level, difficulty, knowledge_area_level, questions, answers, solution; models project.task.testcase and project.task.subtask)? It comes from okolovmark/nixodoo-addons through addons.yaml (branches 16.0 and 20.0; a project on another version needs its own port). Without it the ticket skills never read them; clarifying Q&A, the technical solution and test cases go to internal notes, and there is no checklist
+  help: Does the production Odoo run project_ai_driven (project.task fields task_type, tshirt_estimate, priority_level, difficulty, knowledge_area_level, questions, answers, solution, resolution, pull_request_ids; models project.task.testcase, project.task.subtask and project.pull.request)? It comes from okolovmark/nixodoo-addons through addons.yaml (branches 16.0 and 20.0; a project on another version needs its own port). With it a pull request is a record - the pipeline writes its link to the task when it opens the pull request, the deploy stamps the record merged and deployed, a task without a pull request closes with a resolution - and task_pr_uri changes nothing. Without it the ticket skills never read them; clarifying Q&A, the technical solution and test cases go to internal notes, and there is no checklist
   default: "{{ task_software_fields | default(false) }}"
   when: "{{ tickets_mcp == 'odoo' }}"
 
@@ -224,7 +224,7 @@ task_timeline:
 
 task_pr_uri:
   type: bool
-  help: Does the production Odoo run OCA project_task_pull_request (project.task pr_uri, required before the done stage)? Without it a task closes by its stage move and the PR link goes to a Progress note
+  help: Does the production Odoo run OCA project_task_pull_request (project.task pr_uri, a text field required before the done stage)? Without it a task closes by its stage move and the PR link goes to a Progress note. With task_ai_driven this answer changes nothing - pull requests are records there, and pr_uri takes a pull request link only
   default: false
   when: "{{ tickets_mcp == 'odoo' }}"
 

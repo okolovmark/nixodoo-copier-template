@@ -29,7 +29,11 @@ integrations stay silently disabled{% if tickets_mcp == 'odoo' %} (the standup c
 {% endif %}
 
 {% if tickets_mcp == 'odoo' %}
-{% if task_pr_uri %}
+{% if task_ai_driven %}
+Optionally add the project's stage map here once known (names + ids, which
+ones are fold/closed, any stage-move constraints, e.g. the stages the project
+lists under "Stages Requiring a Resolution").
+{% elif task_pr_uri %}
 Optionally add the project's stage map here once known (names + ids, which
 ones are fold/closed, any stage-move constraints — e.g. a `pr_uri` required
 before the done stage).

@@ -406,7 +406,17 @@ append `[odoo:pending]` instead and mirror at the next natural prod touch.
 
 ### On closing a state item with `[odoo:TASKID]`
 
-{% if task_pr_uri %}
+{% if task_ai_driven %}
+- Closed as **done** → move the task to the project's done stage (a stage
+  with `fold=True`, e.g. Delivered). Gotcha: a stage the project lists under
+  "Stages Requiring a Resolution" takes the task only with a `resolution`.
+  Work with a pull request: its link is on the task since the pull request
+  was opened, and the rule sets `code`. Work without one: the `write` that
+  moves the stage also carries `resolution` (`data`, `configuration` or
+  `no_change`, see `odoo-tickets`), and `memory://journal/<date>#<ID>` goes
+  into a `Progress` note. Never into `pr_uri`: it takes a pull request link
+  only and refuses any other text.
+{% elif task_pr_uri %}
 - Closed as **done** → move the task to the project's done stage (a stage
   with `fold=True`, e.g. Delivered). Gotcha: Delivered requires a
   non-empty `pr_uri` — `write` it first (the PR URL if the work has one,
@@ -416,7 +426,13 @@ append `[odoo:pending]` instead and mirror at the next natural prod touch.
   with `fold=True`, e.g. Delivered), then post a `Progress` note with the PR
   URL if the work has one, else `memory://journal/<date>#<ID>`.
 {% endif %}
+{% if task_ai_driven %}
+- Closed as **no longer relevant** → the cancel stage (e.g. Canceled); where
+  the project lists it under "Stages Requiring a Resolution", with
+  `resolution` `no_change` in the same `write`.
+{% else %}
 - Closed as **no longer relevant** → the cancel stage (e.g. Canceled).
+{% endif %}
 - `[odoo:pending]` items close locally only.
 
 ### Current ticket definition
