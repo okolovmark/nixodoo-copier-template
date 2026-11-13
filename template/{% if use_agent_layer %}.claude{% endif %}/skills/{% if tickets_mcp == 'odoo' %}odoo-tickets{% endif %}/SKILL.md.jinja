@@ -2,7 +2,7 @@
 {% set deadline_type = 'date' if odoo_version == '16.0' else 'datetime' %}
 ---
 name: odoo-tickets
-description: "How to create, read, update and close prod Odoo tasks over the Odoo connector (claude.ai, your own account): field conventions, internal notes, {% if task_ai_driven %}checklist, {% endif %}test cases, attachments (incl. every prod shell / bulk-data script you run), stage moves, start-work flow, handover note, revising title and description before Delivered. Use when creating a ticket, handing a ticket to someone else, taking a ticket into work ('let's start {{ ticket_prefix }}-xxx'), posting progress notes, marking test cases, attaching a script you ran against prod, or closing tickets. Single source of truth for prod task plumbing — pipeline and the memory mirror reference it."
+description: "How to create, read, update and close prod Odoo tasks over the Odoo connector (claude.ai, your own account): field conventions, internal notes, {% if task_ai_driven %}checklist, {% endif %}test cases, {% if task_ai_driven %}pull request records and the resolution a task closes with, {% endif %}attachments (incl. every prod shell / bulk-data script you run), stage moves, start-work flow, handover note, revising title and description before Delivered. Use when creating a ticket, handing a ticket to someone else, taking a ticket into work ('let's start {{ ticket_prefix }}-xxx'), posting progress notes, marking test cases, attaching a script you ran against prod, or closing tickets. Single source of truth for prod task plumbing — pipeline and the memory mirror reference it."
 argument-hint: "[{{ ticket_prefix }}-key or task id] [action]"
 ---
 
@@ -94,6 +94,10 @@ take `id=<n>`.
 | `description` | **Full copy** of the source content (for memory mirrors: state line verbatim + the journal excerpt / node body), simple HTML (`<p>`, `<code>`), footer `Claude memory item [ID] — see journal/<date>`. |
 {% if task_ai_driven %}
 | `difficulty`, `knowledge_area_level` | Optional (`easy/medium/hard`, `basic/intermediate/advanced`); defaults are fine. |
+| `resolution` | Never on create: empty until the task closes. `code` (Code) / `data` (Data) / `configuration` (Configuration) / `no_change` (No change). See [Pull requests and resolution](#pull-requests-projectpullrequest-and-resolution). |
+| `pr_uri` | Never on create. Reads the link of the task's first pull request. A write takes one pull request link and adds that pull request to the task. Never text. |
+| `pull_request_ids` | The task's pull requests (many2many to `project.pull.request`). Read it; link a pull request through `pr_uri`. |
+| `pr_legacy` | Read-only: the text `pr_uri` held before pull requests were records. |
 
 Tabs on the form map to: Description → `description`, Technical Solution →
 `solution` (Html), Questions/Answers → `questions`/`answers`, Test Cases →
@@ -284,6 +288,47 @@ after that `create` or `user_ids` write, post one note per task that names them:
   state defaults to `todo`.
 - Mark verified: `write {"passed": true, "state": "done"}`; failed stays
   `todo` with a `comments` note; not applicable → `state: "cancelled"`.
+
+## Pull requests (`project.pull.request`) and resolution
+
+A pull request is a record of its own, linked to every task it belongs to.
+
+| Field on `project.pull.request` | Holds |
+|---|---|
+| `url` | The link, stored canonical, unique. |
+| `repository`, `number` | Read from `url`. |
+| `state` | `open` / `merged` / `closed`. |
+| `merge_date`, `deploy_date` | Datetime, UTC, `"YYYY-MM-DD HH:MM:SS"`. |
+| `task_ids` | The tasks it belongs to (many2many; the task's side is `pull_request_ids`). |
+
+Project users may read, create and write these records, not delete them.
+
+- **Link a pull request to a task** right after it is opened, in any repository:
+  `write` `project.task` `[<task_id>]` `{"pr_uri": "<PR URL>"}` with `<quiet>`. The write
+  finds the record of that link, or creates it in state `open`, and links it to the task.
+  It adds, it does not replace: a second link written to the same task is a second pull
+  request on it. One link per write, one write per task the pull request belongs to.
+- **Accepted links**: `.../pull/N`, `.../merge_requests/N`, `.../pull-requests/N`,
+  `.../pulls/N`. Any other value is refused with a ValidationError: `memory://...`, `N/A`,
+  plain text, a link that is not a pull request, two links in one write.
+- **Read** a task's pull requests: `read` `project.task` `["pull_request_ids"]`, then
+  `read` `project.pull.request` `["url", "state", "merge_date", "deploy_date"]`. `pr_uri`
+  reads the first one's link only; `pr_legacy` is read-only old text.
+- **State and dates** follow the pull request: `merged` and `merge_date` once it is merged,
+  `deploy_date` once it is deployed.{% if prod_ssh_host and custom_repo_name %} The `deploy` skill writes them (Step 8).{% endif +%}
+
+**The closing rule.** In a project flagged AI-driven, a task enters a stage the project
+lists under "Stages Requiring a Resolution" only with a `resolution`:
+
+| `resolution` | Label | Means | Pull request |
+|---|---|---|---|
+| `code` | Code | The task was resolved by a code change. | At least one on the task. A task with a pull request and no `resolution` gets `code` from the rule. |
+| `data` | Data | The fix was a data change: a script or records edited. | Not needed. |
+| `configuration` | Configuration | Settings changed, no code. | Not needed. |
+| `no_change` | No change | Nothing changed: answered, duplicate, not reproducible, declined. | Not needed. |
+
+A task with no pull request and no `resolution` does not enter such a stage: the write
+that moves it carries `resolution` (see [Lifecycle](#lifecycle--stage-moves)).
 {% else %}
 ## Test cases (internal notes)
 
@@ -487,7 +532,37 @@ Delivered write (revising earlier, once the real problem is clear, is fine):
 {% endif %}
   Stage-move + {% if task_timeline %}Planned Dates{% else %}deadline{% endif %} + rebalance + sent status are a mandatory set;
   don't do one without the others.
-{% if task_pr_uri %}
+{% if task_ai_driven %}
+- **Close as done** → [revise the title and description](#revise-title-and-description-before-delivered)
+  to what the work found, then the closing write (`<quiet>` + `tracking_disable`).
+  Before closing a task that ran prod shell / bulk-data scripts, confirm each is
+  attached (see Attachments).
+  - **With a pull request** → `{"stage_id": <Delivered>}`. Its link went into `pr_uri`
+    when the pull request was opened; a pull request missing from the task's
+    `pull_request_ids` gets its link written first. The closing rule sets `resolution`
+    to `code` there. A task whose pull request carries only the script of a data fix
+    closes with `{"stage_id": <Delivered>, "resolution": "data"}`: the pull request stays
+    on the task, and the resolution says what resolved it.
+  - **A pull request of the task still `open`** → before the closing write, bring its
+    record in line with the pull request (`gh pr view <url> --json state,mergedAt`), with
+    `<quiet>`: merged → `{"state": "merged", "merge_date": "<mergedAt in UTC, YYYY-MM-DD HH:MM:SS>"}`;
+    closed without a merge → `{"state": "closed"}`; still open → leave it and say so.
+{% if prod_ssh_host and custom_repo_name %}
+    The `deploy` skill has stamped the ones it landed; this is for a pull request merged
+    outside a deploy, in this project's own repo or another one.
+{% endif %}
+  - **Without a pull request** → `{"stage_id": <Delivered>, "resolution": "<key>"}`, one
+    write. `data`: the fix was a data change (a script or records edited).
+    `configuration`: settings changed, no code. `no_change`: nothing changed (answered,
+    duplicate, not reproducible, declined).
+- **Never write `memory://...`, `N/A` or other text into `pr_uri`**: the write is refused
+  ([Pull requests and resolution](#pull-requests-projectpullrequest-and-resolution)). A
+  memory item closed without a pull request names its `memory://journal/<date>#<ID>` in a
+  `Progress` note.
+- **Close as no longer relevant** → `{"stage_id": <Canceled>}` (`<quiet>` +
+  `tracking_disable`). Where the project lists that stage under "Stages Requiring a
+  Resolution", the same write carries `"resolution": "no_change"`.
+{% elif task_pr_uri %}
 - **Close as done** → [revise the title and description](#revise-title-and-description-before-delivered)
   to what the work found, then `write {"pr_uri": "<PR URL, or memory://journal/<date>#<ID>>"}`,
   then `{"stage_id": <Delivered>}` — Delivered with empty `pr_uri` is
@@ -500,7 +575,9 @@ Delivered write (revising earlier, once the real problem is clear, is fine):
   closing a task that ran prod shell / bulk-data scripts, confirm each is
   attached (see Attachments).
 {% endif %}
+{% if not task_ai_driven %}
 - **Close as no longer relevant** → `{"stage_id": <Canceled>}`{% if task_pr_uri %} (no pr_uri){% endif %}.
+{% endif %}
 - Stage rights: assignors/PM/assignees only — your own account needs one of
   those roles on the task's project to move it.
 

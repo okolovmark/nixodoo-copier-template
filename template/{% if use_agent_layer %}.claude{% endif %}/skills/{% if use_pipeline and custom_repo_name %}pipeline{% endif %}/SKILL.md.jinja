@@ -1249,7 +1249,22 @@ Spawn a **general-purpose** subagent:
 > Test plan yourself): <PR_DESCRIPTION>
 
 Wait for completion. Collect PR URL and number. The code was already reviewed in the Phase-3 gate, so there is no post-PR review step — the PR ships clean.
+{% if tickets_mcp == 'odoo' and task_ai_driven %}
+
+**Record the pull request on its tasks**, in this session and right after the PR is open,
+over the Odoo connector: for each task the PR belongs to (every task of the block that
+shares it), `write` `project.task` `[<task id>]` `{"pr_uri": "<PR URL>"}` with the quiet
+context (`odoo-tickets` → Connection & context flags). The write finds or creates the pull
+request record of that link (`project.pull.request`), in state `open`, and links it to the
+task. It adds, it does not replace, so a task with several pull requests (the addons PR,
+one in this project's own repo from `<ENVREPO>`, one in another repo) gets one write per
+link, each right after that PR is opened. Only a pull request link goes into `pr_uri`
+(`odoo-tickets` → Pull requests and resolution).
+
+Report: "PR created: <URL>; recorded on <TASK-KEYS>"
+{% else %}
 Report: "PR created: <URL>"
+{% endif %}
 
 ---
 
@@ -1283,7 +1298,13 @@ from a green pipeline or a merged/awaiting-review PR.
 
 
 - **Pipeline succeeded + PR merged** → `kb done <WIP_ID> "PR <url> merged"`{% if tickets_mcp == 'odoo' %}, and close
-{% if task_pr_uri %}
+{% if task_ai_driven %}
+  the ticket per `odoo-tickets`: revise its title and description to what the run
+  found (*Revise title and description before Delivered*; the user confirms the
+  draft), then `write {"stage_id": <Delivered>}`. No `pr_uri` write here: Phase 6
+  recorded the pull request on the task, and the closing rule sets Resolution `code`
+  for a task that has one. A task of the block that ends without a pull request closes
+  with its `resolution` (`odoo-tickets` → Lifecycle){% elif task_pr_uri %}
   the ticket per `odoo-tickets`: revise its title and description to what the run
   found (*Revise title and description before Delivered*; the user confirms the
   draft), then `write {"pr_uri": "<PR URL>"}`, then `write {"stage_id": <Delivered>}`
@@ -1334,7 +1355,14 @@ ids{% if tickets_mcp == 'odoo' %} and keys{% endif %}, for the session record.
 Read `$STATE`, find the line with `[WIP_ID]` created in Phase 0 (it carries ` [odoo:<task_id>]` since Phase 1), and:
 
 - **Pipeline succeeded + PR merged** → delete the line entirely, and close
-{% if task_pr_uri %}
+{% if task_ai_driven %}
+  the ticket per `odoo-tickets`: revise its title and description to what the run
+  found (*Revise title and description before Delivered*; the user confirms the
+  draft), then `write {"stage_id": <Delivered>}`. No `pr_uri` write here: Phase 6
+  recorded the pull request on the task, and the closing rule sets Resolution `code`
+  for a task that has one. A task of the block that ends without a pull request closes
+  with its `resolution` (`odoo-tickets` → Lifecycle)
+{% elif task_pr_uri %}
   the ticket per `odoo-tickets`: revise its title and description to what the run
   found (*Revise title and description before Delivered*; the user confirms the
   draft), then `write {"pr_uri": "<PR URL>"}`, then `write {"stage_id": <Delivered>}`
@@ -1549,7 +1577,7 @@ Final summary:
 - Demo video: <attached / skipped (<reason>)>
 - PR: <URL>
 {% if tickets_mcp == 'odoo' %}
-- Odoo task: {% if task_ai_driven %}checklist updated, {% endif %}internal notes posted
+- Odoo task: {% if task_ai_driven %}checklist updated, pull request recorded, {% endif %}internal notes posted
 {% endif %}
 ```
 {% if tickets_mcp == 'odoo' and task_ai_driven %}

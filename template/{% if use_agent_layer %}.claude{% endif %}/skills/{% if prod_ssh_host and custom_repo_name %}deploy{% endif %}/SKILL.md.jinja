@@ -1,7 +1,7 @@
 {% set repo_org = custom_repo_pattern | regex_replace('.*[:/]([^/]+)/\\{\\}.*', '\\1') if custom_repo_pattern else 'my-org' %}
 ---
 name: deploy
-description: "Merge an approved addons PR and deploy it to the Odoo PRODUCTION server under the box's deploy lock{% if status_mcp == 'teams' %}, announcing it in the maintenance Teams chat{% endif %}{% if use_queue_job %}, then requeue stuck queue jobs{% endif %}: mergeable? -> blast-radius tag -> plan -> deploy lock (waits up to 30 min on another developer's deploy) -> merge -> {% if status_mcp == 'teams' %}notify start -> {% endif %}deploy over SSH{% if use_queue_job %} -> requeue enqueued/started queue.jobs{% endif %} -> invariant check (T+0, and T+60 for high blast radius){% if status_mcp == 'teams' %} -> notify result{% endif %} -> release the lock{% if use_release_notes %} -> stamp the PR's release notes with the deployer{% endif %}{% if tickets_mcp == 'odoo' %} -> note the exact deploy commands on the task{% endif %}. Use when the user says 'merge PR N and deploy', or 'deploy PR N' for an already-merged PR. That command is the approval: the skill prints the plan and the exact prod commands and stops only on an anomaly."
+description: "Merge an approved addons PR and deploy it to the Odoo PRODUCTION server under the box's deploy lock{% if status_mcp == 'teams' %}, announcing it in the maintenance Teams chat{% endif %}{% if use_queue_job %}, then requeue stuck queue jobs{% endif %}: mergeable? -> blast-radius tag -> plan -> deploy lock (waits up to 30 min on another developer's deploy) -> merge -> {% if status_mcp == 'teams' %}notify start -> {% endif %}deploy over SSH{% if use_queue_job %} -> requeue enqueued/started queue.jobs{% endif %} -> invariant check (T+0, and T+60 for high blast radius){% if status_mcp == 'teams' %} -> notify result{% endif %} -> release the lock{% if use_release_notes %} -> stamp the PR's release notes with the deployer{% endif %}{% if tickets_mcp == 'odoo' %} -> note the exact deploy commands on the task{% if task_ai_driven %} and stamp the pull request records (merged, deploy date){% endif %}{% endif %}. Use when the user says 'merge PR N and deploy', or 'deploy PR N' for an already-merged PR. That command is the approval: the skill prints the plan and the exact prod commands and stops only on an anomaly."
 argument-hint: "[PR number or URL] [prod{% if test_ssh_hosts %}|<test alias>{% endif %} — default prod]"
 ---
 
@@ -9,7 +9,7 @@ argument-hint: "[PR number or URL] [prod{% if test_ssh_hosts %}|<test alias>{% e
 
 Beats: **mergeable? -> blast-radius tag -> plan -> deploy lock -> merge -> {% if status_mcp == 'teams' %}notify start -> {% endif %}deploy on prod{% if use_queue_job %} -> requeue stuck
 queue jobs{% endif %} -> invariant check (T+0; T+60 again for high blast radius){% if status_mcp == 'teams' %} ->
-notify result{% endif %} -> release the lock{% if use_release_notes %} -> stamp the release notes{% endif %}{% if tickets_mcp == 'odoo' %} -> note the exact commands on the task{% endif %}**. Runs commands on the
+notify result{% endif %} -> release the lock{% if use_release_notes %} -> stamp the release notes{% endif %}{% if tickets_mcp == 'odoo' %} -> note the exact commands on the task{% if task_ai_driven %} and stamp the pull request records{% endif %}{% endif %}**. Runs commands on the
 **production** server. The user's command — "merge PR N and deploy", or
 "deploy PR N" for a PR already merged — is the approval: Step 3 prints the plan
 and the exact commands and goes on, stopping only when the plan holds something
@@ -328,6 +328,14 @@ means a rider merged while you held the lock (someone merging by hand), and
 that is the Step-3 anomaly again: stop and ask, lock held — the question is
 short and the answer changes the `-u` list.
 
+{% if tickets_mcp == 'odoo' and task_ai_driven %}
+Keep the PR number of every merge commit in that listing (`Merge pull request #<n>`:
+this PR and each rider). Step 8 stamps their pull request records, and once the deploy
+has pulled, the same listing comes out empty. A stop after the merge and before Step 5
+still stamps the record of the PR just merged: `state` and `merge_date`, as Step 8 writes
+them for a failed deploy.
+
+{% endif %}
 From here the lock is held until Step 7 releases it or marks it failed. Should
 you stop for any reason before Step 5 has touched prod, **release it first**: a
 lock left behind by a session that simply ended makes everyone wait 30 minutes
@@ -549,7 +557,7 @@ chat to the users of <models>." Publishing is theirs to do, never this skill's.
 {% endif %}
 {% if tickets_mcp == 'odoo' %}
 
-## Step 8 — Record the exact commands on the Odoo task
+## Step 8 — Record the exact commands on the Odoo task{% if task_ai_driven %}, stamp the pull request records{% endif +%}
 
 {% if status_mcp == 'teams' %}The Teams post announces the deploy team-wide; the **task note** is the
 per-task record of *exactly what ran against prod*{% else %}The **task note** is the per-task record of *exactly what ran against prod*{% endif %}, so it is auditable
@@ -577,7 +585,50 @@ message_post(model="project.task", res_id=<task_id>,
 
 - **Failed deploy** (non-zero exit) — the attempt still touched prod: post the
   same note with the result line naming the failing step, so the task records it
+{% if task_ai_driven %}
+  too. Besides this note the failure path writes only the pull request records
+  below, without a `deploy_date`.
+
+### Pull request records
+
+A pull request has a `project.pull.request` record (`odoo-tickets` → Pull requests and
+resolution), in state `open` since its link was written to its task. After the note, over
+the same connector and whether or not the note found a task, stamp the record of every
+pull request this deploy landed: the PR the command named and each rider, by the PR
+numbers kept in Step 3.5.
+
+1. Link and merge time of each, the time in UTC as Odoo stores it:
+
+   ```bash
+   gh pr view <n> -R {{ repo_org }}/{{ custom_repo_name }} --json url,mergedAt \
+     --jq '.url + " " + (.mergedAt | fromdateiso8601 | strftime("%Y-%m-%d %H:%M:%S"))'
+   ```
+
+2. `search_read` `project.pull.request` `[["url", "in", [<urls>]]]`, fields
+   `["url", "state", "merge_date", "deploy_date"]`.
+3. `write` each record found, with the quiet context (`odoo-tickets` → Connection &
+   context flags):
+   - deploy exit 0 → `{"state": "merged", "merge_date": "<merge time>", "deploy_date": "<DEPLOY_TS>"}`,
+     `<DEPLOY_TS>` being the Step-5 timestamp, UTC in the same format;
+   - non-zero exit → `{"state": "merged", "merge_date": "<merge time>"}`: the merge
+     happened, and a failed deploy writes no `deploy_date`.
+4. A link with no record → `create` `project.pull.request` with `url`, the same `state`
+   and dates, and `"task_ids": [[6, 0, [<task ids>]]]`: the tasks whose keys that pull
+   request names in its title, body or branch
+   (`gh pr view <n> -R {{ repo_org }}/{{ custom_repo_name }} --json title,body,headRefName`), each
+   resolved per `odoo-tickets` → Resolve a ticket. No key → create it without `task_ids`
+   and tell the user.
+
+{% if test_ssh_hosts %}
+A deploy to a test alias writes `state` and `merge_date` only, whatever its exit:
+`deploy_date` is the deploy to production.
+
+{% endif %}
+Report one line per record: its link, `merged <merge time>`, and `deployed <DEPLOY_TS>`
+or `not deployed`.
+{% else %}
   too. This is the only task write on the failure path.
+{% endif %}
 {% endif %}
 
 ## Step 9 — T+60 re-check (blast radius high only)
