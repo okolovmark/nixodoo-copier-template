@@ -36,13 +36,10 @@ nixodoo-addons:
   - "release_notes"
 {% endif %}
 {% if task_ai_driven %}
-{% if odoo_version == '16.0' %}
   - "project_ai_driven"
+{% if odoo_version == '16.0' %}
   # Transitional: the empty module under project_ai_driven's former name, which
   # depends on it. It goes with the next release.
-  - "project_software"
-{% else %}
-  # The 20.0 branch still carries project_ai_driven under this name.
   - "project_software"
 {% endif %}
 {% endif %}
