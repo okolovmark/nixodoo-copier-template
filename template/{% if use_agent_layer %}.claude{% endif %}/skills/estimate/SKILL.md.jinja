@@ -65,9 +65,15 @@ judgement call.
 ## Writing to the ticket
 
 - `{{ 'planned_hours' if odoo_version == '16.0' else 'allocated_hours' }}` = the estimate — **never a bucket value**.
+{% if task_ai_driven %}
+- `tshirt_estimate` (Size) is not written: Odoo computes it from that number
+  (≤2h `xs`, ≤6h `s`, ≤12h `m`, ≤32h `l`, ≤60h `xl`, above that `xxl`) and
+  ignores a value sent for it. Split the ticket long before `xxl`.
+{% else %}
 - A t-shirt field, where the project has one, is the nearest bucket to that
   number: ≤2h `xs`, ≤6h `s`, ≤12h `m`, ≤32h `l`, ≤60h `xl`, else `xxl` (and
   split long before that).
+{% endif %}
 
 {% endif -%}
 ## Calibration loop

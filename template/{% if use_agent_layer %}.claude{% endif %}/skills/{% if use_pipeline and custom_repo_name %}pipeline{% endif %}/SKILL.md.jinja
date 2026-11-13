@@ -478,6 +478,11 @@ Before spawning any subagent:
    `effective_hours` / `date_deadline`:
    - move it to the **Development** stage (`write {"stage_id": …}` with
      `tracking_disable` context); assign the owner if unassigned
+{% if task_ai_driven %}
+   - the move needs a `task_type` and `{{ hours }}` above zero on the task
+     (step 0 read both): the same write sets a missing one, per the
+     `odoo-tickets` start-work flow, or the move is refused
+{% endif %}
 {% if status_mcp == 'teams' %}
    - **Rebalance the user's other deadlines** — a new in-scope ticket pushes
      existing work out, so run the `my-status` `rebalance` flow now (it
