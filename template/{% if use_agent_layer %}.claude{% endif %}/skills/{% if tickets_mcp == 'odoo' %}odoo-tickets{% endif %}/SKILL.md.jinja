@@ -76,11 +76,11 @@ take `id=<n>`.
 | `stage_id` | {% if task_ai_driven %}Backlog (41) for queued work; Development (43) only if work starts immediately. Resolve by name if the board changed.{% else %}Backlog for queued work; Development only if work starts immediately. Resolve the ids by name (`project.task.type`).{% endif %} |
 | `user_ids` | `[[6, 0, [<uid>]]]` — **always the human owner**: you (uid from `user_identity`), or the teammate the user hands the task to. Never empty on purpose. An owner who is not you gets a [handover note](#handover-note-assignee-is-not-you). |
 {% if task_ai_driven %}
-| `task_type` | Honest pick: `bug` (broken behavior) / `feature` (net-new) / `improvement` (enhance existing) / `investigation` / `technical_debt` / `support` / `milestone`. |
+| `task_type` | **Always set on create**: the field has no default. Honest pick: `bug` (broken behavior) / `feature` (net-new) / `improvement` (enhance existing) / `investigation` / `technical_debt` / `support` / `milestone`. Required before the task enters a stage of the type and estimate rule (under this table). |
 {% endif %}
 | `tag_ids` | **Always set.** `[[6, 0, [ids]]]` on create. ≥1 **area** tag + a **feature/topic** tag for any multi-ticket effort so siblings group. Reuse existing tags — never a near-duplicate. See [Tags](#tags-projecttags). |
 {% if task_ai_driven %}
-| `tshirt_estimate` | Estimate hours via the **`estimate` skill** first. `{{ hours }}` = those hours (RPC fires no onchange, set it explicitly — and NOT the bucket value). Bucket by hours: ≤2h `xs`, ≤6h `s`, ≤12h `m`, ≤32h `l`, ≤60h `xl`, else `xxl`. |
+| `{{ hours }}` | The estimate, in hours: take it from the **`estimate` skill** and write it here. Above zero before the task enters a stage of the type and estimate rule (under this table). `tshirt_estimate` (Size) is never written: Odoo computes it from these hours (≤2h `xs`, ≤6h `s`, ≤12h `m`, ≤32h `l`, ≤60h `xl`, above that `xxl`; no hours → empty) and ignores a value sent for it. |
 | `priority_level` | `"4"` Highest … `"0"` Lowest; default `"1"`. |
 {% else %}
 | `{{ hours }}` | The estimate in hours (`estimate` skill). |
@@ -97,6 +97,12 @@ take `id=<n>`.
 | `pr_uri` | Never on create. Reads the link of the task's first pull request. A write takes one pull request link and adds that pull request to the task. Never text. |
 | `pull_request_ids` | The task's pull requests (many2many to `project.pull.request`). Read it; link a pull request through `pr_uri`. |
 | `pr_legacy` | Read-only: the text `pr_uri` held before pull requests were records. |
+
+**The type and estimate rule.** In a project flagged AI-driven, a task enters a stage the
+project lists under "Stages Requiring a Type and an Estimate" only with a `task_type` and
+`{{ hours }}` above zero. It is checked on a create into such a stage, on a change of
+stage and on a change of project that moves the stage; a write that fails it is refused.
+A task in a stage outside that list may have neither.
 
 Tabs on the form map to: Description → `description`, Technical Solution →
 `solution` (Html), Questions/Answers → `questions`/`answers`, Test Cases →
@@ -360,7 +366,7 @@ write `child_ids` from the parent):
 create(model="project.task", values={"name": "<slice>", "parent_id": <current_id>,
 {% if task_ai_driven %}
   "project_id": <proj>, "user_ids": [[6, 0, [<uid>]]], "task_type": "...",
-  "tag_ids": [[6, 0, [<ids>]]], "tshirt_estimate": "...", "{{ hours }}": <n>,
+  "tag_ids": [[6, 0, [<ids>]]], "{{ hours }}": <n>,
 {% else %}
   "project_id": <proj>, "user_ids": [[6, 0, [<uid>]]],
   "tag_ids": [[6, 0, [<ids>]]], "{{ hours }}": <n>,
@@ -493,11 +499,18 @@ Delivered write (revising earlier, once the real problem is clear, is fine):
 - **Start of work** (the user says to start / take into work a ticket or
   a memory item with `[odoo:ID]`):
   1. `write {"stage_id": <Development>}` (`<quiet>` + `tracking_disable`);
+{% if task_ai_driven %}
+     before it the task has a `task_type` and `{{ hours }}` above zero (`read` both),
+     or this same write sets the missing one (`task_type`: the honest pick,
+     `{{ hours }}`: the `estimate` skill). A stage under
+     [the type and estimate rule](#creating-a-task--field-conventions) refuses the
+     move without both;
+{% endif %}
   2. assign the owner if not yet assigned (`user_ids`, `<quiet>`);
 {% if task_timeline %}
   3. **set the Planned Dates window** so the ticket lands on the schedule:
      `planned_date_start` = now, `planned_date_end` = now + the estimate
-     ({% if task_ai_driven %}`tshirt_estimate`/{% endif %}`{{ hours }}` at ~6 focused h/day), and
+     (`{{ hours }}` at ~6 focused h/day), and
      `date_deadline` = the date part of `planned_date_end`. A ticket taken into
      work with no Planned Dates is invisible on the Gantt/dashboard.
   4. **rebalance the user's other deadlines** — the new in-scope work pushes
@@ -505,7 +518,7 @@ Delivered write (revising earlier, once the real problem is clear, is fine):
      Dates windows). See `feedback_rebalance_deadlines_on_scope_growth`.
 {% else %}
   3. **set the deadline**: `date_deadline` = today + the estimate
-     ({% if task_ai_driven %}`tshirt_estimate`/{% endif %}`{{ hours }}` at ~6 focused h/day).
+     (`{{ hours }}` at ~6 focused h/day).
   4. **rebalance the user's other deadlines** — the new in-scope work pushes
      existing tickets out: run `my-status` `rebalance` (shifts their
      `date_deadline`). See `feedback_rebalance_deadlines_on_scope_growth`.
