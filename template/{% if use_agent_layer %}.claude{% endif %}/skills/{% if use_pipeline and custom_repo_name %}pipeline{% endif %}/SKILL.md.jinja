@@ -144,7 +144,7 @@ On user feedback, a design decision, or an applied fix, post an **internal note*
 
 {% if task_ai_driven %}
 ### Task Checklist
-The Checklist tab = `project.task.subtask` records (see `odoo-tickets`):
+The Checklist tab = `project.task.checklist.item` records (see `odoo-tickets`):
 1. At the start of Phase 1, read the existing checklist (`search_read` by `task_id`)
 2. **If empty**, populate with implementation steps derived from requirements (`create` with `task_id`, `name`, `user_id`)
 3. As each step completes, `write {"state": "done"}`
@@ -450,7 +450,7 @@ Before spawning any subagent:
      - **Technical Solution**: `read [id] ["solution"]` (+ `questions`/`answers` if used)
      - **Test Cases**: `search_read` `project.task.testcase` by `task_id`,
        fields `["name", "state", "verification_kind", "test_reference", "steps_to_execute", "expected_results"]`
-     - **Checklist**: `search_read` `project.task.subtask` by `task_id`,
+     - **Checklist**: `search_read` `project.task.checklist.item` by `task_id`,
        fields `["name", "state", "user_id"]`
 {% else %}
      - **Internal notes** (`Design Decision` Q&A, `Technical Solution`,
@@ -1592,5 +1592,5 @@ Final summary:
 ```
 {% if tickets_mcp == 'odoo' and task_ai_driven %}
 
-At the end, mark all completed checklist items over the Odoo connector (`project.task.subtask` → `write {"state": "done"}`).
+At the end, mark all completed checklist items over the Odoo connector (`project.task.checklist.item` → `write {"state": "done"}`).
 {% endif %}
