@@ -81,7 +81,7 @@ _(empty)_
   is rarely opened in batch.
 
 ### Notes
-Mark mentioned the legal team is reviewing scrap categories next week —
+The user mentioned the legal team is reviewing scrap categories next week —
 might need to revisit the rule then.
 
 ### Open threads

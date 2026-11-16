@@ -17,9 +17,9 @@ HOOK = sys.argv[1] if len(sys.argv) > 1 else (
 
 CASES = [
     # a task, however it is spelled
-    ("BLOCK", "plain task", 'kb add "Fix the thing" --scope kaertech-odoo-16 --tag workflow'),
+    ("BLOCK", "plain task", 'kb add "Fix the thing" --scope acme-odoo-16 --tag workflow'),
     ("BLOCK", "pipeline OPEN_THREAD shape",
-     'kb add "dead field — models/x.py:12" --scope kaertech-odoo-16 --tag sale --link RELATED:1301'),
+     'kb add "dead field — models/x.py:12" --scope acme-odoo-16 --tag sale --link RELATED:12'),
     ("BLOCK", "explicit --kind task", 'kb add "x" --kind task --tag sale'),
     ("BLOCK", "short -k task", 'kb add "x" -k task --tag sale'),
     ("BLOCK", "with a due date", 'kb add "x" --tag sale --due 2026-11-02'),
@@ -53,7 +53,7 @@ CASES = [
     ("PASS", "show", "kb show 12"),
     ("PASS", "append that mentions kb add", 'kb append 12 "kb add was refused here"'),
     ("PASS", "session note", 'kb session note "filed nothing; asked about 3 items"'),
-    ("PASS", "promote", "kb promote 12 KIO-2001"),
+    ("PASS", "promote", "kb promote 12 PROJ-1234"),
     ("PASS", "done", "kb done 12"),
 
     # nothing to do with kb

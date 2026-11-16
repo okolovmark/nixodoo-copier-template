@@ -31,7 +31,7 @@ SCRIPTS = {
 }
 
 ANSWERS = dict(
-    prod_local_ssh_host="10.0.0.9", test_ssh_hosts={"t1.kepi": "10.0.0.1", "t2": "10.0.0.2"},
+    prod_local_ssh_host="10.0.0.9", test_ssh_hosts={"t1.lan": "10.0.0.1", "t2": "10.0.0.2"},
     prod_remote_project_dir="~/proj", project_dir_var="TEST_PROJECT_DIR",
     odoo_version="16.0", module_prefix="foo", nix_profile_rel=".nix-profile",
     custom_repo_name="addons", prod_remote_odoo_conf="~/proj/odoo.conf",
@@ -124,7 +124,7 @@ def _():
 def _():
     run = Run()
     try:
-        each_script(run, "t1.kepi", "t1")
+        each_script(run, "t1.lan", "t1")
         each_script(run, "t2", "t2")
     finally:
         run.cleanup()
@@ -134,7 +134,7 @@ def _():
 def _():
     run = Run(test_db_name="db_{alias}")
     try:
-        each_script(run, "t1.kepi", "db_t1.kepi")
+        each_script(run, "t1.lan", "db_t1.lan")
     finally:
         run.cleanup()
 
@@ -143,7 +143,7 @@ def _():
 def _():
     run = Run(test_db_name="odoo")
     try:
-        each_script(run, "t1.kepi", "odoo")
+        each_script(run, "t1.lan", "odoo")
     finally:
         run.cleanup()
 

@@ -128,7 +128,7 @@ parallel numbered lists so each pair lines up by position:
 ```
 write(model="project.task", ids=[<id>], values={
   "questions": "<ol><li>Which warehouses are in scope?</li><li>Block or only warn on conflict?</li></ol>",
-  "answers":   "<ol><li>Only the Manila DC.</li><li>Hard block.</li></ol>"
+  "answers":   "<ol><li>Only the main warehouse.</li><li>Hard block.</li></ol>"
 }, context=<quiet>)
 ```
 
@@ -164,7 +164,7 @@ clarification live only in the chat:
 message_post(model="project.task", res_id=<id>,
   body="<p><b>Design Decision</b> — clarifying Q&amp;A</p>"
        "<p>Questions:</p><ol><li>Which warehouses are in scope?</li><li>Block or only warn on conflict?</li></ol>"
-       "<p>Answers:</p><ol><li>Only the Manila DC.</li><li>Hard block.</li></ol>",
+       "<p>Answers:</p><ol><li>Only the main warehouse.</li><li>Hard block.</li></ol>",
   context={"mail_create_nosubscribe": true})
 ```
 

@@ -25,7 +25,7 @@ SKILL = pathlib.Path(
     "{% if prod_ssh_host and custom_repo_name %}deploy{% endif %}/scripts")
 
 ANSWERS = dict(
-    prod_local_ssh_host="", test_ssh_hosts={"t1.kepi": "10.0.0.1"},
+    prod_local_ssh_host="", test_ssh_hosts={"t1.lan": "10.0.0.1"},
     prod_remote_project_dir="~/proj", project_dir_var="TEST_PROJECT_DIR",
     odoo_version="16.0", module_prefix="foo", nix_profile_rel=".nix-profile",
     custom_repo_name="addons", prod_remote_odoo_conf="~/proj/odoo.conf",
@@ -187,7 +187,7 @@ def _(b):
                  ("prod", "release"), ("prod", "status", "1"), ("prod", "mark-failed")):
         rc, out = b.run(b.lock, *args)
         expect(rc == 2, (args, rc, out))
-    rc, out = b.run(b.lock, "t1.kepi", "status")
+    rc, out = b.run(b.lock, "t1.lan", "status")
     expect(rc == 0 and "LOCK_FREE" in out, ("test alias refused", rc, out))
 
 

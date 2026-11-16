@@ -1290,14 +1290,14 @@ def a_dumps_day_names_the_db_and_a_recorded_name_wins():
                                   capture_output=True, text=True, env={**os.environ, "WT_TEST_PROJECT_DIR": str(root)},
                                   check=True).stdout.strip()
 
-        for dump, name in (("/b/odoo_2026-10-20-18-30-06.dump", "wt_kio_1_x_102026"),
-                           ("odoo_2027-01-05-00-00-00.dump", "wt_kio_1_x_010527"),
-                           ("/b/prod.dump", "wt_kio_1_x"), ("/b/odoo_2026-10-20.dump", "wt_kio_1_x")):
-            assert call("dated_db_name", "kio-1-x", dump) == name, (dump, name)
-        assert call("db_name_for", "kio-1-x") == "wt_kio_1_x"
-        (root / ".worktrees/_env/kio-1-x").mkdir(parents=True)
-        (root / ".worktrees/_env/kio-1-x/db").write_text("wt_kio_1_x_102026\n")
-        assert call("db_name_for", "kio-1-x") == "wt_kio_1_x_102026"
+        for dump, name in (("/b/odoo_2026-10-20-18-30-06.dump", "wt_proj_1_x_102026"),
+                           ("odoo_2027-01-05-00-00-00.dump", "wt_proj_1_x_010527"),
+                           ("/b/prod.dump", "wt_proj_1_x"), ("/b/odoo_2026-10-20.dump", "wt_proj_1_x")):
+            assert call("dated_db_name", "proj-1-x", dump) == name, (dump, name)
+        assert call("db_name_for", "proj-1-x") == "wt_proj_1_x"
+        (root / ".worktrees/_env/proj-1-x").mkdir(parents=True)
+        (root / ".worktrees/_env/proj-1-x/db").write_text("wt_proj_1_x_102026\n")
+        assert call("db_name_for", "proj-1-x") == "wt_proj_1_x_102026"
 
 
 @case
@@ -1472,11 +1472,11 @@ def an_env_repo_branch_that_exists_is_checked_out_with_its_commits():
     with tempfile.TemporaryDirectory() as tmp:
         root, _origin, _seed = env_repo_project(pathlib.Path(tmp))
         git(root, "checkout", "-qb", "x")
-        commit(root, "2026-10-02", {"scripts/KIO-1/fix.py": "pass\n"})
+        commit(root, "2026-10-02", {"scripts/PROJ-1/fix.py": "pass\n"})
         git(root, "checkout", "-q", "main")
         rc, out, _conf = run_wt_start(root, argv=("x", "--env-repo"))
         tree = root / ".worktrees/_envrepo/x"
-        assert rc == 0 and head_of(tree) == "x" and (tree / "scripts/KIO-1/fix.py").exists(), out
+        assert rc == 0 and head_of(tree) == "x" and (tree / "scripts/PROJ-1/fix.py").exists(), out
 
 
 @case
@@ -1970,8 +1970,8 @@ def a_worktree_of_the_addons_repo_runs_the_same_hook():
         cmd, env, repo, _ = bootstrap_project(pathlib.Path(tmp))
         subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q",
                         "--allow-empty", "--no-verify", "-m", "init"], check=True)
-        worktree = pathlib.Path(tmp, ".worktrees/kio-1")
-        subprocess.run(["git", "-C", str(repo), "worktree", "add", "-q", "-b", "kio-1", str(worktree)], check=True)
+        worktree = pathlib.Path(tmp, ".worktrees/proj-1")
+        subprocess.run(["git", "-C", str(repo), "worktree", "add", "-q", "-b", "proj-1", str(worktree)], check=True)
         assert subprocess.run(cmd, capture_output=True, text=True, env=env).returncode == 0
         hook = subprocess.run(["git", "-C", str(worktree), "rev-parse", "--path-format=absolute", "--git-path",
                                "hooks/pre-commit"], capture_output=True, text=True, check=True).stdout.strip()
@@ -2241,7 +2241,7 @@ def an_env_that_is_not_up_is_named_with_its_start():
 @case
 def without_playwright_cli_or_chrome_the_script_exits_5_and_names_the_fallback():
     for project, word in ((dict(cli=False), "playwright-cli is not installed"), (dict(chrome=False), "Google Chrome is not installed")):
-        for args in (["x", "open"], ["x", "snapshot"], ["x", "record", "s.js", "KIO-1"]):
+        for args in (["x", "open"], ["x", "snapshot"], ["x", "record", "s.js", "PROJ-1"]):
             code, _out, err, calls = run_browser(args, **project)
             assert code == 5 and word in err and not calls, (project, args, code, err)
             assert "UI validation goes to the built-in browser, a demo is skipped" in err, err
@@ -2282,32 +2282,32 @@ def record_runs_the_scenario_with_the_demo_helpers_and_converts_it_to_the_demo_f
         cmd, env = browser_project(root)
         browser_dir = root / ".worktrees/_env/x/browser"
         # a scenario path relative to the caller's cwd
-        proc = record(root, env, cmd, "x", "record", "s.js", "KIO-1")
+        proc = record(root, env, cmd, "x", "record", "s.js", "PROJ-1")
         assert proc.returncode == 0, proc.stdout + proc.stderr
-        assert pw_calls(root)[-1]["argv"] == ["-s=x", "--raw", "run-code", "--filename=KIO-1_demo.run.js"], pw_calls(root)
+        assert pw_calls(root)[-1]["argv"] == ["-s=x", "--raw", "run-code", "--filename=PROJ-1_demo.run.js"], pw_calls(root)
         ran = (root / "run.js").read_text()
-        assert ran == (browser_dir / "KIO-1_demo.run.js").read_text()
+        assert ran == (browser_dir / "PROJ-1_demo.run.js").read_text()
         # one function of the page: the helpers called with the key, the env's URL and the WebM,
         # then the scenario with them, the recording stopped whatever it did
         given = json.loads(re.search(r"\)\(page, (\{.*\})\);", ran).group(1))
-        assert given == {"key": "KIO-1", "url": BROWSER_URL, "video": str(browser_dir / "KIO-1_demo.webm")}, given
+        assert given == {"key": "PROJ-1", "url": BROWSER_URL, "video": str(browser_dir / "PROJ-1_demo.webm")}, given
         assert ran.startswith("async page => {\nconst demo = (\n") and DEMO_HELPERS.read_text().rstrip() in ran, ran[:200]
         body = ran[ran.index("try {"):]
         # the scenario's trailing semicolon is dropped: it is an argument here
         assert "return await (\nasync (page, demo) => {\n  await demo.start();\n}\n)(page, demo);" in body, body
         assert body.rstrip().endswith("} finally {\nawait demo.stop();\n}\n}"), body
         convert, sheet = ffmpeg_calls(root)
-        assert convert[convert.index("-i") + 1] == "KIO-1_demo.webm" and convert[-1] == "KIO-1_demo.part.mp4", convert
+        assert convert[convert.index("-i") + 1] == "PROJ-1_demo.webm" and convert[-1] == "PROJ-1_demo.part.mp4", convert
         for words in (["-c:v", "libx264"], ["-movflags", "+faststart"], ["-an"]):
             assert " ".join(words) in " ".join(convert), (words, convert)
         filters = convert[convert.index("-vf") + 1]
         assert "scale=1280:720" in filters and "pad=1280:720" in filters and "fps=25" in filters \
             and filters.endswith("format=yuv420p"), filters
-        assert sheet[-1] == "KIO-1_demo.png" and "tile=3x3" in sheet[sheet.index("-vf") + 1], sheet
-        mp4 = browser_dir / "KIO-1_demo.mp4"
-        assert mp4.stat().st_size == 524288 and not (browser_dir / "KIO-1_demo.part.mp4").exists()
+        assert sheet[-1] == "PROJ-1_demo.png" and "tile=3x3" in sheet[sheet.index("-vf") + 1], sheet
+        mp4 = browser_dir / "PROJ-1_demo.mp4"
+        assert mp4.stat().st_size == 524288 and not (browser_dir / "PROJ-1_demo.part.mp4").exists()
         assert proc.stdout.splitlines() == [f"VIDEO: {mp4}", "DURATION: 23 s", "SIZE: 0.50 MB",
-                                            f"SHEET: {browser_dir / 'KIO-1_demo.png'}"], proc.stdout
+                                            f"SHEET: {browser_dir / 'PROJ-1_demo.png'}"], proc.stdout
         assert "WARNING" not in proc.stderr, proc.stderr
 
 
@@ -2316,13 +2316,13 @@ def a_demo_over_90_seconds_is_kept_with_a_warning():
     with tempfile.TemporaryDirectory() as tmp:
         root = pathlib.Path(tmp)
         cmd, env = browser_project(root, duration="97.3")
-        proc = record(root, env, cmd, "x", "record", "s.js", "KIO-1")
+        proc = record(root, env, cmd, "x", "record", "s.js", "PROJ-1")
         assert proc.returncode == 0 and "DURATION: 97 s" in proc.stdout, proc.stdout + proc.stderr
         assert "WARNING: 97 s is over the 90 s target" in proc.stderr, proc.stderr
     with tempfile.TemporaryDirectory() as tmp:
         root = pathlib.Path(tmp)
         cmd, env = browser_project(root, duration="90.4")
-        assert "WARNING" not in record(root, env, cmd, "x", "record", "s.js", "KIO-1").stderr
+        assert "WARNING" not in record(root, env, cmd, "x", "record", "s.js", "PROJ-1").stderr
 
 
 @case
@@ -2331,14 +2331,14 @@ def a_scenario_that_throws_or_records_nothing_exits_1_and_keeps_the_video_there(
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             cmd, env = browser_project(root)
-            assert record(root, env, cmd, "x", "record", "s.js", "KIO-1").returncode == 0
-            proc = record(root, {**env, **stub}, cmd, "x", "record", "s.js", "KIO-1")
+            assert record(root, env, cmd, "x", "record", "s.js", "PROJ-1").returncode == 0
+            proc = record(root, {**env, **stub}, cmd, "x", "record", "s.js", "PROJ-1")
             browser_dir = root / ".worktrees/_env/x/browser"
             assert proc.returncode == 1 and "did not record" in proc.stderr, (stub, proc.stdout + proc.stderr)
-            assert f"wt-browser.sh x open" in proc.stderr and "KIO-1_demo.run.js" in proc.stderr, proc.stderr
+            assert f"wt-browser.sh x open" in proc.stderr and "PROJ-1_demo.run.js" in proc.stderr, proc.stderr
             # no conversion of a WebM an earlier take left, and that take's mp4 stands
-            assert len(ffmpeg_calls(root)) == 2 and (browser_dir / "KIO-1_demo.mp4").exists(), ffmpeg_calls(root)
-            assert not (browser_dir / "KIO-1_demo.webm").exists() or stub == {"STUB_RUN_RC": "1"}
+            assert len(ffmpeg_calls(root)) == 2 and (browser_dir / "PROJ-1_demo.mp4").exists(), ffmpeg_calls(root)
+            assert not (browser_dir / "PROJ-1_demo.webm").exists() or stub == {"STUB_RUN_RC": "1"}
 
 
 @case
@@ -2347,18 +2347,18 @@ def append_adds_another_sessions_part_to_the_video_there():
         root = pathlib.Path(tmp)
         cmd, env = browser_project(root)
         browser_dir = root / ".worktrees/_env/x/browser"
-        refused = record(root, env, cmd, "x", "record", "s.js", "KIO-1", "--append")
+        refused = record(root, env, cmd, "x", "record", "s.js", "PROJ-1", "--append")
         assert refused.returncode == 2 and "record the first part without it" in refused.stderr, refused.stderr
         assert not pw_calls(root), pw_calls(root)
-        assert record(root, env, cmd, "x", "record", "s.js", "KIO-1").returncode == 0
-        proc = record(root, env, cmd, "x", "--as", "approver", "record", "s.js", "KIO-1", "--append")
+        assert record(root, env, cmd, "x", "record", "s.js", "PROJ-1").returncode == 0
+        proc = record(root, env, cmd, "x", "--as", "approver", "record", "s.js", "PROJ-1", "--append")
         assert proc.returncode == 0, proc.stdout + proc.stderr
         assert pw_calls(root)[-1]["argv"][0] == "-s=x-approver", pw_calls(root)
         join = ffmpeg_calls(root)[-2]
         assert join[join.index("-f") + 1] == "concat" and join[join.index("-c") + 1] == "copy" \
-            and join[-1] == "KIO-1_demo.joined.mp4", join
-        assert not list(browser_dir.glob("KIO-1_demo.part*")) and not (browser_dir / "KIO-1_demo.joined.mp4").exists()
-        assert f"VIDEO: {browser_dir / 'KIO-1_demo.mp4'}" in proc.stdout, proc.stdout
+            and join[-1] == "PROJ-1_demo.joined.mp4", join
+        assert not list(browser_dir.glob("PROJ-1_demo.part*")) and not (browser_dir / "PROJ-1_demo.joined.mp4").exists()
+        assert f"VIDEO: {browser_dir / 'PROJ-1_demo.mp4'}" in proc.stdout, proc.stdout
 
 
 @case
@@ -2369,9 +2369,9 @@ def the_concat_list_names_the_video_there_then_the_new_part():
         ffmpeg = root / ".nix-profile/libexec/wt-browser/ffmpeg"
         ffmpeg.write_text(ffmpeg.read_text() + 'if "concat" in sys.argv:\n'
                           '    (root / "parts.txt").write_text(pathlib.Path(sys.argv[sys.argv.index("-i") + 1]).read_text())\n')
-        assert record(root, env, cmd, "x", "record", "s.js", "KIO-1").returncode == 0
-        assert record(root, env, cmd, "x", "record", "s.js", "KIO-1", "--append").returncode == 0
-        assert (root / "parts.txt").read_text() == "file 'KIO-1_demo.mp4'\nfile 'KIO-1_demo.part.mp4'\n"
+        assert record(root, env, cmd, "x", "record", "s.js", "PROJ-1").returncode == 0
+        assert record(root, env, cmd, "x", "record", "s.js", "PROJ-1", "--append").returncode == 0
+        assert (root / "parts.txt").read_text() == "file 'PROJ-1_demo.mp4'\nfile 'PROJ-1_demo.part.mp4'\n"
 
 
 @case
@@ -2379,9 +2379,9 @@ def record_refuses_what_is_no_scenario_and_key():
     with tempfile.TemporaryDirectory() as tmp:
         root = pathlib.Path(tmp)
         cmd, env = browser_project(root)
-        for args, word in ((["s.js"], "usage:"), ([], "usage:"), (["s.js", "KIO-1", "more"], "one scenario and one key"),
-                           (["s.js", "../x"], "letters, digits"), (["s.js", "KIO 1"], "letters, digits"),
-                           (["missing.js", "KIO-1"], "no scenario at"), (["s.js", "KIO-1", "--loop"], "unknown option")):
+        for args, word in ((["s.js"], "usage:"), ([], "usage:"), (["s.js", "PROJ-1", "more"], "one scenario and one key"),
+                           (["s.js", "../x"], "letters, digits"), (["s.js", "PROJ 1"], "letters, digits"),
+                           (["missing.js", "PROJ-1"], "no scenario at"), (["s.js", "PROJ-1", "--loop"], "unknown option")):
             proc = record(root, env, cmd, "x", "record", *args)
             assert proc.returncode == 2 and word in proc.stderr and not pw_calls(root), (args, proc.stderr)
 
@@ -2393,7 +2393,7 @@ def record_without_its_recorder_or_converter_exits_5():
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             cmd, env = browser_project(root, **project)
-            proc = record(root, env, cmd, "x", "record", "s.js", "KIO-1")
+            proc = record(root, env, cmd, "x", "record", "s.js", "PROJ-1")
             assert proc.returncode == 5 and word in proc.stderr and "a demo is skipped" in proc.stderr, proc.stderr
             assert not pw_calls(root), pw_calls(root)
             # browsing needs neither

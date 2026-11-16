@@ -194,8 +194,8 @@ because "is this already on prod?" has no answer. It states at least:
   outcome. Production times come from the data: `MIN`/`MAX(write_date)` of
   the touched rows, or, when the script wrote by SQL and left `write_date`
   alone, the `create_date` of its `ir.logging` rows. Write zones as an offset
-  or UTC (`09:01 +08`, `01:01:30 UTC`), never a local abbreviation: `date`
-  prints Asia/Manila as `PST`, which most readers take as UTC-8.
+  or UTC (`09:01 +08`, `01:01:30 UTC`), never a local abbreviation: `PST`
+  names two zones 16 hours apart.
 - **The dev databases by name** and the dump they were restored from.
 - **The sequence** when order matters, including steps outside this repo (a
   deploy, a decision, a manual step on the floor), and what breaks if it is not

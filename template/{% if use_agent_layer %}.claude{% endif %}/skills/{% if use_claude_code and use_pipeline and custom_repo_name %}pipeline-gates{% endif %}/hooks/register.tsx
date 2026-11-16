@@ -279,7 +279,7 @@ async function runCommand($: EngineInterface, args: string, isPerson: boolean): 
     return 'pipeline-gates: only the person at the keyboard ends a run or opens a gate by hand.'
   }
   if (verb === 'start') {
-    // by hand the label is taken as typed: KIO-1834, a block of keys, or a name for a trial run
+    // by hand the label is taken as typed: PROJ-1234, a block of keys, or a name for a trial run
     const keys = taskKeysIn([name, ...rest].join(' ').toUpperCase())
     await start($, keys[0] ?? name.toUpperCase().slice(0, 40), keys)
     return describe(await read($, run))

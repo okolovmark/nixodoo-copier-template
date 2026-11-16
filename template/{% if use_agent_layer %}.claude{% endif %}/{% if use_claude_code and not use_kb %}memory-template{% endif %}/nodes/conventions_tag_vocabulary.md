@@ -60,7 +60,7 @@ zero or more domain tags + optionally one status tag.
 
 `#wip` — work in progress, intentionally unfinished, will continue next session
 `#blocked` — waiting on something external (must also appear in state.md `## Blocked`)
-`#ready_for_review` — done from Claude's side, needs Mark's eye (must also appear in state.md `## Ready for review`)
+`#ready_for_review` — done from Claude's side, needs the user's eye (must also appear in state.md `## Ready for review`)
 `#ship_blocker` — must be resolved before next deploy (highest urgency, in state.md `## Ship blockers`)
 
 **Important:** any session with `#wip`, `#blocked`, `#ready_for_review`, or

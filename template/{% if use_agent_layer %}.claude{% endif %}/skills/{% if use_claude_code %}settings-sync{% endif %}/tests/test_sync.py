@@ -201,16 +201,16 @@ class SyncTest(unittest.TestCase):
         self.mine('user', {'theme': 'light'})
         self.addCleanup(setattr, sync, 'git_email', sync.git_email)
 
-        sync.git_email = lambda project: 'mark@example.com'
+        sync.git_email = lambda project: 'maintainer@example.com'
         code, printed = self.main('save')
         self.assertEqual(code, 0)
-        self.assertEqual((self.place.project_layer / 'maintainer').read_text(), 'mark@example.com\n')
+        self.assertEqual((self.place.project_layer / 'maintainer').read_text(), 'maintainer@example.com\n')
 
         sync.git_email = lambda project: 'ann@example.com'
         self.mine('user', {'theme': 'pink'})
         code, printed = self.main('save')
         self.assertEqual(code, 2)
-        self.assertIn('mark@example.com, not ann@example.com', printed[0])
+        self.assertIn('maintainer@example.com, not ann@example.com', printed[0])
         self.assertEqual(json.loads((self.place.project_layer / 'user.json').read_text()), {'theme': 'light'})
 
     def test_save_then_apply_elsewhere_gives_the_same_settings(self):

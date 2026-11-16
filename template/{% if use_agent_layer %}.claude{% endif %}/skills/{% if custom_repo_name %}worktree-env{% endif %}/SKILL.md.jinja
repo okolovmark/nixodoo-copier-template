@@ -17,7 +17,7 @@ proxy and no main database, only the shared postgres cluster
 | Code | `.worktrees/<slug>` (branch off `origin/{{ odoo_version }}` in `src/{{ custom_repo_name }}`) |
 | Runtime | `.worktrees/_env/<slug>/{odoo.conf,data,port,db,dump}` |
 | Service | `odoo{{ service_suffix }}-wt@<slug>.service` |
-| DB | `wt_<slug>_<MMDDYY>`, written `<DB>` below: its own restore of the prod dump, `<MMDDYY>` the dump's day from its name (`odoo_2026-10-20-18-30-06.dump` -> `wt_kio_1234_cash_in_cogs_102026`), recorded in `.worktrees/_env/<slug>/db`. An env restored before dated names keeps `wt_<slug>` |
+| DB | `wt_<slug>_<MMDDYY>`, written `<DB>` below: its own restore of the prod dump, `<MMDDYY>` the dump's day from its name (`odoo_2026-10-20-18-30-06.dump` -> `wt_{{ ticket_prefix | lower }}_1234_cash_in_cogs_102026`), recorded in `.worktrees/_env/<slug>/db`. An env restored before dated names keeps `wt_<slug>` |
 | Env repo | `.worktrees/_envrepo/<slug>`, only with `--env-repo`: this project's own repo on branch `<slug>`, off origin's default branch |
 | HTTP | `http://<DB>.localhost:<PORT>`, port auto-allocated in **{{ (odoo_major | int + 11) * 100 }}–{{ (odoo_major | int + 11) * 100 + 99 }}** (direct, no nginx) |
 | Browser | `.worktrees/_env/<slug>/browser/`: what `wt-browser.sh` writes (page snapshots, console logs, saved logins, demo files) |
@@ -82,13 +82,13 @@ Invoke by absolute path under `${{ project_dir_var }}/.claude/skills/worktree-en
   See [The session browser](#the-session-browser).
 - `wt-link.sh <tree> <farm>` / `wt-restore.sh <slug>` — internals used by `wt-start`.
 
-**Slug** = kebab branch name, conventionally `<kio-key-lower>-<short-desc>`
-(e.g. `kio-1234-cash-in-cogs`). It is the git branch, the systemd instance, and (with
+**Slug** = kebab branch name, conventionally `<task-key-lower>-<short-desc>`
+(e.g. `{{ ticket_prefix | lower }}-1234-cash-in-cogs`). It is the git branch, the systemd instance, and (with
 `-`→`_`, prefixed `wt_`, the dump's `_<MMDDYY>` after it) the DB name.
 
-Standalone: "spin up an env for {{ ticket_prefix }}-1234" → `wt-start.sh kio-1234-<desc>`, hand back
-the `URL`. "what envs are running" → `wt-list.sh`. "tear down kio-1234" →
-`wt-stop.sh kio-1234-<desc>`.
+Standalone: "spin up an env for {{ ticket_prefix }}-1234" → `wt-start.sh {{ ticket_prefix | lower }}-1234-<desc>`, hand back
+the `URL`. "what envs are running" → `wt-list.sh`. "tear down {{ ticket_prefix | lower }}-1234" →
+`wt-stop.sh {{ ticket_prefix | lower }}-1234-<desc>`.
 
 ## Prerequisite — the seed dump
 

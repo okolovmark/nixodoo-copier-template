@@ -35,7 +35,7 @@ const PR_URL = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/
 // A task key is one of the ticket prefixes and a number, so prose naming a month column (JAN-2026),
 // a standard (ISO-9001) or a project the prefixes do not name stays out of the block; without a
 // prefix, any word-dash-number. project_key numbers a project's tasks from an unpadded sequence, so a
-// key's number never starts with 0: product codes are zero-padded (RAW-000010, ASM-001640).
+// key's number never starts with 0: product codes are zero-padded (RAW-000123, ASM-004567).
 const KEY_PREFIX =
   TICKET_PREFIXES.length === 0
     ? '[A-Z][A-Z0-9]{1,9}'
@@ -318,7 +318,7 @@ export function taskUrlIn(item: string, webUrl: string): string {
   return base !== '' && (url.startsWith(`${base}#`) || url.startsWith(`${base}?`)) ? url.slice(0, 500) : ''
 }
 
-// Tasks given as "KIO-1234", "KIO-1234 short title", either with the task's record URL, join the block
+// Tasks given as "PROJ-1234", "PROJ-1234 short title", either with the task's record URL, join the block
 // as pending; one already in it keeps its state and takes a new title or URL when one is given.
 export function addTasks(run: Run, items: readonly string[], now: number, webUrl = ''): Run {
   let tasks = tasksOf(run)

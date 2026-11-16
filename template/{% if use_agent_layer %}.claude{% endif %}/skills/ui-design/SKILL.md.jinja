@@ -197,7 +197,7 @@ Written like this:
   modifiers of its LAST node (`activeFields` in `form_arch_parser.js`) and
   leaves a readonly field out of the save. An added duplicate with
   `readonly="1"` silently stops the field saving everywhere on that form
-  (KIO-1952: a draft MO's Quantity); give it its siblings' readonly domain, and
+  (as it once did for a draft MO's Quantity); give it its siblings' readonly domain, and
   assert the last node's modifiers in a test - Python `Form` ANDs duplicates
   and cannot catch it.
 {% endif %}
