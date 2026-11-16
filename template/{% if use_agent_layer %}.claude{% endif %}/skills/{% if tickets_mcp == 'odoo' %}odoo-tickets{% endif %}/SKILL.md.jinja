@@ -284,10 +284,12 @@ after that `create` or `user_ids` write, post one note per task that names them:
   items in `checklist_item_ids`.
 - States: `todo` (default) / `done` / `waiting` / `cancelled` — complete a
   step with `write {"state": "done"}`.
-- Only the item's assignee or reviewer changes its `state` or `name`.
+- Only the item's assignee or reviewer, as they were before the write,
+  changes its `state`, `name` or `user_id`. An item is found and read by
+  whoever can read its task, in the companies selected for the call.
 - Both with `<quiet>`: without `mail_auto_subscribe_no_notify`, a create and
   every change of `state`, `name` or `user_id` notify the item's assignee and
-  reviewer, never you.
+  reviewer, and on a reassignment the former assignee, never you.
 
 ## Test cases (`project.task.testcase`)
 
