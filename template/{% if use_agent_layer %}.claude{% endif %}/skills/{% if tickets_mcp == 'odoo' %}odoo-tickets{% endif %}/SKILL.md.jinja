@@ -73,7 +73,7 @@ take `id=<n>`.
 |---|---|
 | `name` | Imperative summary of the work. No {{ ticket_prefix }} prefix — {% if task_keys %}`project_key` adds it{% else %}the reference `{{ ticket_prefix }}-<id>` carries it{% endif %}. |
 | `project_id` | Default project from `user_identity`. |
-| `stage_id` | {% if task_ai_driven %}Backlog (41) for queued work; Development (43) only if work starts immediately. Resolve by name if the board changed.{% else %}Backlog for queued work; Development only if work starts immediately. Resolve the ids by name (`project.task.type`).{% endif %} |
+| `stage_id` | Backlog for queued work; Development only if work starts immediately. Resolve the ids by name (`project.task.type`). |
 | `user_ids` | `[[6, 0, [<uid>]]]` — **always the human owner**: you (uid from `user_identity`), or the teammate the user hands the task to. Never empty on purpose. An owner who is not you gets a [handover note](#handover-note-assignee-is-not-you). |
 {% if task_ai_driven %}
 | `task_type` | **Always set on create**: the field has no default. Honest pick: `bug` (broken behavior) / `feature` (net-new) / `improvement` (enhance existing) / `investigation` / `technical_debt` / `support` / `milestone`. Required before the task enters a stage of the type and estimate rule (under this table). |
@@ -128,7 +128,7 @@ parallel numbered lists so each pair lines up by position:
 ```
 write(model="project.task", ids=[<id>], values={
   "questions": "<ol><li>Which warehouses are in scope?</li><li>Block or only warn on conflict?</li></ol>",
-  "answers":   "<ol><li>Only the Manila DC.</li><li>Hard block.</li></ol>"
+  "answers":   "<ol><li>Only the main warehouse.</li><li>Hard block.</li></ol>"
 }, context=<quiet>)
 ```
 
@@ -164,7 +164,7 @@ clarification live only in the chat:
 message_post(model="project.task", res_id=<id>,
   body="<p><b>Design Decision</b> — clarifying Q&amp;A</p>"
        "<p>Questions:</p><ol><li>Which warehouses are in scope?</li><li>Block or only warn on conflict?</li></ol>"
-       "<p>Answers:</p><ol><li>Only the Manila DC.</li><li>Hard block.</li></ol>",
+       "<p>Answers:</p><ol><li>Only the main warehouse.</li><li>Hard block.</li></ol>",
   context={"mail_create_nosubscribe": true})
 ```
 

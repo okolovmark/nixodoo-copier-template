@@ -80,7 +80,7 @@ Pointer to an external resource or another note.
 ```markdown
 Pipeline bugs are tracked in Linear project "INGEST".
 
-**How to apply:** When Mark mentions a ticket number, check INGEST.
+**How to apply:** When the user mentions a ticket number, check INGEST.
 When suggesting where to file a new issue related to data ingestion,
 point to INGEST.
 ```

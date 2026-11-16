@@ -69,7 +69,7 @@ CRITICAL_INDEX = "\n".join(
 )
 BUSY_TASKS = [{"id": i, "level": 4 if i < 5 else 3, "title": f"busy task {i} " * 8} for i in range(60)]
 BUSY_SYNC = "\n".join(
-    f"possible duplicate: [{i}] a new ticket title ~ [{i + 1}] an old thread title: kb promote {i + 1} KIO-{i}, then kb merge {i} {i + 1}"
+    f"possible duplicate: [{i}] a new ticket title ~ [{i + 1}] an old thread title: kb promote {i + 1} PROJ-{i}, then kb merge {i} {i + 1}"
     for i in range(12)
 )
 NO_SUMMARY = [{"id": i, "slug": f"2026-10-2{i}-1", "session_id": f"sid-{i}", "closed_at": None} for i in range(5)]

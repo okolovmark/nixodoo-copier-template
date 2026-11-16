@@ -1,6 +1,6 @@
 # The pipeline runs in a mother session and child sessions
 
-Status: accepted (grill of 2026-10-22, kb record [1189], parts 9–11)
+Status: accepted (grill of 2026-10-22, recorded in the maintainer's kb)
 
 One pipeline run used to live in one session, from reading the ticket to closing it, so the
 grill, the ticket work, every dev and QC round and the deploy all sat in one context that each
@@ -46,7 +46,7 @@ only on the user's command, and closes the ticket and the kb task.
 - The child's report reaching the mother at the end of its turn, and `SendMessage` from child to
   mother, are assumptions of the desktop app; if either fails, the user relays by hand.
 - The pipeline-gates mod keeps one run per session. Without a change the child's dev work and
-  the mother's closure were refused until the user opened each gate by hand. Mark chose
+  the mother's closure were refused until the user opened each gate by hand. The maintainer chose
   (2026-10-22, through the mother session) that a child (the skill loaded as
   `child <TASK-KEYS>`) takes the status and grill gates of an active run in another session
   for the same task, read from the mod's store, which every session shares. It does so only

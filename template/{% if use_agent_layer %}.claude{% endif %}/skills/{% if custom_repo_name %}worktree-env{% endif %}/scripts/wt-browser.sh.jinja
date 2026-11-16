@@ -20,9 +20,9 @@
 #
 # Usage: wt-browser.sh <slug> [--as <label>] <playwright-cli command...>
 #        wt-browser.sh <slug> [--as <label>] record <scenario.js> <KEY> [--append]
-#   wt-browser.sh kio-1234-x open
-#   wt-browser.sh kio-1234-x snapshot
-#   wt-browser.sh kio-1234-x --as phone open --mobile
+#   wt-browser.sh {{ ticket_prefix | lower }}-1234-x open
+#   wt-browser.sh {{ ticket_prefix | lower }}-1234-x snapshot
+#   wt-browser.sh {{ ticket_prefix | lower }}-1234-x --as phone open --mobile
 #
 # record runs a demo scenario (demo-scenario.js beside this script is the reference) in the
 # session, which must be open and logged in, and converts what it recorded to

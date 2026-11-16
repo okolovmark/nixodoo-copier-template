@@ -17,15 +17,15 @@ with `/` replaced by `-`:
 
 ```
 $HOME/.claude/projects/<project-slug>/memory/
-# e.g. $HOME/{{ project_name }}
-#   ->  $HOME/.claude/projects/-home-mark-projects-{{ project_name }}/memory/
+# e.g. $HOME/projects/{{ project_name }}
+#   ->  $HOME/.claude/projects/-home-you-projects-{{ project_name }}/memory/
 ```
 
 `MEMORY.md` at that path is auto-loaded into context at every session start.
 
 ## Install
 
-> The Kaertech project's live memory already exists at its slug path. Use this
+> A project whose live memory already exists at its slug path needs none of this. Use it
 > only to **re-seed** (after wiping), to bootstrap a **fresh machine**, or to
 > seed **another project**. The installer refuses to overwrite existing memory.
 
@@ -34,7 +34,7 @@ From the project you want memory for:
 ```bash
 bash .claude/memory-template/scripts/init-memory.sh
 # or target a specific project dir:
-bash .claude/memory-template/scripts/init-memory.sh /home/mark/projects/some-odoo
+bash .claude/memory-template/scripts/init-memory.sh /home/you/projects/some-odoo
 ```
 
 It computes the slug, copies this template to the slug path, substitutes the

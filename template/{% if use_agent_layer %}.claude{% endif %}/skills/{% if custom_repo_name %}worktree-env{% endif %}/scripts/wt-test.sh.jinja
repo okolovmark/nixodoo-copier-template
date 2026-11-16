@@ -27,7 +27,7 @@
 #     a summary missing from the output (a --logfile of your own) only warns.
 #
 # Usage: wt-test.sh <slug> <odoo args...>
-#   wt-test.sh kio-1234-x -u {{ module_prefix }}_mod --test-enable --test-tags /{{ module_prefix }}_mod
+#   wt-test.sh {{ ticket_prefix | lower }}-1234-x -u {{ module_prefix }}_mod --test-enable --test-tags /{{ module_prefix }}_mod
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/wt-common.sh"
 

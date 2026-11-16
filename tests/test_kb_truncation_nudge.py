@@ -20,7 +20,7 @@ CASES = [
      "kb show user_identity --scope global 2>/dev/null | sed -n '1,45p' | cut -c1-150"),
     ("BLOCK", "cut -c alone", "kb show project_kb_tool | cut -c1-120"),
     ("BLOCK", "head on a search", "kb search 'payment terms' | head -5"),
-    ("BLOCK", "tail on today", "kb today --scope kaertech-odoo-16 | tail -3"),
+    ("BLOCK", "tail on today", "kb today --scope acme-odoo-16 | tail -3"),
     ("BLOCK", "head on a query", "kb query 'MATCH (r:Record) RETURN r' | head -2"),
     ("BLOCK", "awk NR filter", "kb index | awk 'NR<=10'"),
     ("BLOCK", "grep -m on a record", "kb show feedback_testing | grep -m 1 test"),
@@ -45,7 +45,7 @@ CASES = [
 
     # nothing to do with kb
     ("PASS", "some other command", "git log --oneline | head -5"),
-    ("PASS", "a path that merely contains kb", "cat /home/mark/projects/kb/README.md | head -5"),
+    ("PASS", "a path that merely contains kb", "cat /home/u/projects/kb/README.md | head -5"),
     ("PASS", "kb-setup is not a read", "kb-setup --dry-run | head -5"),
     ("PASS", "unbalanced quotes are left alone", "kb show 'broken | head -3"),
 ]

@@ -33,10 +33,10 @@ import {
 } from '../hooks/gates'
 
 // task keys in this project's ticket prefixes; with none, any word-dash-number is a key
-const K = TICKET_PREFIXES[0] ?? 'KIO'
+const K = TICKET_PREFIXES[0] ?? 'PROJ'
 const HAS_PREFIX = TICKET_PREFIXES.length > 0
 const PR_URL = 'https://github.com/acme/addons/pull/77'
-const WT = '/p/.worktrees/kio-9-x'
+const WT = '/p/.worktrees/proj-9-x'
 const GREEN = 'INFO odoo.tests.result: 0 failed, 0 error(s) of 14 tests when loading database'
 const PANE = {
   plugin: 'pipeline-gates',
@@ -113,24 +113,24 @@ describe('rules', () => {
     expect(testSummary('0 failed, 0 error(s) of 0 tests')?.isGreen).toBe(false)
     expect(testSummary('no summary here')).toBe(null)
     expect(isWorktreeCode(`${WT}/models/a.py`)).toBe(true)
-    expect(isWorktreeCode('/p/.worktrees/_env/kio-9-x/odoo.conf')).toBe(false)
+    expect(isWorktreeCode('/p/.worktrees/_env/proj-9-x/odoo.conf')).toBe(false)
     expect(isWorktreeCode('/p/src/odoo-addons-16/a.py')).toBe(false)
     expect(isDocPath(`${WT}/m/readme/DESCRIPTION.md`)).toBe(true)
     expect(taskKeyIn(`run the pipeline for ${K}-1834 please`)).toBe(`${K}-1834`)
   })
 
   test('a release note file is a doc path where the project runs release notes, and only the note', () => {
-    const note = `${WT}${RELEASE_NOTES_DIR || '/acme_release_notes/notes/'}kio_12.html`
+    const note = `${WT}${RELEASE_NOTES_DIR || '/acme_release_notes/notes/'}proj_12.html`
     expect(isDocPath(note)).toBe(RELEASE_NOTES_DIR !== '')
     expect(isDocPath(note.replace('/notes/', '/models/'))).toBe(false)
     expect(isDocPath(note.replace('.html', '.py'))).toBe(false)
   })
 
   test('a product code is no task key: task numbers carry no leading zero', () => {
-    expect(taskKeysIn(`${K}-1791 ON HAND OF RAW-000010 PURGING COMPOUND, ASM-001640`)).toEqual([`${K}-1791`])
-    expect(taskKeyIn('RAW-000010 Purging Compound')).toBe('')
+    expect(taskKeysIn(`${K}-1791 ON HAND OF RAW-000123 BASE RESIN, ASM-004567`)).toEqual([`${K}-1791`])
+    expect(taskKeyIn('RAW-000123 Base Resin')).toBe('')
     const run = addTasks(newRun(`${K}-1791`, 0), [`${K}-1791`], 0)
-    expect(addTasks(run, ['CAP-000059 capacitor'], 1)).toBe(run)
+    expect(addTasks(run, ['CAP-000045 capacitor'], 1)).toBe(run)
   })
 
   test('a task key is the ticket prefix and a number: a month column, a standard, another project is none', () => {
@@ -148,7 +148,7 @@ describe('rules', () => {
   test('the PR guard reads the command the shell runs, not the text it carries', () => {
     const runs = [
       'gh pr create --fill',
-      'cd /p/.worktrees/kio-9-x && gh pr create --fill',
+      'cd /p/.worktrees/proj-9-x && gh pr create --fill',
       'GH_REPO=acme/addons gh pr create --fill',
       'url=$(gh pr create --fill) && echo "$url"',
       'echo "opened: $(gh pr create --fill)"',
@@ -163,8 +163,8 @@ describe('rules', () => {
       "bash <<'EOF'\ngh pr create --fill\nEOF",
     ]
     const carries = [
-      'kb add "the guard refused gh pr create in a quoted note" --scope kaertech-odoo-16',
-      "kb append 996 --body-file - <<'EOF'\nthen gh pr create was refused\nEOF",
+      'kb add "the guard refused gh pr create in a quoted note" --scope acme-odoo-16',
+      "kb append 12 --body-file - <<'EOF'\nthen gh pr create was refused\nEOF",
       "git commit -m 'gh pr create waits for QC'",
       'grep -n "gh pr create" SKILL.md',
       'echo gh pr create',
@@ -201,13 +201,13 @@ describe('rules', () => {
 
   test('a task link opens only a record in the production web client', async () => {
     const web = 'https://erp.example.com/web'
-    const record = `${web}#id=33574&model=project.task&view_type=form`
+    const record = `${web}#id=1&model=project.task&view_type=form`
     expect(taskUrlIn(`${K}-1 title ${record}`, web)).toBe(record)
     expect(taskUrlIn(`${K}-1 ${web}site#id=1`, web)).toBe('')
     expect(taskUrlIn(`${K}-1 https://evil.example.com/web#id=1`, web)).toBe('')
     expect(taskUrlIn(`${K}-1 ${record}`, '')).toBe('')
-    const run = addTasks(newRun(`${K}-1`, 0), [`${K}-1 size the sub-assemblies ${record}`], 1, web)
-    expect(run.tasks?.[0]).toMatchObject({ key: `${K}-1`, title: 'size the sub-assemblies', url: record })
+    const run = addTasks(newRun(`${K}-1`, 0), [`${K}-1 add the export button ${record}`], 1, web)
+    expect(run.tasks?.[0]).toMatchObject({ key: `${K}-1`, title: 'add the export button', url: record })
   })
 
   test('phases and verdicts refuse what their gates do not allow', async () => {
@@ -418,7 +418,7 @@ test('a tasks move with no run active opens none and changes nothing', async ($,
   expect(String(none.result)).toContain('no pipeline run is active')
   expect(String((await $.tool.call({ tool: 'mcp__pipeline-gates__gates' })).result)).toContain('no pipeline run in this session')
 
-  // the KIO-1909 order: Phase 7 first, the block's tasks marked done after it
+  // the order a real block closed in: Phase 7 first, the block's tasks marked done after it
   await toPr($)
   await $.tool.call({ tool: 'mcp__pipeline-gates__phase', phase: 7, task: `${K}-9` })
   const late = await $.tool.call({ tool: 'mcp__pipeline-gates__tasks', done: [`${K}-9`] })
@@ -443,9 +443,9 @@ test('the PR-create words inside an argument are neither refused nor recorded as
   engine(on)
   await $.session.start({ cwd: '/p', surface: 'desktop', isInteractive: true })
   await $.command.run({ command: 'pipeline-gate', args: `start ${K}-9`, ...TYPED })
-  const note = 'kb add "the guard refused gh pr create in a quoted note" --scope kaertech-odoo-16'
+  const note = 'kb add "the guard refused gh pr create in a quoted note" --scope acme-odoo-16'
   expect((await $.tool.call({ tool: 'Bash', command: note })).deny).toBeUndefined()
-  const body = "kb append 996 --body-file - <<'EOF'\nthen gh pr create was refused\nEOF"
+  const body = "kb append 12 --body-file - <<'EOF'\nthen gh pr create was refused\nEOF"
   expect((await $.tool.call({ tool: 'Bash', command: body })).deny).toBeUndefined()
   const pane = await $.ui.mount({ ...PANE, surface: 'desktop' })
   expect(await pane.find({ text: 'Blocked' })).toBeUndefined()
@@ -555,7 +555,7 @@ test('text typed under Other reaches the agent and keeps the gate shut', async (
 test('a product code named beside the task does not join the block', async ($, on) => {
   engine(on)
   await $.session.start({ cwd: '/p', surface: 'desktop', isInteractive: true })
-  const args = `${K}-1791 - Explain why Consumable products show no On Hand quantity (RAW-000010 Purging Compound)`
+  const args = `${K}-1791 - Explain why Consumable products show no On Hand quantity (RAW-000123 Base Resin)`
   await $.tool.call({ tool: 'Skill', skill: 'pipeline', args })
   const gates = String((await $.tool.call({ tool: 'mcp__pipeline-gates__gates' })).result)
   expect(gates).toContain(`pipeline ${K}-1791 ·`)
@@ -566,7 +566,7 @@ test('a month column a screenshot description names is no task', async ($, on) =
   if (!HAS_PREFIX) return
   engine(on)
   await $.session.start({ cwd: '/p', surface: 'desktop', isInteractive: true })
-  const args = 'show invoiced quantities too (screenshots: XLSX Forecast 24M Rolling Report with month columns JAN-2026..)'
+  const args = 'show invoiced quantities too (screenshots: XLSX forecast report with month columns JAN-2026..)'
   await $.tool.call({ tool: 'Skill', skill: 'pipeline', args })
   // the order the pipeline takes: the task joins the block, then the phase names it
   await $.tool.call({ tool: 'mcp__pipeline-gates__tasks', add: [`${K}-1909 forecast`], active: [`${K}-1909`] })
@@ -621,7 +621,7 @@ test('a block is one run: its tasks keep the gates, and the pane and band show h
 test('a block task given its record URL gets an open link in the pane', async ($, on) => {
   engine(on)
   await $.session.start({ cwd: '/p', surface: 'desktop', isInteractive: true })
-  const record = `${ODOO_WEB_URL}#id=33574&model=project.task&view_type=form`
+  const record = `${ODOO_WEB_URL}#id=1&model=project.task&view_type=form`
   await $.tool.call({ tool: 'mcp__pipeline-gates__tasks', add: [`${K}-1 first ${record}`, `${K}-2 second`] })
   for (const surface of ['desktop', 'mobile'] as const) {
     const pane = await $.ui.mount({ ...PANE, surface })
@@ -637,7 +637,7 @@ test('a block task given its record URL gets an open link in the pane', async ($
 test('each fix round goes to a fresh dev agent, and a fourth waits for you', async ($, on) => {
   engine(on, [
     { id: 'a-review', type: 'review' },
-    { id: 'a-dev', type: 'dev', name: 'kio-dev' },
+    { id: 'a-dev', type: 'dev', name: 'proj-dev' },
   ])
   await $.session.start({ cwd: '/p', surface: 'terminal', isInteractive: true })
   await $.command.run({ command: 'pipeline-gate', args: `start ${K}-9`, ...TYPED })
@@ -645,7 +645,7 @@ test('each fix round goes to a fresh dev agent, and a fourth waits for you', asy
   await $.command.run({ command: 'pipeline-gate', args: 'open grill agreed in chat', ...TYPED })
   await $.tool.call({ tool: 'mcp__pipeline-gates__phase', phase: 2, task: `${K}-9` })
   expect((await $.tool.call(DEV)).deny).toBeUndefined()
-  const ask = { tool: 'SendMessage', to: 'kio-dev', message: 'one more thing' } as const
+  const ask = { tool: 'SendMessage', to: 'proj-dev', message: 'one more thing' } as const
   expect((await $.tool.call(ask)).deny).toBeUndefined()
 
   await $.tool.call({ tool: 'mcp__pipeline-gates__phase', phase: 3 })

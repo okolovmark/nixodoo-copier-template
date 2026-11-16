@@ -324,7 +324,7 @@ prod_link_addons_cmd:
 
 # Test boxes: one SSH alias per entry, all sharing the user and port below. A
 # single box is `{test: 203.0.113.2}`; a per-developer fleet is
-# `{odoo1.kepi: 192.168.20.112, odoo2.kepi: 192.168.20.113}`. Every alias goes
+# `{odoo1.example.lan: 10.0.0.11, odoo2.example.lan: 10.0.0.12}`. Every alias goes
 # into .ssh/config, `test-server <alias>` (dev-server profile) connects, and the deploy
 # and prod-ops scripts accept it as their host argument.
 test_ssh_hosts:
@@ -353,7 +353,7 @@ test_web_url:
 
 test_db_name:
   type: str
-  help: "Database name on a test box, used when the deploy / prod-ops scripts get a test alias as host; `{alias}` stands for the box's alias, `{short}` for the alias up to its first dot (e.g. {short}: odoo1.kepi -> odoo1)"
+  help: "Database name on a test box, used when the deploy / prod-ops scripts get a test alias as host; `{alias}` stands for the box's alias, `{short}` for the alias up to its first dot (e.g. {short}: odoo1.example.lan -> odoo1)"
   default: "{{ prod_db_name }}"
   when: "{% if test_ssh_hosts and use_agent_layer and custom_repo_name %}true{% else %}false{% endif %}"
 

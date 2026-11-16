@@ -10,7 +10,7 @@ line endings, one of which carried the only instruction for re-resolving a
 partner id.
 
 Unlike the find-code nudge this one has NO session budget and no
-re-run-to-pass escape: Mark asked for it to fire every time, because a lost
+re-run-to-pass escape: its user asked for it to fire every time, because a lost
 sentence is not visible later. Two ways through:
 
 - read it whole, or send it to a file and read the parts you need;

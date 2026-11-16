@@ -5,7 +5,7 @@
 # Per env, the whole run holds its start lock (a wt-stop of the env waits for it), and
 # the service restart its test lock (a wt-test run on the env is waited for).
 #
-# Usage: [WT_DUMP=<dump>] wt-start.sh <slug> [--env-repo]   # <slug> = branch name, e.g. kio-1234-cash-in-cogs
+# Usage: [WT_DUMP=<dump>] wt-start.sh <slug> [--env-repo]   # <slug> = branch name, e.g. {{ ticket_prefix | lower }}-1234-cash-in-cogs
 #   WT_DUMP     restore that dump instead of the newest in backup/ (a new env's DB only;
 #               it is named wt_<slug>_<MMDDYY> from the dump's name either way)
 #   --env-repo  also check out the project's own repo at .worktrees/_envrepo/<slug> on branch
