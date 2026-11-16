@@ -163,7 +163,9 @@ decides on, one by one, in Phase 7{% else %}that become standalone Backlog tasks
   proposed split to the **user first**, then create the agreed slices as child
   tasks (new `project.task`, `parent_id` = current task) and narrow this run's
   scope to one slice (or the parent's remaining work). Post a `Design Decision`
-  note recording the split.
+  note recording the split.{% if task_timeline %} Give each slice its Planned Dates window on create
+  (`odoo-tickets` → "Sub-tasks & blockers"): where planned dates roll up from
+  sub-tasks, the parent's window is its slices' span and is empty while none is dated.{% endif +%}
 - **Blocker found → Blocked By.** If development or the QC gate hits a
   dependency that must be resolved first (missing upstream change, external
   fix, data migration), create a task for the blocker (full conventions) and

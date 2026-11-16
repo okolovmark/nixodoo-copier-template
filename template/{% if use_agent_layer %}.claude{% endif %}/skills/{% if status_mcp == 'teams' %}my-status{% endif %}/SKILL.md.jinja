@@ -158,6 +158,12 @@ guard (step 8).
    - Conservative: only push windows **out** (later) to absorb the new work, or
      fill a missing window; never force an **earlier** start/deadline unless the
      user asks.
+   - A task that rolls its planned dates up from its sub-tasks
+     (`is_planned_from_subtasks` true; read the field only when `fields_get`
+     lists it) takes **no window and no hours** in step 5: its sub-tasks carry
+     the work and get the windows, and Odoo refuses a write that changes its
+     planned dates. Write only its `date_deadline` ← the date part of the latest
+     window end of its sub-tasks, under the same push-out-only rule.
 {% else %}
 6. **Decide the writes** — `date_deadline` (`{{ 'date' if v16 else 'datetime' }}`) ← the window
    finish; day-level granularity is enough.
