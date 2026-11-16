@@ -133,14 +133,8 @@ guard (step 8).
 
 1–2. Same connector check + uid resolution as list mode.
 3. **Candidate tasks** = all open assigned tasks ordered by **sequence** — same
-{% if task_timeline and task_ai_driven %}
-   `search_read` as send-mode step 3, fields incl. `planned_date_start`,
-   `planned_date_end`, `date_deadline`, `{{ hours }}`, `effective_hours`,
-   `sequence`. The just-added task is in this list.
-{% else %}
    `search_read` as send-mode step 3, fields incl. {{ written_fields | replace(' / ', ', ') }},
    `effective_hours`, `sequence`. The just-added task is in this list.
-{% endif %}
 4. **Estimate remaining effort** per task (same heuristic as send-mode step 4:
    `date_deadline` / `{{ hours }}` vs `effective_hours` / what this session
    knows / task messages). Thin evidence → low confidence; never invent
@@ -192,12 +186,7 @@ guard (step 8).
    (`date_deadline` is tracked).
 8. **Scope guard — never exceed:** only the user's **own** open assigned tasks
    (`user_ids` contains the resolved uid, {% if v16 %}`is_closed = false`{% else %}`state` not `1_done` / `1_canceled`{% endif %}); only the
-{% if task_timeline and task_ai_driven %}
-   `planned_date_start` / `planned_date_end` / `date_deadline` / `{{ hours }}`
-   fields; never another person's tasks, never any other
-{% else %}
    {{ written_fields }} fields; never another person's tasks, never any other
-{% endif %}
    field, never closed tasks. Report each change as `<{{ ticket_prefix }} key> <name>:
 {% if task_timeline %}
    <old planned_date_end> → <new planned_date_end>` (the Planned Dates window).
@@ -209,8 +198,7 @@ guard (step 8).
 
 - Odoo: **list** and **send** are read-only — only `search_read` /
   `fields_get`. The **single** write path is **rebalance**, and only within its
-  scope guard (rebalance step 8): {% if task_timeline and task_ai_driven %}`planned_date_start` / `planned_date_end` /
-  `date_deadline` / `{{ hours }}`{% else %}{{ written_fields }}{% endif %} on the user's **own**
+  scope guard (rebalance step 8): {{ written_fields }} on the user's **own**
   open assigned tasks, via `write` with the quiet + `tracking_disable`
   context (`execute` only as the `odoo-tickets` fallback). Nothing else here writes.
 {% if not use_kb %}

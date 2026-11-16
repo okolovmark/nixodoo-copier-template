@@ -396,6 +396,14 @@ read-only `ODOO_*_PROD` lines in `.env`, the user's login and API key.
    - `user_ids` = `[[6, 0, [<uid>]]]` — uid resolved by Odoo login from
      [[user_identity]]
    - `stage_id` = the project's entry stage (resolve by name, e.g. Backlog)
+{% if task_ai_driven %}
+   - `task_type` = the honest pick (see `odoo-tickets`); the field has no
+     default
+   - `{{ 'planned_hours' if odoo_version == '16.0' else 'allocated_hours' }}` = the hours from the `estimate` skill. In a project
+     flagged AI-driven, a task without a `task_type` and these hours is
+     neither created in nor moved into a stage the project lists under
+     "Stages Requiring a Type and an Estimate"
+{% endif %}
    - `description` = `Claude memory item [<ID>], opened <date> — see
      journal/<date>` (plain text; never dump node/journal bodies into prod)
 3. Append the task id to the state line:
@@ -432,6 +440,12 @@ append `[odoo:pending]` instead and mirror at the next natural prod touch.
   `resolution` `no_change` in the same `write`.
 {% else %}
 - Closed as **no longer relevant** → the cancel stage (e.g. Canceled).
+{% endif %}
+{% if task_ai_driven %}
+- Either move: a done or cancel stage the project also lists under "Stages
+  Requiring a Type and an Estimate" takes the task only with a `task_type`
+  and hours above zero. `read` both first; the same `write` sets a missing
+  one (the honest pick, the `estimate` skill), as at the start of work.
 {% endif %}
 - `[odoo:pending]` items close locally only.
 
