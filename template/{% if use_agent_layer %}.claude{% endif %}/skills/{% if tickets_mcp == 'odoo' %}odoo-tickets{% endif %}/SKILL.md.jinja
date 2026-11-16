@@ -93,7 +93,6 @@ take `id=<n>`.
 {% endif %}
 | `description` | **Full copy** of the source content (for memory mirrors: state line verbatim + the journal excerpt / node body), simple HTML (`<p>`, `<code>`), footer `Claude memory item [ID] — see journal/<date>`. |
 {% if task_ai_driven %}
-| `difficulty`, `knowledge_area_level` | Optional (`easy/medium/hard`, `basic/intermediate/advanced`); defaults are fine. |
 | `resolution` | Never on create: empty until the task closes. `code` (Code) / `data` (Data) / `configuration` (Configuration) / `no_change` (No change). See [Pull requests and resolution](#pull-requests-projectpullrequest-and-resolution). |
 | `pr_uri` | Never on create. Reads the link of the task's first pull request. A write takes one pull request link and adds that pull request to the task. Never text. |
 | `pull_request_ids` | The task's pull requests (many2many to `project.pull.request`). Read it; link a pull request through `pr_uri`. |
