@@ -140,7 +140,11 @@ Then ask: "Did I understand correctly — do we build this?" **Do not start buil
 
 When the grill runs against a tracked task, persist per `odoo-tickets`:
 
-- every Q&A round → the task's `questions` / `answers` Html fields (parallel numbered lists, append — never overwrite earlier rounds)
+{% if task_ai_driven %}
+- every Q&A round → question rows on the task (`project.task.question`), one per question, `round` naming the round, each answer recorded on its row; a new round adds rows, earlier rounds are never rewritten
+{% else %}
+- every Q&A round → a `Design Decision` internal note (questions and answers as parallel numbered lists, one note per round)
+{% endif %}
 - a scope change or settled design call → a `Requirement Change` / `Design Decision` internal note
 - the stakeholder-questions list, the rule tables (with who confirmed each and when) and the assumptions ledger → into the Technical Solution tab or a note, so they live on the ticket, not only in chat
 {% endif %}

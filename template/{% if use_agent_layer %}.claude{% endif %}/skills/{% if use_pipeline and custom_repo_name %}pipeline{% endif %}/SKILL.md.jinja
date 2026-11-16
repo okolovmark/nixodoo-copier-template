@@ -447,7 +447,10 @@ Before spawning any subagent:
        be blocked, flag it to the user before starting.
      - **Description**: `read [id] ["description"]` — functional requirements
 {% if task_ai_driven %}
-     - **Technical Solution**: `read [id] ["solution"]` (+ `questions`/`answers` if used)
+     - **Technical Solution**: `read [id] ["solution"]`, and its question rows:
+       `search_read` `project.task.question` by `task_id`, fields `["round", "question",
+       "addressed_to_id", "answer", "answered_by_id", "answered_on", "state"]`, order
+       `"sequence, id"`; an `open` row is a question still waiting for its answer
      - **Test Cases**: `search_read` `project.task.testcase` by `task_id`,
        fields `["name", "state", "verification_kind", "test_reference", "steps_to_execute", "expected_results"]`
      - **Checklist**: `search_read` `project.task.checklist.item` by `task_id`,
@@ -534,10 +537,11 @@ Before spawning any subagent:
 
 {% if task_ai_driven %}
    **Persist every clarifying round to the task's Technical Solution tab**
-   per `odoo-tickets` (`questions` / `answers` Html fields):
-   - `questions` ← the questions you asked, `answers` ← the user's answers, as
-     parallel numbered lists so Q1↔A1.
-   - Append to any existing content; never overwrite earlier rounds.
+   per `odoo-tickets` (question rows, `project.task.question`):
+   - A round of rows: one per question you asked, `round` naming the round,
+     `addressed_to_id` the person asked; the user's answer to each goes on its
+     row (`write {"answer": …}`), which stamps who answered and when.
+   - A new round adds rows; earlier rounds are never rewritten.
    - This applies to **every** clarifying exchange about the task — the grill
      rounds here, and anything later in the pipeline (e.g. mid-development
      feedback), not just the first round.
@@ -1526,8 +1530,9 @@ append AFTER existing content.
 1. **Post internal note** to the Odoo task documenting feedback
 {% if task_ai_driven %}
 2. **Capture clarifying Q&A**: if the feedback answered a question you asked,
-   append the Q→A pair to the task's `questions` / `answers` fields per
-   `odoo-tickets` (Phase 1 step 2 convention) — don't leave it only in chat
+   record the answer on that question's row, or add the question as a row of
+   a new round and then its answer, per `odoo-tickets` (Phase 1 step 2
+   convention) — don't leave it only in chat
 {% else %}
 2. **Capture clarifying Q&A**: if the feedback answered a question you asked,
    post the Q→A pair as a `Design Decision` note per `odoo-tickets` (Phase 1
