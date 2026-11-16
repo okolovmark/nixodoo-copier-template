@@ -106,41 +106,53 @@ stage and on a change of project that moves the stage; a write that fails it is 
 A task in a stage outside that list may have neither.
 
 Tabs on the form map to: Description → `description`, Technical Solution →
-`solution` (Html), Questions/Answers → `questions`/`answers`, Test Cases →
-`project.task.testcase`, Checklist → `project.task.checklist.item` (`checklist_item_ids`).
+question rows `project.task.question` (`question_ids`) above `solution` (Html),
+Test Cases → `project.task.testcase`, Checklist → `project.task.checklist.item`
+(`checklist_item_ids`).
 
-## Technical Solution tab — `solution` + clarifying Q&A
+## Technical Solution tab — clarifying questions and `solution`
 
-Three custom Html fields on `project.task`,
-shown in this order on the **Technical Solution** tab:
+The tab shows the task's clarifying questions, one `project.task.question` row
+each (task field `question_ids`), above `solution`: the technical solution /
+implementation plan, an Html field written on the task.
 
-| Field | Holds |
+| Field on `project.task.question` | Holds |
 |---|---|
-| `questions` | Clarifying questions raised about the task (yours or the team's). |
-| `answers` | The answers received — keep aligned with `questions` (parallel numbered lists, so Q1↔A1). |
-| `solution` | The technical solution / implementation plan. |
+| `task_id` | The task (required). |
+| `round` | The round it was asked in, a name or a date: `"Alignment round, 2026-11-12"`. |
+| `question` | The question (Html). |
+| `addressed_to_id` | Who is asked (`res.users`); empty when nobody in particular. |
+| `answer` | The answer (Html). |
+| `answered_by_id`, `answered_on` | Who answered and when, stamped by the write that answers the row. |
+| `state` | `open` (default) / `answered` / `dropped`. |
+| `sequence` | The order on the tab. |
 
 **Always persist clarifying Q&A.** Whenever you ask the user clarifying
 questions while creating or refining a ticket — standalone or inside the
-`pipeline` — save BOTH sides here: the questions to `questions`, the matching
-answers to `answers`. Don't let a clarification live only in the chat. Use
-parallel numbered lists so each pair lines up by position:
+`pipeline` — each question is a row and each answer goes on its row. Don't let
+a clarification live only in the chat. Every call with `<quiet>`:
 
-```
-write(model="project.task", ids=[<id>], values={
-  "questions": "<ol><li>Which warehouses are in scope?</li><li>Block or only warn on conflict?</li></ol>",
-  "answers":   "<ol><li>Only the main warehouse.</li><li>Hard block.</li></ol>"
-}, context=<quiet>)
-```
+- **Ask a round**: one `create` per question, the same `round` on each:
+  ```
+  create(model="project.task.question", values={"task_id": <id>,
+    "round": "Alignment round, 2026-11-12",
+    "question": "<p>Which warehouses are in scope?</p>",
+    "addressed_to_id": <asked uid>}, context=<quiet>)
+  ```
+- **Record the answer**: `write` `project.task.question` `[<row id>]`
+  `{"answer": "<p>Only the main warehouse.</p>"}`. The row turns `answered`
+  and stamps `answered_by_id` / `answered_on` with you and now; an answer
+  someone else gave carries their `answered_by_id` in the same write.
+- **Drop a question** that no longer applies: `write {"state": "dropped"}`.
+  Back to `open` clears who answered and when.
+- **Read them**: `search_read` `project.task.question` `[["task_id", "=", <id>]]`
+  fields `["round", "question", "addressed_to_id", "answer", "answered_by_id",
+  "answered_on", "state"]`, order `"sequence, id"`.
 
-**Append, don't overwrite:** if the fields already hold an earlier round,
-read the current Html first (single-record read) and add the new Q&A below
-it — never replace prior rounds. When an answer changes scope or a design
-choice, also post the matching internal note (`Requirement Change` /
-`Design Decision`).
-
-On `create`, pass `questions`/`answers` in the same `vals` if the
-clarifying exchange happened before the task existed.
+A round asked before the task existed: create its rows right after the task.
+Earlier rounds are never rewritten: a follow-up, or an answer that changes, is
+a row of a new round. When an answer changes scope or a design choice, also
+post the matching internal note (`Requirement Change` / `Design Decision`).
 {% else %}
 
 ## Clarifying Q&A, technical solution, test cases — internal notes
