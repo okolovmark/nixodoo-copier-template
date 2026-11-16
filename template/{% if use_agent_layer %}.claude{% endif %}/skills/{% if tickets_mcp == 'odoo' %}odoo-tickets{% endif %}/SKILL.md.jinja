@@ -88,6 +88,7 @@ take `id=<n>`.
 {% if task_timeline %}
 | **Planned Dates** — `planned_date_start` / `planned_date_end` (both `datetime`) | The scheduled work window: drives the Gantt, team dashboard and overdue colouring, and `planned_date_end` is the **deadline** the dashboard shows. Set both for any task in progress / with a planned slot (`"YYYY-MM-DD HH:MM:SS"`; day-level granularity is enough). |
 | `date_deadline` (`{{ deadline_type }}`) | Keep **in sync with `planned_date_end`** (its date part); the status ETA reads it. Don't set it alone — set the Planned Dates window too, or the Gantt/dashboard stay empty. |
+| `is_planned_from_subtasks` (read only, where a module rolls planned dates up; check with `fields_get` before reading it) | True on a task with active sub-tasks: its Planned Dates are the span of theirs (earliest start, latest end) and stay **empty while none of them is dated**. Odoo refuses a write that changes them: date the sub-tasks instead. `date_deadline` is not rolled up: keep it the date part of the rolled-up `planned_date_end`. |
 {% else %}
 | `date_deadline` (`{{ deadline_type }}`) | The deadline; the status ETA reads it. |
 {% endif %}
@@ -373,6 +374,17 @@ create(model="project.task", values={"name": "<slice>", "parent_id": <current_id
 {% endif %}
   "description": "<full copy>"}, context=<quiet>)
 ```
+{% if task_timeline %}
+
+Where the project rolls planned dates up (`is_planned_from_subtasks`, see the field
+conventions), the parent's window becomes the span of its sub-tasks the moment the
+first one exists, and is empty while none is dated: the parent drops off the Gantt.
+So give **every sub-task its window on create**: `planned_date_start` /
+`planned_date_end` laid out one after another in the order of the work, from the
+parent's start (or today), each by its `{{ hours }}` at ~6 focused h/day, with
+`date_deadline` the date part of its end. Then run `my-status` `rebalance` if the
+split pushed other work out.
+{% endif %}
 
 **Link a blocker** — create the blocker task first (full conventions), then add
 it to the **blocked** task's `depend_on_ids`. `depend_on_ids` is tracked, so
@@ -513,6 +525,10 @@ Delivered write (revising earlier, once the real problem is clear, is fine):
      (`{{ hours }}` at ~6 focused h/day), and
      `date_deadline` = the date part of `planned_date_end`. A ticket taken into
      work with no Planned Dates is invisible on the Gantt/dashboard.
+     A task whose `is_planned_from_subtasks` is true gets no window of its own
+     (the write is refused): its open sub-tasks get theirs (see
+     [Sub-tasks & blockers](#sub-tasks--blockers-tasktask-links)) and its
+     `date_deadline` follows their latest end.
   4. **rebalance the user's other deadlines** — the new in-scope work pushes
      existing tickets out: run `my-status` `rebalance` (shifts their Planned
      Dates windows). See `feedback_rebalance_deadlines_on_scope_growth`.
