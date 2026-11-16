@@ -82,15 +82,18 @@ Docs accrete lazily, module by module — there is no mass backfill:
 4. **Manifest** — set a one-line `summary` and a short `description` in
    `__manifest__.py` if missing or stale. No other manifest keys.
 5. **Regenerate README.rst** (+ `static/description/index.html`) after editing
-   fragments:
+   fragments. The organisation and repository names come from the module's own
+   repository (its `origin` remote), so a module of a shared addons repository
+   gets that repository's links, not the project's:
    ```bash
+   ADDON=<path/to/module>
+   URL=$(git -C "$ADDON" remote get-url origin); URL=${URL%.git}
+   REPO=${URL##*/}; URL=${URL%/*}; ORG=${URL##*[:/]}
    uvx --from "{{ readme_gen_source }}" oca-gen-addon-readme \
-       --org-name {{ custom_repo_pattern | regex_replace('.*[:/]([^/]+)/\\{\\}.*', '\\1') if custom_repo_pattern else 'my-org' }} \
-       --repo-name {{ custom_repo_name if custom_repo_name else project_name }} \
-       --branch {{ odoo_version }} \
-       --addon-dir <path/to/module> --gen-html
+       --org-name "$ORG" --repo-name "$REPO" --branch {{ odoo_version }} \
+       --addon-dir "$ADDON" --gen-html
    ```
-   One `--addon-dir` per changed module. Never hand-edit `README.rst` or
+   One run per changed module. Never hand-edit `README.rst` or
    `index.html` — they are generated files.
 6. **PR description** — draft the PR body (What / Why / Docs / Test plan) from
    the run's diff and return it in `PR_DESCRIPTION`; do not commit it anywhere.
