@@ -291,9 +291,21 @@ after that `create` or `user_ids` write, post one note per task that names them:
 
 - Create: `{"task_id": <id>, "name": "<short scenario>",
   "steps_to_execute": "<ol>…</ol>", "expected_results": "<p>…</p>"}` —
-  state defaults to `todo`.
-- Mark verified: `write {"passed": true, "state": "done"}`; failed stays
-  `todo` with a `comments` note; not applicable → `state: "cancelled"`.
+  state defaults to `not_run`.
+- The result is the `state`: `not_run` / `passed` / `failed` / `waiting` /
+  `not_applicable`. With it: `verified_by_id`, `verified_on`,
+  `verification_kind` (`manual` / `automated` / `demo`), `test_reference`.
+  `passed` is computed from the state: never write it.
+- Record a result: `write {"state": "passed", "verification_kind": "<kind>"}`;
+  `failed` the same way, what failed in `comments`; a case that does not apply →
+  `state: "not_applicable"`. A write of `passed` or `failed` stamps
+  `verified_by_id` and `verified_on` with you and now, also on a case already in
+  that state.
+  - `<kind>`: `automated` when a test proves the case, with `"test_reference":
+    "<selector>"` in the same write (e.g. `/module:TestClass.test_method`);
+    `manual` for a check by hand (shell, UI); `demo` for one the demo video
+    shows. A reference written earlier stays until a write replaces it.
+- Back to `not_run` clears verified by, on and the kind; the reference stays.
 
 ## Pull requests (`project.pull.request`) and resolution
 
