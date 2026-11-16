@@ -107,7 +107,7 @@ A task in a stage outside that list may have neither.
 
 Tabs on the form map to: Description → `description`, Technical Solution →
 `solution` (Html), Questions/Answers → `questions`/`answers`, Test Cases →
-`project.task.testcase`, Checklist → `project.task.subtask`.
+`project.task.testcase`, Checklist → `project.task.checklist.item` (`checklist_item_ids`).
 
 ## Technical Solution tab — `solution` + clarifying Q&A
 
@@ -277,15 +277,17 @@ after that `create` or `user_ids` write, post one note per task that names them:
    `exception` / `bounce` → tell the user.
 
 {% if task_ai_driven %}
-## Checklist (`project.task.subtask`)
+## Checklist (`project.task.checklist.item`)
 
-- Create: `{"task_id": <id>, "name": "<step>", "user_id": <owner uid>}`
-  (`user_id` is required); optional `deadline`.
+- Create: `{"task_id": <id>, "name": "<step>", "user_id": <owner uid>}`;
+  without `user_id` the item is yours; optional `deadline`. The task lists its
+  items in `checklist_item_ids`.
 - States: `todo` (default) / `done` / `waiting` / `cancelled` — complete a
   step with `write {"state": "done"}`.
-- Both with `<quiet>`: without `mail_auto_subscribe_no_notify`,
-  `send_subtask_email` messages the reviewer and the assignee on every
-  checklist create and on every change of `state`, `name` or `user_id`.
+- Only the item's assignee or reviewer changes its `state` or `name`.
+- Both with `<quiet>`: without `mail_auto_subscribe_no_notify`, a create and
+  every change of `state`, `name` or `user_id` notify the item's assignee and
+  reviewer, never you.
 
 ## Test cases (`project.task.testcase`)
 
@@ -369,7 +371,7 @@ task is a full task — it follows every create convention above (`name`,
 
 {% if task_ai_driven %}
 ⚠️ The **Sub-tasks tab** is `child_ids` (real child tasks) — **not** the
-Checklist model `project.task.subtask` above, despite the name.
+Checklist model `project.task.checklist.item` above.
 
 {% endif %}
 **Add a sub-task** — create the child with `parent_id` on the new task (don't
