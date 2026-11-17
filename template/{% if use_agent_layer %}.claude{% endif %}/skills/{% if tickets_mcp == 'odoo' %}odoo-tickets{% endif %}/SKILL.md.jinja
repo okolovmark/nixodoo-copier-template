@@ -98,7 +98,7 @@ take `id=<n>`.
 | `pr_uri` | Never on create. Reads the link of the task's first pull request. A write takes one pull request link and adds that pull request to the task. Never text. |
 | `pull_request_ids` | The task's pull requests (many2many to `project.pull.request`). Read it; link a pull request through `pr_uri`. |
 | `pr_legacy` | Read-only: the text `pr_uri` held before pull requests were records. |
-| `module_ids` | Never on create. The installed modules the task touches, filled from its pull requests. See [Modules of a task](#modules-of-a-task-module_ids). |
+| `module_ids` | Never on create. The installed modules the task touches, filled from its pull requests, on a task of the project that develops this Odoo only. See [Modules of a task](#modules-of-a-task-module_ids). |
 
 **The type and estimate rule.** In a project flagged AI-driven, a task enters a stage the
 project lists under "Stages Requiring a Type and an Estimate" only with a `task_type` and
@@ -375,13 +375,18 @@ that moves it carries `resolution` (see [Lifecycle](#lifecycle--stage-moves)).
 
 ## Modules of a task (`module_ids`)
 
-The installed modules a task touches (`project_ai_driven` 16.0.2.9.0 or later): `module_ids`,
+The installed modules a task touches (`project_ai_driven` 16.0.2.10.0 or later): `module_ids`,
 many2many to `ir.module.module`, read and written by project users. `module_names` gives their
 technical names in one read, sorted and joined with ", " (`"project_ai_driven, sale_stock"`),
 `false` on a task without modules.
 
-- **Fill from a pull request**: the top-level directory of each file the pull request changes
-  is a candidate name:
+They belong to the one AI-driven project that develops this Odoo database: the project flag
+`develops_this_odoo` (Develops This Odoo), at most one project per database, set by a Settings
+administrator. The task reads it too (`read` `project.task` `[<id>]` `["develops_this_odoo"]`):
+`false` → leave its Modules alone, the form hides them there.
+
+- **Fill from a pull request**, on a task whose `develops_this_odoo` is true: the top-level
+  directory of each file the pull request changes is a candidate name:
   `gh api repos/<owner>/<repo>/pulls/<n>/files --paginate --jq '.[].filename | split("/")[0]' | sort -u`.
   `search_read` `ir.module.module`
   `[["name", "in", [<names>]], ["state", "in", ["installed", "to upgrade", "to remove"]]]`
