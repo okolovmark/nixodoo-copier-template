@@ -249,7 +249,15 @@ message_post(model="project.task", res_id=<task_id>,
 Bold **Category** prefix: `Requirement Change` / `Design Decision` /
 `Bug Fix` / `Review Fix` / `User Feedback` / `Progress` / `Revised` (title and
 description revised before Delivered — see below) / `Deploy` (the exact
-commands a deploy ran — see the `deploy` skill).
+commands a deploy ran — see the `deploy` skill). The bold first words are the
+note's category: an internal note of a task opening with one of them carries it
+in `mail.message` `note_category` (`requirement_change`, `design_decision`,
+`bug_fix`, `review_fix`, `user_feedback`, `progress`, `revised`, `deploy`); any
+other opening has none. A task's notes of one category:
+`search_read` `mail.message` `[["model", "=", "project.task"], ["res_id", "=", <id>],
+["note_category", "=", "design_decision"]]` fields `["date", "author_id", "body"]`
+(project_ai_driven 16.0.2.8.0 or later). In Odoo: Project → Task Notes, or the
+task's Notes button.
 {% else %}
 Bold **Category** prefix: `Requirement Change` / `Design Decision` /
 `Bug Fix` / `Review Fix` / `User Feedback` / `Progress` / `Revised` (title and
