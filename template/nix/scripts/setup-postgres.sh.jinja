@@ -1,5 +1,6 @@
 # shellcheck shell=bash
-# Initialize the project-local PostgreSQL cluster and its systemd user service.
+# Initialize the project-local PostgreSQL cluster, its systemd user service and
+# the timer that caps its log.
 # Requires: POSTGRES_BIN - absolute path to the postgres binary; initdb on PATH
 # (both injected by flake.nix).
 set -e
@@ -18,26 +19,45 @@ export PGUSER="${PGUSER:-{{ db_user }}}"
 export PGPASSWORD="${PGPASSWORD:-{{ db_password }}}"
 export PGDATABASE="${PGDATABASE:-{{ db_name }}}"
 
-# Setup PostgreSQL
-if [ ! -d "$PGDATA" ]; then
-    echo "Initializing PostgreSQL database in $PGDATA"
-    initdb --auth=trust --no-locale --encoding=UTF8
-    cat >> "$PGDATA/postgresql.conf" << EOF
-unix_socket_directories = '$PGHOST'
+LOG_CAP=1G
+
+# Logging settings live in their own file, rewritten on every run and included
+# last from postgresql.conf, so a change here reaches clusters made before it.
+write_logging_conf() {
+    cat > "$PGDATA/logging.conf" << 'EOF'
+# Written by setup-postgres on every run: edits here are overwritten.
 log_destination = 'stderr'
 logging_collector = on
 log_directory = 'log'
 log_filename = 'postgresql.log'
+# Every statement is what makes the dev log worth reading. PostgreSQL never
+# truncates a log whose file name stays the same, whatever the rotation
+# settings, so the size cap is the postgres-log-cap timer, not rotation.
 log_statement = 'all'
-# 'all' is what makes the dev log useful, and it is also what makes it grow:
-# one project reached 33 GB in two months. Rotate by size into the same file
-# name, so the log stays capped and the documented path keeps working.
-log_rotation_size = 100MB
+log_rotation_size = 0
 log_rotation_age = 0
-log_truncate_on_rotation = on
+EOF
+    grep -qxF "include_if_exists = 'logging.conf'" "$PGDATA/postgresql.conf" \
+        || echo "include_if_exists = 'logging.conf'" >> "$PGDATA/postgresql.conf"
+    mkdir -p "$PGDATA/log"
+}
+
+# Setup PostgreSQL
+if [ -d "$PGDATA" ]; then
+    write_logging_conf
+    # A running cluster takes the logging settings on a reload.
+    if pg_ctl status > /dev/null 2>&1; then
+        pg_ctl reload > /dev/null
+        echo "Reloaded the running cluster's logging settings"
+    fi
+else
+    echo "Initializing PostgreSQL database in $PGDATA"
+    initdb --auth=trust --no-locale --encoding=UTF8
+    cat >> "$PGDATA/postgresql.conf" << EOF
+unix_socket_directories = '$PGHOST'
 listen_addresses = 'localhost'
 EOF
-    mkdir -p "$PGDATA/log"
+    write_logging_conf
 
     # initdb creates exactly one role, named after the OS user. Everything in
     # this project connects as $PGUSER instead, so the cluster that owns the
@@ -86,9 +106,35 @@ WantedBy=default.target
 EOF
 echo "  Created $POSTGRES_SERVICE_FILE"
 
+# PostgreSQL appends to postgresql.log forever, so a timer empties it once it
+# passes $LOG_CAP. Truncating in place is safe while the server runs: it writes
+# in append mode, and tail -f follows the truncation.
+LOG_CAP_SERVICE_FILE="$SYSTEMD_DIR/postgres{{ service_suffix }}-log-cap.service"
+cat > "$LOG_CAP_SERVICE_FILE" << EOF
+[Unit]
+Description=Empty the PostgreSQL dev log once it passes $LOG_CAP
+
+[Service]
+Type=oneshot
+Environment="PATH=%h/{{ nix_profile_rel }}/bin:/run/current-system/sw/bin:/usr/bin:/bin"
+ExecStart=/bin/sh -c "find '$PGDATA/log' -maxdepth 1 -name postgresql.log -size +$LOG_CAP -exec truncate -s 0 {} +"
+EOF
+cat > "${LOG_CAP_SERVICE_FILE%.service}.timer" << EOF
+[Unit]
+Description=Check the PostgreSQL dev log size every 15 minutes
+
+[Timer]
+OnCalendar=*:0/15
+
+[Install]
+WantedBy=timers.target
+EOF
+echo "  Created $LOG_CAP_SERVICE_FILE and its timer"
+
 echo
 echo "Reloading systemd daemon..."
 systemctl --user daemon-reload
+systemctl --user enable --now postgres{{ service_suffix }}-log-cap.timer
 echo
 echo "To enable and start the PostgreSQL service, run:"
 echo "  systemctl --user enable postgres{{ service_suffix }}.service"

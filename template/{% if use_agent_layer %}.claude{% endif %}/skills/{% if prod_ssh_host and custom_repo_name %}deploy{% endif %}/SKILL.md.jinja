@@ -550,10 +550,22 @@ the notes a test box loaded are announced to nobody.
   Report it with that line; never create the note by hand.
 - A note that already has another deployer, or is already published, is
   left as it is: report it.
+{% if tickets_mcp == 'odoo' %}
+- **Demo video**: for each unpublished note, the task with its key (`odoo-tickets` →
+  Resolve a ticket), then its newest demo: `search_read` `ir.attachment`
+  `[["res_model", "=", "project.task"], ["res_id", "=", <task id>], ["name", "=", "<KEY>_demo.mp4"]]`
+  fields `["id", "name", "file_size"]`, order `"create_date desc, id desc"`, limit 1.
+  Found, and the note's `demo_attachment_id` (`read` `release.note`) is empty: copy it onto
+  the note on the server, the file is never downloaded:
+  `execute` `ir.attachment` `copy` args `[[<attachment id>]]`
+  kwargs `{"default": {"res_model": "release.note", "res_id": <note id>}}`. The note
+  plays its newest video above its text. No demo on the task: nothing to copy, say so.
+{% endif %}
 
 Then tell the user{% if status_mcp == 'teams' %} (not the Teams chat){% endif %}, with each note's `_url`: "Read the
-release note and press **Publish** when it is right: that sends the OdooBot
-chat to the users of <models>." Publishing is theirs to do, never this skill's.
+release note{% if tickets_mcp == 'odoo' %}, watch its demo video (every reader of the note can play it, and it
+shows production-copy data){% endif %} and press **Publish** when it is right: that announces it in the
+main menu of the users of <models>." Publishing is theirs to do, never this skill's.
 {% endif %}
 {% if tickets_mcp == 'odoo' %}
 
@@ -619,6 +631,7 @@ numbers kept in Step 3.5.
    resolved per `odoo-tickets` → Resolve a ticket. No key → create it without `task_ids`
    and tell the user.
 5. A production deploy, exit 0 → fill the Modules of every task in the record's `task_ids`
+   whose project develops this Odoo (`develops_this_odoo` true on the task)
    again from all the files of its pull request (`odoo-tickets` → Modules of a task), now that
    the deploy installed what the pull request adds:
    `gh api repos/{{ repo_org }}/{{ custom_repo_name }}/pulls/<n>/files --paginate --jq '.[].filename | split("/")[0]' | sort -u`,

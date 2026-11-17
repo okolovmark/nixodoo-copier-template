@@ -95,7 +95,7 @@ A demo of a change is a scripted recording on a session env: `wt-browser.sh <slu
 - It runs as a user who holds the role the test case names, never as admin unless the case is about admin settings
 - It opens with a title card (task key and title, the role, "test copy") and carries English captions for a non-technical audience
 - File: `<task-key>_demo.mp4` (H.264, 1280x720, 25 fps, under 90 s)
-- It goes to the task it demonstrates{% if tickets_mcp == 'odoo' %} as an attachment with an internal note{% endif %}{% if status_mcp == 'teams' %}; Teams gets a link to the task{% endif %}. Never to a GitHub PR: the frames show data of the production copy
+- It goes to the task it demonstrates{% if tickets_mcp == 'odoo' %} as an attachment with an internal note{% if use_release_notes and prod_ssh_host %}, and the deploy copies it onto the task's release note{% endif %}{% endif %}{% if status_mcp == 'teams' %}; Teams gets a link to the task{% endif %}. Never to a GitHub PR: the frames show data of the production copy
 {% endif %}
 {% if use_kb %}
 
