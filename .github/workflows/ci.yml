@@ -51,6 +51,20 @@ jobs:
       - name: tests/test_setup_ssh_access.py (key pair pre-made, no ssh-keygen)
         run: uv run --no-project --with jinja2 python tests/test_setup_ssh_access.py
 
+  # Renders setup-postgres itself and runs it in scratch projects, so once per push.
+  setup-postgres:
+    name: setup-postgres corpus
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: false
+      - name: tests/test_setup_postgres.py (stubbed, plus a live cluster from the runner's PostgreSQL)
+        run: |
+          pg_bin=$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1)
+          PATH="${pg_bin:+$pg_bin:}$PATH" uv run --no-project --with jinja2 python tests/test_setup_postgres.py
+
   generate:
     runs-on: ubuntu-latest
     env:
