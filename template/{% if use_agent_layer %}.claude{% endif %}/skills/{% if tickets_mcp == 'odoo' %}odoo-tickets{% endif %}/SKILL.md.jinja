@@ -99,6 +99,7 @@ take `id=<n>`.
 | `pull_request_ids` | The task's pull requests (many2many to `project.pull.request`). Read it; link a pull request through `pr_uri`. |
 | `pr_legacy` | Read-only: the text `pr_uri` held before pull requests were records. |
 | `module_ids` | Never on create. The installed modules the task touches, filled from its pull requests, on a task of the project that develops this Odoo only. See [Modules of a task](#modules-of-a-task-module_ids). |
+| `session_ids` | Never on create. The agent sessions that worked on the task, a row each. See [Sessions of a task](#sessions-of-a-task-session_ids). |
 
 **The type and estimate rule.** In a project flagged AI-driven, a task enters a stage the
 project lists under "Stages Requiring a Type and an Estimate" only with a `task_type` and
@@ -398,6 +399,28 @@ administrator. The task reads it too (`read` `project.task` `[<id>]` `["develops
   is refused; a module uninstalled after it was added stays on the task. A module a person
   removed comes back when a later fill names it again.
 - **Read**: `read` `project.task` `[<id>]` `["module_names"]`.
+
+## Sessions of a task (`session_ids`)
+
+The agent sessions that worked on a task, one row each (`project_ai_driven` 16.0.2.12.0 or later):
+`project.task.session`, read and written by whoever can read its task; the Sessions tab of the form
+on an AI-driven project.
+
+| Field | Holds |
+|---|---|
+| `task_id` | The task (required). |
+| `session_id` | The agent session id (required): `echo $CLAUDE_CODE_SESSION_ID`; where `entire` records sessions, `entire session info <id>` opens it. No link is stored. |
+| `date` | When the row was written last (default now). |
+| `user_id` | Who worked (default the writer). |
+| `outcome` | One line: what the session did for the task. |
+
+- **Write** when a session closes (`pipeline` Phase 7 Step 0b, a child before its report):
+  `create` `project.task.session` `{"task_id": <id>, "session_id": "<id>", "outcome": "<line>"}`
+  with `<quiet>`. One row per task and session: a `create` naming a task and session that already
+  have a row updates that row with the values given (`date` now unless given) and returns it. Editing a
+  row by hand (`write`) changes only what it names.
+- **Read**: `search_read` `project.task.session` `[["task_id", "=", <id>]]`
+  fields `["date", "user_id", "session_id", "outcome"]`.
 {% else %}
 ## Test cases (internal notes)
 
