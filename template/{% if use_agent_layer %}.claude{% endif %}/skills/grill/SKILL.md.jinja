@@ -146,7 +146,12 @@ When the grill runs against a tracked task, persist per `odoo-tickets`:
 - every Q&A round → a `Design Decision` internal note (questions and answers as parallel numbered lists, one note per round)
 {% endif %}
 - a scope change or settled design call → a `Requirement Change` / `Design Decision` internal note
+{% if task_ai_driven %}
+- every question for a stakeholder → an `open` question row addressed to that person (`addressed_to_id`; named in the question when they have no login); the answer goes on its row when it comes
+- the rule tables (with who confirmed each and when) and the assumptions ledger → into the Technical Solution tab or a note, so they live on the ticket, not only in chat
+{% else %}
 - the stakeholder-questions list, the rule tables (with who confirmed each and when) and the assumptions ledger → into the Technical Solution tab or a note, so they live on the ticket, not only in chat
+{% endif %}
 {% endif %}
 
 ## In the pipeline

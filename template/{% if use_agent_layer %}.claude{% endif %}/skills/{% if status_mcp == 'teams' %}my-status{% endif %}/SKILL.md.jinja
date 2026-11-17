@@ -84,7 +84,9 @@ overrides the {{ identity }} (list mode only).
 4. **Estimate & propose today's plan.** Walk the sequence-ordered list and
    estimate each task's *remaining* effort. Base each estimate, in order of
    preference, on: `date_deadline`; `{{ hours }}` vs `effective_hours`; what
-   this session knows about the work; task messages. Budget ~6 focused h/day —
+   this session knows about the work; task messages{% if task_ai_driven %} (the task's `brief` field, when the
+   list fields are not enough: `search_read` `[["id", "=", <id>]]` `["brief"]`, one task at a time,
+   `odoo-tickets` → Read a task: the brief){% endif %}. Budget ~6 focused h/day —
    top tasks (by sequence) whose estimates fit that budget are the proposed
    **"Planned for today"** set; the rest are backlog. Thin evidence → mark "low
    confidence"; never invent precision.

@@ -67,7 +67,37 @@ says key, it means this reference. Reference → record: drop the prefix, then
 take `id=<n>`.
 {% endif %}
 
-## Creating a task — field conventions
+{% if task_ai_driven %}
+## Read a task: the brief
+
+`project.task` `brief` (`project_ai_driven` 16.0.2.14.0 or later) is the whole task as Markdown in
+one read, computed for you: `read` `project.task` `[<id>]` `["brief"]`. In order: the header ({% if task_keys %}key{% else %}`#<id>`{% endif %},
+title, project, stage and since when, type, estimate and size, priority, planned window, deadline,
+hours spent, assignees, UAT users where the field exists, author, Resolution, modules on a task of
+the project that develops this Odoo, tags, the form link), related tasks (parent,
+sub-tasks, blocked by, blocking), pull requests, description, question rows, solution, checklist with
+its progress, test cases with their results, sessions, the last 10 internal notes and the
+attachments. Question rows, checklist items, test cases and attachments carry their ids, so the
+writes that follow need no second read.
+
+- An attachment shows as a pointer: `![image: <name>](attachment <id>)`, `[file: <name>](attachment <id>)`
+  (without the name where it cannot be read, or with the link's text): read the file from
+  `ir.attachment` by that id when you need it. An image still inline in an old text shows as
+  `[image not yet moved to an attachment]`.
+- Urls of links and images lose their access tokens, urls in text on a best-effort basis (the
+  field's help says which may keep one): paste a brief only where the task's readers may read it.
+- Name the field: a `read` or `search_read` without a field list leaves it out, and it is not
+  exportable. One task per read: the task you work on, not a list.
+- A database without the field (`project_ai_driven` older than 16.0.2.14.0, or a branch it is not
+  ported to yet) reads the parts one by one: `read` `["name", {% if task_keys %}"key", {% endif %}"stage_id", "user_ids",
+  "task_type", "tshirt_estimate", "{{ hours }}", "effective_hours", "date_deadline", "child_ids",
+  "depend_on_ids"]`, then `["description"]` and `["solution"]` (heavy Html: one task at a time); the
+  question rows as the Technical Solution tab section reads them; test cases: `search_read`
+  `project.task.testcase` `[["task_id", "=", <id>]]` fields `["name", "state", "verification_kind",
+  "test_reference", "steps_to_execute", "expected_results"]`; checklist: `search_read`
+  `project.task.checklist.item` `[["task_id", "=", <id>]]` fields `["name", "state", "user_id"]`.
+
+{% endif %}## Creating a task — field conventions
 
 | Field | Convention |
 |---|---|
@@ -321,7 +351,8 @@ after that `create` or `user_ids` write, post one note per task that names them:
 - The result is the `state`: `not_run` / `passed` / `failed` / `waiting` /
   `not_applicable`. With it: `verified_by_id`, `verified_on`,
   `verification_kind` (`manual` / `automated` / `demo`), `test_reference`.
-  `passed` is computed from the state: never write it.
+  The result has no passed flag, and `todo` / `done` / `cancelled` are refused
+  (`project_ai_driven` 16.0.2.15.0 or later; a branch not ported yet still has both).
 - Record a result: `write {"state": "passed", "verification_kind": "<kind>"}`;
   `failed` the same way, what failed in `comments`; a case that does not apply →
   `state: "not_applicable"`. A write of `passed` or `failed` stamps
