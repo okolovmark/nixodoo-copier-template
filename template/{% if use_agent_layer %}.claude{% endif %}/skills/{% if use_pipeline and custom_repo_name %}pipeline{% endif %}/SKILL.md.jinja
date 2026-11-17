@@ -1275,7 +1275,17 @@ one in this project's own repo from `<ENVREPO>`, one in another repo) gets one w
 link, each right after that PR is opened. Only a pull request link goes into `pr_uri`
 (`odoo-tickets` → Pull requests and resolution).
 
-Report: "PR created: <URL>; recorded on <TASK-KEYS>"
+**Fill the tasks' Modules** from the same pull request, right after its link is written: on
+each of those tasks, the installed modules whose top-level directories the pull request
+changes go into `module_ids` with `[4, id]` commands (`odoo-tickets` → Modules of a task).
+A pull request in a repository without modules adds nothing.{% if prod_ssh_host %} The `deploy` skill fills
+the tasks of a pull request to `{{ custom_repo_name }}` again from the whole pull request once it is
+deployed: that adds a module the pull request creates (not installed before) and the modules of
+commits pushed after this fill. A pull request in another repository gets those by hand, the same
+way, after its deploy.{% endif %}
+
+
+Report: "PR created: <URL>; recorded on <TASK-KEYS>, modules <names or none>"
 {% else %}
 Report: "PR created: <URL>"
 {% endif %}

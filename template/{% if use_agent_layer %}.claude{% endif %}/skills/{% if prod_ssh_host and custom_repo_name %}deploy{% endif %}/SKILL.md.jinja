@@ -605,7 +605,7 @@ numbers kept in Step 3.5.
    ```
 
 2. `search_read` `project.pull.request` `[["url", "in", [<urls>]]]`, fields
-   `["url", "state", "merge_date", "deploy_date"]`.
+   `["url", "state", "merge_date", "deploy_date", "task_ids"]`.
 3. `write` each record found, with the quiet context (`odoo-tickets` → Connection &
    context flags):
    - deploy exit 0 → `{"state": "merged", "merge_date": "<merge time>", "deploy_date": "<DEPLOY_TS>"}`,
@@ -618,14 +618,21 @@ numbers kept in Step 3.5.
    (`gh pr view <n> -R {{ repo_org }}/{{ custom_repo_name }} --json title,body,headRefName`), each
    resolved per `odoo-tickets` → Resolve a ticket. No key → create it without `task_ids`
    and tell the user.
+5. A production deploy, exit 0 → fill the Modules of every task in the record's `task_ids`
+   again from all the files of its pull request (`odoo-tickets` → Modules of a task), now that
+   the deploy installed what the pull request adds:
+   `gh api repos/{{ repo_org }}/{{ custom_repo_name }}/pulls/<n>/files --paginate --jq '.[].filename | split("/")[0]' | sort -u`,
+   searched installed as that section says, written as `{"module_ids": [[4, <id>], ...]}` with
+   the quiet context. This adds a module the pull request creates and the modules of commits
+   pushed after the pipeline's fill. None found: no write.
 
 {% if test_ssh_hosts %}
 A deploy to a test alias writes `state` and `merge_date` only, whatever its exit:
 `deploy_date` is the deploy to production.
 
 {% endif %}
-Report one line per record: its link, `merged <merge time>`, and `deployed <DEPLOY_TS>`
-or `not deployed`.
+Report one line per record: its link, `merged <merge time>`, `deployed <DEPLOY_TS>`
+or `not deployed`, and the modules step 5 wrote, if any.
 {% else %}
   too. This is the only task write on the failure path.
 {% endif %}
