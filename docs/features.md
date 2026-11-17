@@ -37,9 +37,10 @@ The full inventory behind the summary in [the README](../README.md#what-it-gener
   mother session that grills and deploys and a child session that develops; see
   [ADR 0001](adr/0001-pipeline-mother-and-child-sessions.md); with `use_release_notes`, a
   user-facing release note written after the docs as a file in the PR, which the deploy skill
-  stamps with its deployer), **release-note** (with `use_release_notes`: how that note is
-  written, and the holder module `<module_prefix>_release_notes` that keeps the note files for
-  the shared `release_notes` engine), **my-status**
+  stamps with its deployer and gives the task's demo video), **release-note** (with
+  `use_release_notes`: how that note is written, and the holder module
+  `<module_prefix>_release_notes` that keeps the note files for the shared `release_notes`
+  engine), **my-status**
   (status posting, Teams), **teams-message** (readable Teams messages: HTML Teams
   actually renders, recipient verified by email, draft before send),
   **odoo-tickets** (ticket tracking in a prod Odoo),

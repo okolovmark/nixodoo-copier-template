@@ -1,7 +1,7 @@
 {% set action_href = '/odoo/action-' if odoo_major | int >= 18 else '/web#action=' %}
 ---
 name: release-note
-description: "Write the user-facing release note for a task as a file in the addons PR ({{ module_prefix }}_release_notes/notes/<key>.html): a short, friendly what-changed page in the style of VS Code's monthly notes, with buttons that open the new screen. Users get it in Odoo as an OdooBot chat once the deployer publishes it. Use in pipeline Phase 4b (after Documentation), or when asked to write, fix or skip a release note for a task."
+description: "Write the user-facing release note for a task as a file in the addons PR ({{ module_prefix }}_release_notes/notes/<key>.html): a short, friendly what-changed page in the style of VS Code's monthly notes, with buttons that open the new screen. Users see it announced in Odoo's main menu once the deployer publishes it. Use in pipeline Phase 4b (after Documentation), or when asked to write, fix or skip a release note for a task."
 ---
 
 # Release note
@@ -31,15 +31,18 @@ holder module, `{{ module_prefix }}_release_notes` (next section).
    either.
 {% if prod_ssh_host %}
 3. The `deploy` skill (Step 7.5) stamps **Deployed by** with the person who
-   deployed.
+   deployed{% if tickets_mcp == 'odoo' %} and copies the task's demo video, if it has one, onto the
+   note{% endif %}.
 {% else %}
 3. Whoever deployed sets **Deployed by** to themselves on the note: a Release
    Notes manager can, while it is empty.
 {% endif %}
-4. That person opens the note in Odoo (Release Notes menu), reads it, checks the
-   buttons, and presses **Publish**. Only they can. Publishing sends an OdooBot
-   direct chat with a link to every active internal user who can read at least
-   one of the note's models. No email.
+4. That person opens the note in Odoo (Release Notes menu), reads it, watches
+   its video, checks the buttons, and presses **Publish**. Only they can.
+   Publishing announces the note in the main menu of every active internal
+   user who can read at least one of the note's models: a counter on the menu
+   icon and a panel with **View** and **Skip**, until the user opens or skips
+   it. No chat, no email.
 
 ## The holder module
 
@@ -98,11 +101,11 @@ Header (all lines `name: value`, between the two `---` lines):
 
 | Field | Rule |
 |---|---|
-| `key` | The task key, exactly. The loader matches on it. |
+| `key` | The task key, exactly. The loader matches on it, and the note links it to the task where the holder module sets a ticket link. |
 | `title` | What changed, from the user's side, ≤ 70 chars. Not the ticket title. |
-| `summary` | One sentence, the line users see in the chat. |
+| `summary` | One sentence under the title: what changed for the user. |
 | `tags` | Comma-separated work areas. The engine seeds Sales, Purchase Orders, Inventory, Manufacturing, Projects, Accounting, HR, Maintenance, Quality, Shipping, CRM: use these names; any other name creates a new tag, so add one only for a real new area. |
-| `models` | Comma-separated technical model names, 1–3: the business documents the change is about. They decide who is notified (users who can read one of them), so not every model the diff touches: never `res.partner`, `product.product`, `mail.thread` unless the change is about them. |
+| `models` | Comma-separated technical model names, 1–3: the business documents the change is about. They decide who is announced the note (users who can read one of them), so not every model the diff touches: never `res.partner`, `product.product`, `mail.thread` unless the change is about them. |
 
 ## The body
 

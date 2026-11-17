@@ -1177,7 +1177,11 @@ Per `odoo-tickets` → Attachments: `begin_upload` `<TASK-KEY>_demo.mp4` to the 
   goes on.
 - **A new take after a fix round**: a new attachment and a new note; the earlier video
   stays on the task.
-- **Never on the GitHub PR**: the frames show data of the production copy.
+{% if use_release_notes %}- **The release note**: the deploy (Step 7.5) copies the task's newest
+  `<TASK-KEY>_demo.mp4` onto the task's release note, where every reader of the note can
+  play it. So the frames show nothing the note's audience may not see; the deployer
+  watches it before Publish.
+{% endif %}- **Never on the GitHub PR**: the frames show data of the production copy.
 {% if status_mcp == 'teams' %}
 - **Teams**: a message about the demo carries the link to the task, never the file.
 {% endif %}
