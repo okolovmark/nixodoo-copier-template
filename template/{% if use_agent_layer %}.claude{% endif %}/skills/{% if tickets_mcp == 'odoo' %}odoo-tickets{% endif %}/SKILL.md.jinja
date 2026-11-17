@@ -98,6 +98,7 @@ take `id=<n>`.
 | `pr_uri` | Never on create. Reads the link of the task's first pull request. A write takes one pull request link and adds that pull request to the task. Never text. |
 | `pull_request_ids` | The task's pull requests (many2many to `project.pull.request`). Read it; link a pull request through `pr_uri`. |
 | `pr_legacy` | Read-only: the text `pr_uri` held before pull requests were records. |
+| `module_ids` | Never on create. The installed modules the task touches, filled from its pull requests. See [Modules of a task](#modules-of-a-task-module_ids). |
 
 **The type and estimate rule.** In a project flagged AI-driven, a task enters a stage the
 project lists under "Stages Requiring a Type and an Estimate" only with a `task_type` and
@@ -371,6 +372,27 @@ lists under "Stages Requiring a Resolution" only with a `resolution`:
 
 A task with no pull request and no `resolution` does not enter such a stage: the write
 that moves it carries `resolution` (see [Lifecycle](#lifecycle--stage-moves)).
+
+## Modules of a task (`module_ids`)
+
+The installed modules a task touches (`project_ai_driven` 16.0.2.9.0 or later): `module_ids`,
+many2many to `ir.module.module`, read and written by project users. `module_names` gives their
+technical names in one read, sorted and joined with ", " (`"project_ai_driven, sale_stock"`),
+`false` on a task without modules.
+
+- **Fill from a pull request**: the top-level directory of each file the pull request changes
+  is a candidate name:
+  `gh api repos/<owner>/<repo>/pulls/<n>/files --paginate --jq '.[].filename | split("/")[0]' | sort -u`.
+  `search_read` `ir.module.module`
+  `[["name", "in", [<names>]], ["state", "in", ["installed", "to upgrade", "to remove"]]]`
+  fields `["id", "name"]`, then `write` `project.task` `[<task_id>]`
+  `{"module_ids": [[4, <id>], ...]}` with `<quiet>`, one `[4, id]` per module found. `[4, id]`
+  only adds: what is on the task stays. A name that is no installed module (`docs`, a file at
+  the root, a module not installed yet) is left out.
+- **Correct by hand**: the Modules tags on the task form. Adding a module that is not installed
+  is refused; a module uninstalled after it was added stays on the task. A module a person
+  removed comes back when a later fill names it again.
+- **Read**: `read` `project.task` `[<id>]` `["module_names"]`.
 {% else %}
 ## Test cases (internal notes)
 
