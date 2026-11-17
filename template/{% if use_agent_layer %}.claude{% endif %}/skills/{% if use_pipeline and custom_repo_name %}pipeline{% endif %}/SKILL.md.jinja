@@ -25,7 +25,7 @@ that deploys and closes.
 | Session | Runs | Hands over |
 |---------|------|------------|
 | **mother** | Phase 0, Phase 1 (the task, what kb knows, the grill, the status, the ticket with test cases), then the brief and the child's start; afterwards the PR and CI check, the deploy on the user's command, Phase 7 | the brief |
-| **child** | its own worktree env, Phase 2 dev, 3 QC gate, 4 docs{% if use_release_notes %}, 4b release note{% endif %}, 5 demo video, 6 PR, a session note | the report |
+| **child** | its own worktree env, Phase 2 dev, 3 QC gate, 4 docs{% if use_release_notes %}, 4b release note{% endif %}, 5 demo video, 6 PR, a session note{% if tickets_mcp == 'odoo' and task_ai_driven %} and its session row{% endif %} | the report |
 
 - **Which one is this session?** A child is started with a pipeline brief: its title starts
   with `[child] `, and it loads this skill with `child <TASK-KEYS>`. A child follows
@@ -829,6 +829,10 @@ A child starts from a brief, loads this skill with `child <TASK-KEYS>`, and runs
 {% else %}
 5. **No journal entry**: the mother's Phase 7 writes the run's.
 {% endif %}
+{% if tickets_mcp == 'odoo' and task_ai_driven %}
+   Then **the session row** on each task of the brief, as the mother's Phase 7 Step 0b writes
+   it, its outcome line about this child's part.
+{% endif %}
 6. **The child report** is its last message. The mother's note quotes its first 400
    characters, so the PR comes first:
 
@@ -1321,6 +1325,17 @@ Teardown is **user-gated**: only when the user explicitly says the session /
 task is finished do you **ask** — "drop the worktree `<slug>` (env + DB)?" —
 and run `wt-stop.sh <slug>` **only after they say yes**. Never infer "done"
 from a green pipeline or a merged/awaiting-review PR.
+{% if tickets_mcp == 'odoo' and task_ai_driven %}
+
+#### Step 0b: The session row on each task
+
+Every task of the block gets this session's row on its Sessions tab (`odoo-tickets` → Sessions
+of a task): `create` `project.task.session` `{"task_id": <id>, "session_id":
+"<this session's id: echo $CLAUDE_CODE_SESSION_ID>", "outcome": "<one line: what this session
+did for the task>"}` with the quiet context. A second close of the same session updates its row.
+A database without the model (`project_ai_driven` older than 16.0.2.12.0, or a branch it is not
+ported to yet) skips this step.
+{% endif %}
 
 {% if use_kb %}
 #### Step 1: Close the run's kb task{% if tickets_mcp == 'odoo' %} (and the ticket together){% endif %}
