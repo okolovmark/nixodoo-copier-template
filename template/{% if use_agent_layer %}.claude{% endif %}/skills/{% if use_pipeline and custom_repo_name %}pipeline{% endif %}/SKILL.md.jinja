@@ -1003,8 +1003,9 @@ returns no closing block. The fix brief waits for every verdict.
      `verification_kind`: `automated` and the test's selector in `test_reference` when a
      test proves it, `manual` for a shell or UI check, `demo` for the demo video. A case
      that does not apply → `not_applicable`.
-   - **Post a `Progress` note** (per `odoo-tickets`): "<b>Progress</b> — Test Case
-     Verification: X/Y passed. [Details of any failures and fixes]"
+   - **Post a `Progress` note** (per `odoo-tickets`): "<p><b>Progress</b> — Test Case
+     Verification: X/Y passed. [Details of any failures and fixes]</p>". Keep the `<p>`:
+     a body with no block tag is stored wrapped in `<span>` and gets no category.
 {% else %}
 6. **Test Case Verification (MANDATORY)** — verify EVERY test case from the
    task's `Test Cases` note posted in Phase 1. Do NOT skip; if one can't be
