@@ -631,6 +631,7 @@ numbers kept in Step 3.5.
    resolved per `odoo-tickets` → Resolve a ticket. No key → create it without `task_ids`
    and tell the user.
 5. A production deploy, exit 0 → fill the Modules of every task in the record's `task_ids`
+   whose project develops this Odoo (`develops_this_odoo` true on the task)
    again from all the files of its pull request (`odoo-tickets` → Modules of a task), now that
    the deploy installed what the pull request adds:
    `gh api repos/{{ repo_org }}/{{ custom_repo_name }}/pulls/<n>/files --paginate --jq '.[].filename | split("/")[0]' | sort -u`,
