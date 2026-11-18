@@ -9,7 +9,9 @@
 # Between the two, the schema catches up with the worktree's code: one `odoo -u`
 # of the installed custom modules whose files differ between the worktree and the
 # last origin/{{ odoo_version }} commit before the dump's day, read from its name
-# <db>_YYYY-MM-DD-HH-MM-SS.dump (named otherwise: every installed custom module).
+# <db>_YYYY-MM-DD-HH-MM-SS.dump (named otherwise: every installed custom module),
+# plus every installed module of the session's addons farm whose manifest version is
+# newer than the dump's (a pin bump of another repo, a release deployed after the dump).
 # A dump older than the code otherwise fails the registry load on a column added
 # since. The day starts at its earliest instant anywhere (UTC+14), as the name's
 # clock is the dump host's: a needless update costs minutes, a missed one breaks
@@ -31,6 +33,7 @@ DB="$(db_name_for "$SLUG")"
 CONF="$WT_ENVROOT/$SLUG/odoo.conf"
 WT_PATH="$WT_ROOT/$SLUG"
 FILESTORE="$WT_ENVROOT/$SLUG/data/filestore"   # <data_dir>/filestore/<db>, data_dir as wt-start writes it
+FARM="$WT_ENVROOT/$SLUG/data/addons/{{ odoo_version }}"   # the session's addons farm wt-start links
 ODOO_BIN="$HOME/{{ nix_profile_rel }}/bin/odoo"
 
 # The env's start lock for the whole run (wt-start holds it already around this one): a
@@ -119,6 +122,25 @@ for query in get_neutralization_queries(os.environ["WT_NEUTRALIZE_MODULES"].spli
 env.cr.commit()
 PY
 }
+# Prints, from rows "name|latest_version" on stdin, the modules whose manifest in the farm
+# ($2) is newer, its version completed with the series ($1) as Odoo's adapt_version does.
+VERSIONS_AHEAD='
+import ast, os, sys
+series, farm = sys.argv[1], sys.argv[2]
+def full(version):
+    return version if version != series and version.startswith(series + ".") else series + "." + version
+def key(version):
+    return tuple(int(part) if part.isdigit() else -1 for part in version.split("."))
+for row in sys.stdin:
+    name, _, latest = row.rstrip("\n").partition("|")
+    path = os.path.join(farm, name, "__manifest__.py")
+    if not name or not os.path.isfile(path):
+        continue
+    with open(path) as manifest:
+        version = str(ast.literal_eval(manifest.read()).get("version", "1.0"))
+    if key(full(version)) > key(latest or "0"):
+        print(name)
+'
 # Until the rename every exit drops the copy, set -e's included: a neutralized but
 # unfinished copy left behind would only confuse the next run.
 STAGING_OPEN=1
@@ -146,14 +168,25 @@ echo "STATUS: neutralizing $STAGING_DB (odoo neutralize) …"
 
 INSTALLED="$($PSQL -d "$STAGING_DB" -tAc "SELECT name FROM ir_module_module WHERE state IN ('installed', 'to upgrade')")" \
     || abort_restore "cannot read the installed modules of $STAGING_DB"
-UPDATE_MODULES="$(LC_ALL=C comm -12 <(LC_ALL=C sort -u <<< "$CHANGED") <(LC_ALL=C sort -u <<< "$INSTALLED") | paste -sd, -)"
+CHANGED_INSTALLED="$(LC_ALL=C comm -12 <(LC_ALL=C sort -u <<< "$CHANGED") <(LC_ALL=C sort -u <<< "$INSTALLED") | paste -sd, -)"
+# A module of the farm whose manifest is newer than the dump's latest_version (an
+# addons.yaml pin bump of another repo, a release deployed after the dump) changed no
+# file of the worktree, yet a changed module that depends on it loads views and fields
+# it does not have until it is updated too. A module the farm does not hold (Odoo's
+# own) is left out: an Odoo pin bump still needs `-u all` by hand.
+AHEAD="$($PSQL -d "$STAGING_DB" -tA -F '|' \
+          -c "SELECT name, latest_version FROM ir_module_module WHERE state IN ('installed', 'to upgrade')" \
+        | python3 -I -c "$VERSIONS_AHEAD" "{{ odoo_version }}" "$FARM")" \
+    || abort_restore "cannot compare the installed module versions of $STAGING_DB with $FARM"
+UPDATE_MODULES="$(printf '%s\n%s\n' "${CHANGED_INSTALLED//,/$'\n'}" "$AHEAD" | sed '/^$/d' | LC_ALL=C sort -u | paste -sd, -)"
+AHEAD="$(sed '/^$/d' <<< "$AHEAD" | LC_ALL=C sort -u | paste -sd, -)"
 if [ -z "$UPDATE_MODULES" ]; then
-    echo "STATUS: no custom module $SCOPE is installed: no update"
+    echo "STATUS: no custom module $SCOPE is installed and none is newer on disk than in the dump: no update"
 else
     UPDATE_LOG="$WT_ENVROOT/$SLUG/update.log"
     : > "$UPDATE_LOG"
     # no -i for a dependency a changed manifest gained: button_upgrade installs it
-    echo "STATUS: updating $STAGING_DB, custom modules $SCOPE: $UPDATE_MODULES (log: $UPDATE_LOG) …"
+    echo "STATUS: updating $STAGING_DB, custom modules $SCOPE: ${CHANGED_INSTALLED:-none}${AHEAD:+; newer on disk than in the dump: $AHEAD} (log: $UPDATE_LOG) …"
     {{ project_dir_var }}="$PROJ" "$ODOO_BIN" -c "$CONF" -d "$STAGING_DB" -u "$UPDATE_MODULES" --stop-after-init --logfile="$UPDATE_LOG" \
         || { tail -n 20 "$UPDATE_LOG" >&2 || true
              abort_restore "updating $UPDATE_MODULES failed (log: $UPDATE_LOG)"; }

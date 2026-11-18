@@ -1510,6 +1510,7 @@ INSTALLED = ("base", *(f"acme_{name}" for name in "abcdefghi"))
 CHANGED = "acme_b,acme_c,acme_d,acme_f,acme_g,acme_h,acme_i"
 EVERY_CUSTOM = "acme_a,acme_b,acme_c,acme_d,acme_f,acme_g,acme_h,acme_i"
 FILESTORE = ".worktrees/_env/x/data/filestore"
+FARM = ".worktrees/_env/x/data/addons/16.0"
 
 
 def git(repo, *args, when=None):
@@ -1589,7 +1590,8 @@ sys.exit(int(sys.argv[2]))
 
 
 def wt_restore_project(root, dump=DUMP, installed=INSTALLED, installed_after=None, update_rc=0, shell_rc=0,
-                       exists="", neutralized=True, tz="UTC", filestore=(), update_log_dir=False, **history):
+                       exists="", neutralized=True, tz="UTC", filestore=(), update_log_dir=False, versions=None,
+                       **history):
     """Lay out a project at `root` with the rendered wt-restore.sh for slug `x` on an acme_history worktree.
 
     psql, pg_restore and the profile's odoo are stubs logging their argv, in call
@@ -1599,7 +1601,9 @@ def wt_restore_project(root, dump=DUMP, installed=INSTALLED, installed_after=Non
     `installed_after` when given; odoo on a `-u` files an attachment in the
     staging DB's filestore and exits `update_rc`, and `odoo shell` runs its stdin
     under SHELL_STUB and exits `shell_rc`. `filestore` lists files there
-    beforehand; `update_log_dir` makes update.log a directory.
+    beforehand; `update_log_dir` makes update.log a directory. `versions` maps a module
+    to (its latest_version in the dump, its manifest version in the session farm or None
+    for a module the farm does not hold); psql answers the version query with them.
     Returns the command of a run, its environment and the calls file.
     """
     scripts, bin_dir, odoo_bin, calls = root / "scripts", root / "bin", root / ".nix-profile/bin", root / "calls"
@@ -1616,12 +1620,19 @@ def wt_restore_project(root, dump=DUMP, installed=INSTALLED, installed_after=Non
     for src in (RESTORE_SRC, COMMON_SRC):
         (scripts / src.name.removesuffix(".jinja")).write_text(render_script(src))
     (root / "shell.py").write_text(SHELL_STUB)
+    version_rows = []
+    for module, (in_dump, on_disk) in (versions or {}).items():
+        version_rows.append(f"{module}|{in_dump}")
+        if on_disk is not None:
+            (root / FARM / module).mkdir(parents=True)
+            (root / FARM / module / "__manifest__.py").write_text(f"{{'name': 'M', 'version': {on_disk!r}}}\n")
     attachment, updated = root / FILESTORE / "wt_x_restoring/ab/ab12", root / "updated"
     after = shlex.join(installed if installed_after is None else installed_after)
     stubs = {
         bin_dir / "psql": f'case "$*" in\n  *pg_database*) printf "%s" {shlex.quote(exists)} ;;\n'
                           f'  *is_neutralized*) echo {"true" if neutralized else ""} ;;\n'
                           '  *"FROM res_users"*) echo 1 ;;\n'
+                          f'  *latest_version*) printf "%s\\n" {shlex.join(version_rows)} | sed "/^$/d" ;;\n'
                           f'  *ir_module_module*) if [ -e {updated} ]; then printf "%s\\n" {after}; '
                           f'else printf "%s\\n" {shlex.join(installed)}; fi ;;\nesac\n',
         bin_dir / "pg_restore": "",
@@ -1694,6 +1705,38 @@ def a_moved_file_and_a_non_ascii_path_name_their_module():
 def a_session_branch_commit_older_than_the_dump_is_updated():
     rc, out, calls, _files = run_wt_restore(session=True)
     assert (rc, updated_modules(calls)) == (0, "acme_a," + CHANGED), (rc, calls, out)
+
+
+AHEAD_VERSIONS = {
+    "pinned_ahead": ("16.0.2.6.1", "16.0.2.15.0"),  # a pin bump: 15 > 6 as numbers, not as text
+    "short_ahead": ("16.0.1.0.0", "1.1.0"),         # a manifest without the series
+    "same": ("16.0.1.0.0", "1.0.0"),
+    "older_on_disk": ("16.0.3.0.0", "16.0.2.0.0"),
+    "not_in_farm": ("16.0.1.0", None),               # Odoo's own module
+}
+
+
+@case
+def a_module_newer_on_disk_than_in_the_dump_is_updated_with_the_changed_ones():
+    rc, out, calls, _files = run_wt_restore(versions=AHEAD_VERSIONS)
+    assert (rc, updated_modules(calls)) == (0, CHANGED + ",pinned_ahead,short_ahead"), (rc, calls, out)
+    assert f"since the dump (2026-10-13): {CHANGED}; newer on disk than in the dump: pinned_ahead,short_ahead" \
+        in out, out
+
+
+@case
+def a_module_newer_on_disk_is_updated_when_no_file_changed_since_the_dump():
+    rc, out, calls, _files = run_wt_restore("odoo_2026-10-20-01-00-00.dump", versions=AHEAD_VERSIONS, dirty=False)
+    assert (rc, updated_modules(calls)) == (0, "pinned_ahead,short_ahead"), (rc, calls, out)
+    assert "(2026-10-20): none; newer on disk than in the dump: pinned_ahead,short_ahead" in out, out
+
+
+@case
+def modules_level_with_the_dump_add_nothing_to_the_update():
+    level = {name: versions for name, versions in AHEAD_VERSIONS.items() if not name.endswith("_ahead")}
+    rc, out, calls, _files = run_wt_restore(versions=level)
+    assert (rc, updated_modules(calls)) == (0, CHANGED), (rc, calls, out)
+    assert "newer on disk" not in out, out
 
 
 @case
