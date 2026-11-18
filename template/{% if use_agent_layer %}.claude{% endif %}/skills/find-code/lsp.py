@@ -450,6 +450,8 @@ def ensure_daemon():
 
 
 def resolve_pos(path, line_1, sym_or_col):
+    if not os.path.exists(path):
+        sys.exit(f"{os.path.relpath(path, ROOT)} no longer exists; {GONE_HINT}")
     with open(path, encoding="utf-8", errors="replace") as f:
         lines = f.read().split("\n")
     if line_1 < 1 or line_1 > len(lines):
@@ -471,16 +473,35 @@ def fmt_loc(loc):
     return f"{rel}:{rng.get('start', {}).get('line', 0) + 1}"
 
 
+# The daemon is shared by every session of the project, and a session that opens a file of
+# its own worktree leaves that file in the server's index after the worktree is removed.
+GONE_HINT = "a removed worktree? `lsp.py restart` drops such files from the index"
+
+
+def loc_alive(loc):
+    """True when the file of a fmt_loc() 'path:line' still exists."""
+    path = loc.rsplit(":", 1)[0]
+    return os.path.exists(path if os.path.isabs(path) else os.path.join(ROOT, path))
+
+
+def note_gone(n):
+    if n:
+        print(f"({n} result(s) in files that no longer exist skipped: {GONE_HINT})", file=sys.stderr)
+
+
 def print_locs(result, empty_msg):
-    if not result:
-        print(empty_msg)
-        return 0
-    locs = result if isinstance(result, list) else [result]
-    seen = []
+    locs = result if isinstance(result, list) else ([result] if result else [])
+    seen, gone = [], 0
     for loc in locs:
         s = fmt_loc(loc)
-        if s not in seen:
+        if not loc_alive(s):
+            gone += 1
+        elif s not in seen:
             seen.append(s)
+    note_gone(gone)
+    if not seen:
+        print(empty_msg)
+        return 0
     for s in seen:
         print(s)
     return len(seen)
@@ -595,12 +616,14 @@ def main():
         # catches what the index does not. References themselves stay semantic.
         resp = cli_send({"op": "query", "method": "workspace/symbol",
                          "params": {"query": ident}, "timeout": 90})
-        defs, seen = [], set()
+        defs, seen, gone = [], set(), 0
         for h in resp.get("result") or []:
             if h.get("name", "").strip("\"'") != ident:
                 continue
             loc = fmt_loc(h.get("location", {}))
-            if loc not in seen:
+            if not loc_alive(loc):
+                gone += 1
+            elif loc not in seen:
                 seen.add(loc)
                 defs.append((loc, SYMBOL_KINDS.get(h.get("kind"), str(h.get("kind")))))
         rg = subprocess.run(
@@ -615,6 +638,7 @@ def main():
                 seen.add(loc)
                 defs.append((loc, "field" if "fields." in text else "method"))
         if not defs:
+            note_gone(gone)
             sys.exit(f"no definition of '{ident}' found — check the spelling, or search: lsp.py sym {ident}")
         cap = 8  # a name defined in more places than this needs narrowing, not scrolling
         total_refs = 0
@@ -634,7 +658,9 @@ def main():
             refs = []
             for one in locs:
                 where = fmt_loc(one)
-                if where != loc and where not in printed and where not in refs:
+                if not loc_alive(where):
+                    gone += 1
+                elif where != loc and where not in printed and where not in refs:
                     refs.append(where)
             printed.update(refs)
             for where in refs:
@@ -644,6 +670,7 @@ def main():
             total_refs += len(refs)
         if len(defs) > cap:
             print(f"... +{len(defs) - cap} more definitions (narrow with: lsp.py sym {ident})")
+        note_gone(gone)
         print("(refs are a lower bound — dynamic call sites, lambdas in filtered()/mapped() and "
               "attrs=/domain strings are invisible; cross-check with grep before claiming 'unused'. "
               "Never pipe this into head/tail.)", file=sys.stderr)
@@ -656,15 +683,19 @@ def main():
         resp = cli_send({"op": "query", "method": "workspace/symbol",
                          "params": {"query": query}, "timeout": 90})
         result = resp.get("result") or []
-        rows = []
+        rows, gone = [], 0
         for h in result:
             name = h.get("name", "")
             if cmd == "model" and name.strip("\"'") != query:
                 continue
-            loc = h.get("location", {})
-            row = (name, SYMBOL_KINDS.get(h.get("kind"), str(h.get("kind"))), fmt_loc(loc))
+            where = fmt_loc(h.get("location", {}))
+            if not loc_alive(where):
+                gone += 1
+                continue
+            row = (name, SYMBOL_KINDS.get(h.get("kind"), str(h.get("kind"))), where)
             if row not in rows:
                 rows.append(row)
+        note_gone(gone)
         if not rows:
             print("no symbols found")
             sys.exit(1)
