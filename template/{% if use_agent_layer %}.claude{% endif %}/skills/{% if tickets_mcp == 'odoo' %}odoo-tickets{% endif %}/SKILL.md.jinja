@@ -59,12 +59,12 @@ argument-hint: "[{{ ticket_prefix }}-key or task id] [action]"
 {{ ticket_prefix }} key → id: `search_read` `project.task` `[["key", "=", "{{ ticket_prefix }}-xxxx"]]`
 fields `["id", "name", "stage_id", "user_ids"]`. From a URL, take `id=<n>`.
 {% else %}
-This Odoo has no OCA project_key, so `project.task` has no `key` field: never
-put `key` in a domain or a field list. A task's reference is
-`{{ ticket_prefix }}-<id>`, its record id behind the prefix; wherever a skill
-says key, it means this reference. Reference → record: drop the prefix, then
-`read [<id>]` fields `["id", "name", "stage_id", "user_ids"]`. From a URL,
-take `id=<n>`.
+This Odoo gives tasks no key (neither project_ai_driven 16.0.2.17.0 or later nor
+OCA project_key), so `project.task` has no `key` field: never put `key` in a
+domain or a field list. A task's reference is `{{ ticket_prefix }}-<id>`, its
+record id behind the prefix; wherever a skill says key, it means this
+reference. Reference → record: drop the prefix, then `read [<id>]` fields
+`["id", "name", "stage_id", "user_ids"]`. From a URL, take `id=<n>`.
 {% endif %}
 
 {% if task_ai_driven %}
@@ -101,7 +101,7 @@ writes that follow need no second read.
 
 | Field | Convention |
 |---|---|
-| `name` | Imperative summary of the work. No {{ ticket_prefix }} prefix — {% if task_keys %}`project_key` adds it{% else %}the reference `{{ ticket_prefix }}-<id>` carries it{% endif %}. |
+| `name` | Imperative summary of the work. No {{ ticket_prefix }} prefix — {% if task_keys %}the task key adds it{% else %}the reference `{{ ticket_prefix }}-<id>` carries it{% endif %}. |
 | `project_id` | Default project from `user_identity`. |
 | `stage_id` | Backlog for queued work; Development only if work starts immediately. Resolve the ids by name (`project.task.type`). |
 | `user_ids` | `[[6, 0, [<uid>]]]` — **always the human owner**: you (uid from `user_identity`), or the teammate the user hands the task to. Never empty on purpose. An owner who is not you gets a [handover note](#handover-note-assignee-is-not-you). |

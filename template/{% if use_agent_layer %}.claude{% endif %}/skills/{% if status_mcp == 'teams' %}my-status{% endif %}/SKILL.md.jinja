@@ -48,7 +48,7 @@ overrides the {{ identity }} (list mode only).
   `{{ ticket_prefix }}-1064`) + title — **never the numeric database id**. The id is used only
   to build the link URL, never shown to the user or the team.
 {% else %}
-- **Ticket reference (display):** this Odoo has no project_key, so tasks have no
+- **Ticket reference (display):** this Odoo gives tasks no key, so they have no
   `key` field: never request it. Show `{{ ticket_prefix }}-<id>` (the record id behind
   the prefix, e.g. `{{ ticket_prefix }}-1064`) + title; it is what "key" means below.
 {% endif %}
