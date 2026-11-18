@@ -251,11 +251,17 @@ video in one image: Read it to check the take), and a `WARNING:` past 90 s.
   the copy and fails the start, so `<DB>` never exists half-updated: read
   `.worktrees/_env/<slug>/update.log`. A reused DB (re-run of `wt-start`) is not
   updated: `-u` it with `wt-test.sh`.
-- **What that update misses:** it sees only custom modules whose files changed since
-  the last mainline commit before the dump's day. So (a) an `addons.yaml` pin bump
-  since the dump (an OCA repo, or Odoo itself) is not updated, and (b) a module merged
-  before the dump's day but deployed to prod after it is still old in the dump and not
-  in the list. Update those by hand on the session:
+- **Modules newer on disk than in the dump** join the same `-u`: every installed module
+  of the session's farm whose `__manifest__.py` version (completed with the series, as
+  Odoo's `adapt_version` does) is above its `latest_version` in the dump. That covers an
+  `addons.yaml` pin bump of another repo since the dump, and a release deployed after it.
+  Without it, a changed module that depends on one of them fails the update on a field
+  or view the old copy lacks, and the copy is dropped. The `STATUS:` line names them
+  after "newer on disk than in the dump".
+- **What that update misses:** Odoo's own modules (not in the farm), so an Odoo pin
+  bump; and a module whose files changed with its manifest version left alone (a
+  change merged before the dump's day but deployed to prod after it, without a
+  version bump). Update those by hand on the session:
   `systemctl --user stop odoo{{ service_suffix }}-wt@<slug>.service`, then
   `wt-test.sh <slug> -u <module>[,<module>...]` (for an Odoo pin bump, `-u all`), then
   `systemctl --user start odoo{{ service_suffix }}-wt@<slug>.service`. A dependency such a
