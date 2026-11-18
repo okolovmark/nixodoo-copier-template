@@ -203,7 +203,7 @@ odoo_prod_url:
 
 task_keys:
   type: bool
-  help: Does the production Odoo give every task a key like PROJ-123 (field `key`), from project_ai_driven 16.0.2.17.0 or later (16.0 branch) or from OCA project_key? Without it a task's reference is <ticket_prefix>-<id>, its record id behind the prefix, and the ticket skills never read `key`
+  help: Does the production Odoo give every task a key like PROJ-123 (field `key`), from project_ai_driven 16.0.2.17.0 or later (16.0 branch; 20.0 with its port) or from OCA project_key? Without it a task's reference is <ticket_prefix>-<id>, its record id behind the prefix, and the ticket skills never read `key`
   default: false
   when: "{{ tickets_mcp == 'odoo' }}"
 
