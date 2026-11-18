@@ -378,9 +378,12 @@ read-only `ODOO_*_PROD` lines in `.env`, the user's login and API key.
   journal/<date>`) on top. Simple HTML (`<p>`, `<code>`).
 
 **Write constraints:**
-- Custom access rules restrict `user_ids`/`stage_id` writes — your account
-  must be an assignee, the PM or in the project's **Task Assignors**
-  (`task_assignor_ids`) to assign users and move stages of assigned tasks.
+- Access rules may restrict `user_ids`/`stage_id` writes. In a Public or
+  Private project of `project_member_access`, assigning users takes the
+  **Admin** role and moving a task you are not assigned to takes **Editor**
+  (roles on the project's Members tab); a Standard project follows the
+  database's own rules (often: the project manager assigns, an assignee or
+  the manager moves the stage).
 - Always `create`/`write` via `execute` (the plain tools can't pass
   context) with context `{"mail_create_nolog": true,
   "mail_create_nosubscribe": true, "mail_auto_subscribe_no_notify": true}`;
