@@ -243,7 +243,7 @@ extra_ticket_prefixes:
 
 task_key_route:
   type: bool
-  help: Does the production Odoo open a task by its key at /tasks/<key> (the controller of project_ai_driven 16.0.2.17.0 or later, or of OCA project_key)? The pipeline pane then links every block task to Odoo by its key, with no record URL needed.
+  help: Does the production Odoo open a task by its key at /tasks/<key> (the controller of project_ai_driven 16.0.2.17.0 or later on the 16.0 branch, 20.0 with its port, or of OCA project_key)? The pipeline pane then links every block task to Odoo by its key, with no record URL needed.
   default: false
   when: "{{ use_pipeline and tickets_mcp == 'odoo' and odoo_prod_url != '' and task_keys }}"
 
