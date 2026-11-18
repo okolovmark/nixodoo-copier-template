@@ -34,7 +34,7 @@ const PR_CREATE = /\bgh\s+pr\s+create\b/
 const PR_URL = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/
 // A task key is one of the ticket prefixes and a number, so prose naming a month column (JAN-2026),
 // a standard (ISO-9001) or a project the prefixes do not name stays out of the block; without a
-// prefix, any word-dash-number. project_key numbers a project's tasks from an unpadded sequence, so a
+// prefix, any word-dash-number. Task keys number a project's tasks from an unpadded sequence, so a
 // key's number never starts with 0: product codes are zero-padded (RAW-000123, ASM-004567).
 const KEY_PREFIX =
   TICKET_PREFIXES.length === 0
