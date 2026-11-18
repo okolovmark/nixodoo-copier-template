@@ -20,13 +20,19 @@ queue:
   - "queue_job"
   - "queue_job_cron"
 {% endif %}
+{% if use_timesheet_systray %}
+
+# project_timesheet_systray (use_timesheet_systray) runs this module's timer.
+project:
+  - "project_timesheet_time_control"
+{% endif %}
 # web:
 #   - "web_responsive"
 {% if odoo_version in ['16.0', '20.0'] and (use_release_notes or task_ai_driven) %}
 
 ---
-# The modules behind use_release_notes and task_ai_driven; the repo has
-# branches 16.0 and 20.0 only.
+# The modules behind use_release_notes, task_ai_driven and the answers built on
+# it; the repo has branches 16.0 and 20.0 only.
 ENV:
   DEFAULT_REPO_PATTERN: "https://github.com/okolovmark/{}.git"
   ODOO_VERSION: "{{ odoo_version }}"
@@ -37,6 +43,17 @@ nixodoo-addons:
 {% endif %}
 {% if task_ai_driven %}
   - "project_ai_driven"
+{% endif %}
+{% if use_team_dashboard %}
+  - "project_team_dashboard"
+  # installs itself where OCA project_timeline is installed too, else stays out
+  - "project_team_dashboard_timeline"
+{% endif %}
+{% if use_support_request %}
+  - "project_support_request"
+{% endif %}
+{% if use_timesheet_systray %}
+  - "project_timesheet_systray"
 {% endif %}
 {% endif %}
 {% if custom_repo_name %}

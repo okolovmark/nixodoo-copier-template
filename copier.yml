@@ -216,11 +216,32 @@ task_ai_driven:
   default: "{{ task_software_fields | default(false) }}"
   when: "{{ tickets_mcp == 'odoo' }}"
 
+# Asked before task_timeline, which it answers: the module declares the planned dates.
+use_team_dashboard:
+  type: bool
+  help: The Team Dashboard in Odoo (project_team_dashboard from okolovmark/nixodoo-addons through addons.yaml, on top of project_ai_driven and hr_timesheet; branch 16.0, the only version this is asked for until its 20.0 port)? Project > Team Dashboard shows workload cards by project, manager or department; its Gantt chart plots the tasks of several projects with their sub-tasks, dependency lags and baselines and exports them to Excel; Project > Backlog lists the tasks of Backlog stages, and a stage can be flagged In Progress or Backlog. It declares the planned dates of a task (planned_date_start / planned_date_end, under the names of OCA project_timeline, which it does not need) and rolls them up from sub-tasks (is_planned_from_subtasks); in a project flagged AI-driven the Deadline follows the planned end. With it task_timeline is yes and not asked, and addons.yaml also lists project_team_dashboard_timeline, the glue module that installs itself where OCA project_timeline is installed too and stays out elsewhere. Without it the ticket skills read is_planned_from_subtasks only where fields_get lists it
+  default: false
+  when: "{{ tickets_mcp == 'odoo' and task_ai_driven and odoo_version == '16.0' }}"
+
+use_support_request:
+  type: bool
+  help: The Support item in the Odoo header (project_support_request from okolovmark/nixodoo-addons through addons.yaml, on top of project_ai_driven; branch 16.0, the only version this is asked for until its 20.0 port)? Every internal user files a request about this Odoo from it, a title and a task type, as a task of the project flagged develops_this_odoo (Develops This Odoo), in its first unfolded stage, with the user as its UAT user, no assignee and no estimate; the item lists the user's open requests and is hidden until an active project carries the flag. That first stage stays out of the project's Stages Requiring a Type and an Estimate, or a request is refused. To the ticket skills a request is a task like any other - the start of work gives it its owner and estimate
+  default: false
+  when: "{{ tickets_mcp == 'odoo' and task_ai_driven and odoo_version == '16.0' }}"
+
+use_timesheet_systray:
+  type: bool
+  help: The Timelog item in the Odoo header (project_timesheet_systray from okolovmark/nixodoo-addons, on top of project_ai_driven and OCA project_timesheet_time_control; branch 16.0, the only version this is asked for)? It starts and stops the timesheet timer of project_timesheet_time_control on the user's open tasks, one running at a time. addons.yaml lists both, project_timesheet_time_control under the OCA project repo on its 16.0 branch; a project whose addons.yaml already lists that repo keeps one project entry and adds the module to it. A user needs an employee in the task's company and Timesheets rights to start a timer
+  default: false
+  when: "{{ tickets_mcp == 'odoo' and task_ai_driven and odoo_version == '16.0' }}"
+
 task_timeline:
   type: bool
-  help: Does the production Odoo run OCA project_timeline (project.task planned_date_start / planned_date_end)? Without it the ticket skills schedule a task by date_deadline alone
-  default: false
-  when: "{{ tickets_mcp == 'odoo' }}"
+  help: Does the production Odoo run OCA project_timeline (project.task planned_date_start / planned_date_end)? Without it the ticket skills schedule a task by date_deadline alone. Not asked with use_team_dashboard, whose module declares the same two fields - the answer is yes then, whether project_timeline runs or not
+  default: "{{ use_team_dashboard }}"
+  when: "{{ tickets_mcp == 'odoo' and not use_team_dashboard }}"
+  # --data sets a skipped question too: keep the skills on the dashboard's planned dates
+  validator: "{% if use_team_dashboard and not task_timeline %}use_team_dashboard gives every task planned dates: task_timeline is yes with it{% endif %}"
 
 task_pr_uri:
   type: bool
