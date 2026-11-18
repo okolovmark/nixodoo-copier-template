@@ -145,7 +145,7 @@ On user feedback, a design decision, or an applied fix, post an **internal note*
 {% if task_ai_driven %}
 ### Task Checklist
 The Checklist tab = `project.task.checklist.item` records (see `odoo-tickets`):
-1. At the start of Phase 1, read the existing checklist (`search_read` by `task_id`)
+1. At the start of Phase 1, read the existing checklist: it is in the task's `brief` field (Phase 1, step 0)
 2. **If empty**, populate with implementation steps derived from requirements (`create` with `task_id`, `name`, `user_id`)
 3. As each step completes, `write {"state": "done"}`
 4. Add new steps discovered during development
@@ -439,23 +439,24 @@ Before spawning any subagent:
      pipeline's ticket IS this state item's mirror; never create a second
      ticket for it.
 {% endif %}
+{% if task_ai_driven %}
+   - Read the task with one read of the task's `brief` field (`odoo-tickets` → Read a task: the
+     brief): `read [id] ["brief"]` gives the header (stage, type, estimate, hours, deadline), the
+     related tasks (**Sub-tasks**, **Blocked By**: a task already blocked is flagged to the user
+     before starting), the pull requests, the description (functional requirements), the
+     question rows (an Open row is a question still waiting for its answer), the solution,
+     the checklist, the test cases, the sessions, the last 10 notes and the attachments; question
+     rows, checklist items, test cases and attachments carry their ids for the writes that follow.
+     A database without the field (`project_ai_driven` older than 16.0.2.14.0, or a branch it is
+     not ported to yet) reads them one by one, as `odoo-tickets` lists them.
+{% else %}
    - Read the form content with explicit field lists (heavy Html fields for
      this ONE task only):
-     - `read [id] ["name", {% if task_keys %}"key", {% endif %}"stage_id", "user_ids", {% if task_ai_driven %}"task_type", "tshirt_estimate", {% endif %}"{{ hours }}", "effective_hours", "date_deadline", "child_ids", "depend_on_ids"]`
+     - `read [id] ["name", {% if task_keys %}"key", {% endif %}"stage_id", "user_ids", "{{ hours }}", "effective_hours", "date_deadline", "child_ids", "depend_on_ids"]`
        — note any existing **Sub-tasks** (`child_ids`) and **Blocked By**
        (`depend_on_ids`); if `depend_on_ids` is non-empty the task may already
        be blocked, flag it to the user before starting.
      - **Description**: `read [id] ["description"]` — functional requirements
-{% if task_ai_driven %}
-     - **Technical Solution**: `read [id] ["solution"]`, and its question rows:
-       `search_read` `project.task.question` by `task_id`, fields `["round", "question",
-       "addressed_to_id", "answer", "answered_by_id", "answered_on", "state"]`, order
-       `"sequence, id"`; an `open` row is a question still waiting for its answer
-     - **Test Cases**: `search_read` `project.task.testcase` by `task_id`,
-       fields `["name", "state", "verification_kind", "test_reference", "steps_to_execute", "expected_results"]`
-     - **Checklist**: `search_read` `project.task.checklist.item` by `task_id`,
-       fields `["name", "state", "user_id"]`
-{% else %}
      - **Internal notes** (`Design Decision` Q&A, `Technical Solution`,
        `Test Cases`, per `odoo-tickets`): `search_read` `mail.message`
        `[["model", "=", "project.task"], ["res_id", "=", <id>], ["message_type", "=", "comment"]]`,
@@ -547,8 +548,9 @@ Before spawning any subagent:
      feedback), not just the first round.
    - When an answer changes scope or settles a design choice, also post the
      matching internal note (`Requirement Change` / `Design Decision`).
-   - The grill's stakeholder-questions list and assumptions ledger go to the
-     ticket too (Technical Solution or a note) — never chat-only.
+   - A question for a stakeholder is an Open question row addressed to them
+     (`addressed_to_id`; named in the question when they have no login); the
+     assumptions ledger goes to the Technical Solution or a note — never chat-only.
 {% else %}
    **Persist every clarifying round to the task as a `Design Decision`
    internal note** per `odoo-tickets`:
@@ -787,7 +789,9 @@ Then wait: a child's report reaches the mother as a note when its turn ends. Nev
 
 **While a child works**, the mother answers its questions: ask the user, post the answer on
 {% if tickets_mcp == 'odoo' %}
-the ticket as a `Design Decision` note, reply to the child with `SendMessage`. What the user
+{% if task_ai_driven %}the ticket as a question row with its answer (round "Child question, <date>", addressed to the user,
+`odoo-tickets` → Technical Solution tab), and as a `Design Decision` note when the answer changes scope
+or a design choice{% else %}the ticket as a `Design Decision` note{% endif %}, reply to the child with `SendMessage`. What the user
 {% else %}
 the run's record, reply to the child with `SendMessage`. What the user
 {% endif %}
