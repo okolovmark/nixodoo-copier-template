@@ -38,8 +38,8 @@ project:
 {% if odoo_version in ['16.0', '20.0'] and (use_release_notes or task_ai_driven) %}
 
 ---
-# The modules behind use_release_notes, task_ai_driven and the answers built on
-# it; the repo has branches 16.0 and 20.0 only.
+# The modules behind use_release_notes, task_ai_driven, project_member_access and the
+# answers built on task_ai_driven; the repo has branches 16.0 and 20.0 only.
 ENV:
   DEFAULT_REPO_PATTERN: "https://github.com/okolovmark/{}.git"
   ODOO_VERSION: "{{ odoo_version }}"
@@ -50,6 +50,9 @@ nixodoo-addons:
 {% endif %}
 {% if task_ai_driven %}
   - "project_ai_driven"
+{% if project_member_access %}
+  - "project_member_access"
+{% endif %}
 {% endif %}
 {% if use_team_dashboard %}
   - "project_team_dashboard"
