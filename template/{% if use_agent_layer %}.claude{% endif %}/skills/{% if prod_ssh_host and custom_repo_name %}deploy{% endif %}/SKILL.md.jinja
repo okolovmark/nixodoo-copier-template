@@ -109,8 +109,11 @@ RANGE="$MC^1..$MC"
   `--link-addons` step is required this deploy. (Removing from code does not
   uninstall from the DB — flag that as a separate manual step.)
 {% if tickets_mcp == 'odoo' %}
-- **task key(s)** = the `{{ ticket_prefix }}-xxxx` key(s) in the PR title / body / branch —
-  Step 8 posts the deploy note to them.
+- **task key(s)** = the `{{ ticket_prefix }}-xxxx` key(s) in the PR title / body / branch.
+  Resolve each to its task now, a read before the merge (`odoo-tickets` → Resolve a
+  ticket), and keep its id and the record's `_url`: {% if status_mcp == 'teams' %}the Step-4 message links them,
+  and {% endif %}Step 8 posts the deploy note to them. No key found → say so in the Step-3
+  plan{% if status_mcp == 'teams' %} and send the Step-4 message without its Task line{% endif %}; never guess a task.
 {% endif %}
 - **exclusive-lock migration?** — grep the merged migration scripts for
   statements needing an AccessExclusiveLock:
@@ -250,7 +253,8 @@ statements whenever a model or field goes away.
 The command that started this — "merge PR N and deploy", or "deploy PR N" for a
 merged one — approved the PR it named. Print the plan and **go on without a
 second "go"**:
-- target host{% if test_ssh_hosts %} (`prod` or a test alias){% endif %}, the PR (title + url), affected modules,
+- target host{% if test_ssh_hosts %} (`prod` or a test alias){% endif %}, the PR (title + url),{% if tickets_mcp == 'odoo' %} the task(s)
+  it closes (key + link, or that it names none),{% endif %} affected modules,
 - the **blast radius** (tier + per-module reasons) and which invariant checks it
   earns (T+0 / T+60 / none), including any project write step the check needs,
 - **whether it runs Step 2 or Step 2b**, and for 2b the expected downtime,
@@ -356,10 +360,16 @@ HTML-escape `<` and `&` in the values you substitute in.
 <p>🟡 <strong>Deploying: {PR title}</strong></p>
 <p><strong>Modules:</strong> <code>{modules}</code><br>
 <strong>Blast radius:</strong> {high|medium|low}<br>
-<strong>PR:</strong> <a href="{pr url}">#{n}</a></p>
+<strong>PR:</strong> <a href="{pr url}">#{n}</a>{% if tickets_mcp == 'odoo' %}<br>
+<strong>Task:</strong> <a href="{task _url}">{task key}</a>{% endif %}</p>
 <p><strong>What changed:</strong> {plain 2-4 sentence summary, what + why}</p>
 <p>Starting deploy on {% if test_ssh_hosts %}{host}{% else %}prod{% endif %}.</p>
 ```
+{% if tickets_mcp == 'odoo' %}
+
+The Task line carries one `<a>` per task Step 1 resolved, comma-separated
+(`Tasks:` when there are several); no task key → drop the line.
+{% endif %}
 {% endif %}
 
 ## Step 5 — Run the deploy
@@ -575,9 +585,8 @@ main menu of the users of <models>." Publishing is theirs to do, never this skil
 per-task record of *exactly what ran against prod*{% else %}The **task note** is the per-task record of *exactly what ran against prod*{% endif %}, so it is auditable
 later. After Step 7, post an internal note to the task(s) the PR closes.
 
-- **Task(s)** = the `{{ ticket_prefix }}-xxxx` key(s) captured in Step 1 — resolve each to a
-  task id (`odoo-tickets` → Resolve a ticket). No key found → tell the user and
-  skip; never guess a task.
+- **Task(s)** = the task(s) Step 1 resolved from the `{{ ticket_prefix }}-xxxx` key(s). No key
+  found → tell the user and skip; never guess a task.
 - **Through** the Odoo connector (production, signed in as you; `odoo-tickets` →
   Connection & context flags).
 - **Post** per `odoo-tickets` (Internal notes — the connector's `message_post`,
