@@ -37,11 +37,6 @@ nixodoo-addons:
 {% endif %}
 {% if task_ai_driven %}
   - "project_ai_driven"
-{% if odoo_version == '16.0' %}
-  # Transitional: the empty module under project_ai_driven's former name, which
-  # depends on it. It goes with the next release.
-  - "project_software"
-{% endif %}
 {% endif %}
 {% endif %}
 {% if custom_repo_name %}
