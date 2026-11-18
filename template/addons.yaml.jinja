@@ -20,14 +20,21 @@ queue:
   - "queue_job"
   - "queue_job_cron"
 {% endif %}
+# web:
+#   - "web_responsive"
 {% if use_timesheet_systray %}
 
-# project_timesheet_systray (use_timesheet_systray) runs this module's timer.
+---
+# project_timesheet_systray (use_timesheet_systray) runs this module's timer. A
+# document of its own, so a project that lists the OCA project repo above keeps
+# that entry: update-repos clones the repo once and links both module lists.
+ENV:
+  DEFAULT_REPO_PATTERN: "https://github.com/OCA/{}.git"
+  ODOO_VERSION: "{{ odoo_version }}"
+
 project:
   - "project_timesheet_time_control"
 {% endif %}
-# web:
-#   - "web_responsive"
 {% if odoo_version in ['16.0', '20.0'] and (use_release_notes or task_ai_driven) %}
 
 ---
