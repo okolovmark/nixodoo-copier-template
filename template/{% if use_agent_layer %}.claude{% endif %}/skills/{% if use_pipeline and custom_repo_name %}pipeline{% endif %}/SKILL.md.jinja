@@ -362,7 +362,7 @@ Do NOT write to {% if use_kb %}kb{% else %}memory files{% endif %} directly. The
 With a ticket key in the request, the run's task is the ticket's own record: `kb sync odoo`
 upserts the user's open tickets, each with its key as `external_id`.
 {% if not task_keys %}
-This Odoo has no project_key, so the sync stores the record id there: `<TASK-KEY>`
+This Odoo gives tasks no key, so the sync stores the record id there: `<TASK-KEY>`
 in the kb commands of this skill is the id without the `{{ ticket_prefix }}-` prefix.
 {% endif %}
 
