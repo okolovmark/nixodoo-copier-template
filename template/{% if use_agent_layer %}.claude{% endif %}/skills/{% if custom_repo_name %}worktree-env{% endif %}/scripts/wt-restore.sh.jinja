@@ -179,7 +179,7 @@ AHEAD="$($PSQL -d "$STAGING_DB" -tA -F '|' \
         | python3 -I -c "$VERSIONS_AHEAD" "{{ odoo_version }}" "$FARM")" \
     || abort_restore "cannot compare the installed module versions of $STAGING_DB with $FARM"
 UPDATE_MODULES="$(printf '%s\n%s\n' "${CHANGED_INSTALLED//,/$'\n'}" "$AHEAD" | sed '/^$/d' | LC_ALL=C sort -u | paste -sd, -)"
-AHEAD="$(paste -sd, - <<< "$AHEAD")"
+AHEAD="$(sed '/^$/d' <<< "$AHEAD" | LC_ALL=C sort -u | paste -sd, -)"
 if [ -z "$UPDATE_MODULES" ]; then
     echo "STATUS: no custom module $SCOPE is installed and none is newer on disk than in the dump: no update"
 else
