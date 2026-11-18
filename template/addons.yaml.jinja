@@ -22,11 +22,24 @@ queue:
 {% endif %}
 # web:
 #   - "web_responsive"
+{% if use_timesheet_systray %}
+
+---
+# project_timesheet_systray (use_timesheet_systray) runs this module's timer. A
+# document of its own, so a project that lists the OCA project repo above keeps
+# that entry: update-repos clones the repo once and links both module lists.
+ENV:
+  DEFAULT_REPO_PATTERN: "https://github.com/OCA/{}.git"
+  ODOO_VERSION: "{{ odoo_version }}"
+
+project:
+  - "project_timesheet_time_control"
+{% endif %}
 {% if odoo_version in ['16.0', '20.0'] and (use_release_notes or task_ai_driven) %}
 
 ---
-# The modules behind use_release_notes, task_ai_driven and project_member_access; the repo has
-# branches 16.0 and 20.0 only.
+# The modules behind use_release_notes, task_ai_driven, project_member_access and the
+# answers built on task_ai_driven; the repo has branches 16.0 and 20.0 only.
 ENV:
   DEFAULT_REPO_PATTERN: "https://github.com/okolovmark/{}.git"
   ODOO_VERSION: "{{ odoo_version }}"
@@ -40,6 +53,17 @@ nixodoo-addons:
 {% if project_member_access %}
   - "project_member_access"
 {% endif %}
+{% endif %}
+{% if use_team_dashboard %}
+  - "project_team_dashboard"
+  # installs itself where OCA project_timeline is installed too, else stays out
+  - "project_team_dashboard_timeline"
+{% endif %}
+{% if use_support_request %}
+  - "project_support_request"
+{% endif %}
+{% if use_timesheet_systray %}
+  - "project_timesheet_systray"
 {% endif %}
 {% endif %}
 {% if custom_repo_name %}

@@ -155,17 +155,36 @@ guard (step 8).
      finish. Day-level granularity is enough — pick a sensible work-hour boundary
      (e.g. `YYYY-MM-DD 09:00:00` / `18:00:00`); exact intraday time + TZ aren't
      significant here.
+{% if use_team_dashboard %}
+   - `date_deadline`: in a project flagged AI-driven it follows the new
+     `planned_date_end` on its own, so leave it out of the write; elsewhere
+     ← the date part of `planned_date_end`, kept in sync (the dashboard treats
+     `planned_date_end` as the deadline).
+{% else %}
    - `date_deadline` ← the date part of `planned_date_end`, kept in sync (the
      dashboard treats `planned_date_end` as the deadline).
+{% endif %}
    - Conservative: only push windows **out** (later) to absorb the new work, or
      fill a missing window; never force an **earlier** start/deadline unless the
      user asks.
    - A task that rolls its planned dates up from its sub-tasks
+{% if use_team_dashboard %}
+     (`is_planned_from_subtasks` true, a field of `project_team_dashboard`)
+     takes **no window and no hours** in step 5: its sub-tasks carry
+{% else %}
      (`is_planned_from_subtasks` true; read the field only when `fields_get`
      lists it) takes **no window and no hours** in step 5: its sub-tasks carry
+{% endif %}
      the work and get the windows, and Odoo refuses a write that changes its
+{% if use_team_dashboard %}
+     planned dates. In a project flagged AI-driven its Deadline follows the
+     rolled-up end on its own: write nothing on it. Elsewhere write only its
+     `date_deadline` ← the date part of the latest window end of its
+     sub-tasks, under the same push-out-only rule.
+{% else %}
      planned dates. Write only its `date_deadline` ← the date part of the latest
      window end of its sub-tasks, under the same push-out-only rule.
+{% endif %}
 {% else %}
 6. **Decide the writes** — `date_deadline` (`{{ 'date' if v16 else 'datetime' }}`) ← the window
    finish; day-level granularity is enough.

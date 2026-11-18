@@ -117,8 +117,8 @@ writes that follow need no second read.
 {% endif %}
 {% if task_timeline %}
 | **Planned Dates** — `planned_date_start` / `planned_date_end` (both `datetime`) | The scheduled work window: drives the Gantt, team dashboard and overdue colouring, and `planned_date_end` is the **deadline** the dashboard shows. Set both for any task in progress / with a planned slot (`"YYYY-MM-DD HH:MM:SS"`; day-level granularity is enough). |
-| `date_deadline` (`{{ deadline_type }}`) | Keep **in sync with `planned_date_end`** (its date part); the status ETA reads it. Don't set it alone — set the Planned Dates window too, or the Gantt/dashboard stay empty. |
-| `is_planned_from_subtasks` (read only, where a module rolls planned dates up; check with `fields_get` before reading it) | True on a task with active sub-tasks: its Planned Dates are the span of theirs (earliest start, latest end) and stay **empty while none of them is dated**. Odoo refuses a write that changes them: date the sub-tasks instead. `date_deadline` is not rolled up: keep it the date part of the rolled-up `planned_date_end`. |
+| `date_deadline` (`{{ deadline_type }}`) | {% if use_team_dashboard %}In a project flagged AI-driven it **follows `planned_date_end` on its own** (the date in the saving user's time zone) whenever the plan changes, a rolled-up parent's included: write the Planned Dates, not the Deadline; a Deadline written by hand stays until the next plan change. Elsewhere keep it **in sync with `planned_date_end`** (its date part);{% else %}Keep **in sync with `planned_date_end`** (its date part);{% endif %} the status ETA reads it. Don't set it alone — set the Planned Dates window too, or the Gantt/dashboard stay empty. |
+| `is_planned_from_subtasks` (read only, {% if use_team_dashboard %}from `project_team_dashboard`, which rolls planned dates up in every project{% else %}where a module rolls planned dates up; check with `fields_get` before reading it{% endif %}) | True on a task with active sub-tasks: its Planned Dates are the span of theirs (earliest start, latest end) and stay **empty while none of them is dated**. Odoo refuses a write that changes them: date the sub-tasks instead. {% if use_team_dashboard %}In a project flagged AI-driven its `date_deadline` follows the rolled-up `planned_date_end` on its own; elsewhere it is not rolled up: keep it the date part of the rolled-up end.{% else %}`date_deadline` is not rolled up: keep it the date part of the rolled-up `planned_date_end`.{% endif %} |
 {% else %}
 | `date_deadline` (`{{ deadline_type }}`) | The deadline; the status ETA reads it. |
 {% endif %}
@@ -493,8 +493,13 @@ create(model="project.task", values={"name": "<slice>", "parent_id": <current_id
 ```
 {% if task_timeline %}
 
+{% if use_team_dashboard %}
+Planned dates roll up from sub-tasks (`is_planned_from_subtasks`, see the field
+conventions): the parent's window becomes the span of its sub-tasks the moment the
+{% else %}
 Where the project rolls planned dates up (`is_planned_from_subtasks`, see the field
 conventions), the parent's window becomes the span of its sub-tasks the moment the
+{% endif %}
 first one exists, and is empty while none is dated: the parent drops off the Gantt.
 So give **every sub-task its window on create**: `planned_date_start` /
 `planned_date_end` laid out one after another in the order of the work, from the
