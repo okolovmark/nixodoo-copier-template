@@ -76,6 +76,12 @@ jobs:
         include:
           - name: default-20
             args: -d project_name=ci-default
+          # the Team Dashboard on 20.0: no timeline glue, the Deadline kept in sync by hand
+          - name: dashboard-20
+            args: >-
+              -d project_name=ci-dashboard -d odoo_version=20.0
+              -d status_mcp=teams -d tickets_mcp=odoo
+              -d task_ai_driven=true -d use_team_dashboard=true
           - name: full-16
             args: >-
               -d project_name=ci-full -d odoo_version=16.0 -d use_queue_job=true

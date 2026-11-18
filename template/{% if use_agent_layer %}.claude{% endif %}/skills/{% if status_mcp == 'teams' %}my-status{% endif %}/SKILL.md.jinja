@@ -155,7 +155,7 @@ guard (step 8).
      finish. Day-level granularity is enough — pick a sensible work-hour boundary
      (e.g. `YYYY-MM-DD 09:00:00` / `18:00:00`); exact intraday time + TZ aren't
      significant here.
-{% if use_team_dashboard %}
+{% if team_dashboard_deadline %}
    - `date_deadline`: in a project flagged AI-driven it follows the new
      `planned_date_end` on its own, so leave it out of the write; elsewhere
      ← the date part of `planned_date_end`, kept in sync (the dashboard treats
@@ -176,7 +176,7 @@ guard (step 8).
      lists it) takes **no window and no hours** in step 5: its sub-tasks carry
 {% endif %}
      the work and get the windows, and Odoo refuses a write that changes its
-{% if use_team_dashboard %}
+{% if team_dashboard_deadline %}
      planned dates. In a project flagged AI-driven its Deadline follows the
      rolled-up end on its own: write nothing on it. Elsewhere write only its
      `date_deadline` ← the date part of the latest window end of its
