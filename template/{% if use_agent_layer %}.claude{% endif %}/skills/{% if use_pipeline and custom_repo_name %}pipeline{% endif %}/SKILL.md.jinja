@@ -495,8 +495,9 @@ Before spawning any subagent:
      existing work out, so run the `my-status` `rebalance` flow now (it
 {% if task_timeline %}
      re-estimates and shifts the **Planned Dates** window
-     `planned_date_start`/`planned_date_end` — and `date_deadline` in sync — of
-     the user's other open assigned tasks to absorb this one). See `my-status`.
+     `planned_date_start`/`planned_date_end` of the user's other open assigned
+     tasks to absorb this one, and their `date_deadline` in sync with it{% if team_dashboard_deadline %},
+     except in projects flagged AI-driven, where it follows on its own{% endif %}). See `my-status`.
 {% else %}
      re-estimates and shifts the `date_deadline` of the user's other open
      assigned tasks to absorb this one). See `my-status`.

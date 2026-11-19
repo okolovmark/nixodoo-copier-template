@@ -6,7 +6,7 @@
 {% set written_fields = '`' ~ written | join('` / `') ~ '`' %}
 ---
 name: my-status
-description: "My work status from PRODUCTION Odoo. list (default): open tasks. send: post today's plan to the Teams chat from the user_identity {{ identity }} (only tasks planned to close today, each with estimate + link; backlog shown to you for swaps, never posted). rebalance: when a new task enters scope, re-estimate and shift the date_deadline of your other open assigned tasks to absorb it — the ONLY mode that writes (date_deadline/estimate on your own tasks only). Use when the user asks 'what are my tasks', 'my open tasks', 'send my status to the team', or when scope grows and deadlines need rebalancing."
+description: "My work status from PRODUCTION Odoo. list (default): open tasks. send: post today's plan to the Teams chat from the user_identity {{ identity }} (only tasks planned to close today, each with estimate + link; backlog shown to you for swaps, never posted). rebalance: when a new task enters scope, re-estimate and shift the schedule of your other open assigned tasks to absorb it — the ONLY mode that writes ({{ written | join('/') }} on your own tasks only). Use when the user asks 'what are my tasks', 'my open tasks', 'send my status to the team', or when scope grows and deadlines need rebalancing."
 argument-hint: "[send] [user login — default from user_identity {{ identity }}]"
 ---
 
@@ -22,10 +22,10 @@ Three modes:
   Read-only against Odoo (writes only to Teams).
 - **rebalance** (`rebalance` argument, or invoked by the pipeline when a new
   task enters scope) — re-estimate the user's open assigned tasks and **shift
-  their `date_deadline`** so the schedule absorbs the newly-added work, then
-  write the new deadlines/estimates back. The **only** mode that writes to
-  Odoo, and only `date_deadline` + estimate fields on the **user's own** open
-  assigned tasks (scope guard below).
+  their schedule** so it absorbs the newly-added work, then write the new
+  dates/estimates back. The **only** mode that writes to Odoo, and only
+  {{ written_fields }} on the **user's own** open assigned tasks (scope guard
+  below).
 
 ## Identity — read first
 
@@ -152,17 +152,17 @@ guard (step 8).
    Deadline (`planned_date_start`/`planned_date_end` are `datetime`,
    `date_deadline` is `{{ 'date' if v16 else 'datetime' }}`):
    - `planned_date_start` ← the window start; `planned_date_end` ← the window
-     finish. Day-level granularity is enough — pick a sensible work-hour boundary
-     (e.g. `YYYY-MM-DD 09:00:00` / `18:00:00`); exact intraday time + TZ aren't
-     significant here.
+     finish. Day-level granularity is enough — pick a work-hour boundary in the
+     user's time zone (e.g. 09:00 / 18:00 local) and write it in UTC, as the API
+     takes datetimes: a UTC 18:00 is already the next day east of UTC+6.
 {% if team_dashboard_deadline %}
    - `date_deadline`: in a project flagged AI-driven it follows the new
      `planned_date_end` on its own, so leave it out of the write; elsewhere
-     ← the date part of `planned_date_end`, kept in sync (the dashboard treats
-     `planned_date_end` as the deadline).
+     ← `planned_date_end` ({{ deadline_of_end }}), kept in sync (the dashboard
+     treats `planned_date_end` as the deadline).
 {% else %}
-   - `date_deadline` ← the date part of `planned_date_end`, kept in sync (the
-     dashboard treats `planned_date_end` as the deadline).
+   - `date_deadline` ← `planned_date_end` ({{ deadline_of_end }}), kept in sync
+     (the dashboard treats `planned_date_end` as the deadline).
 {% endif %}
    - Conservative: only push windows **out** (later) to absorb the new work, or
      fill a missing window; never force an **earlier** start/deadline unless the
@@ -179,11 +179,11 @@ guard (step 8).
 {% if team_dashboard_deadline %}
      planned dates. In a project flagged AI-driven its Deadline follows the
      rolled-up end on its own: write nothing on it. Elsewhere write only its
-     `date_deadline` ← the date part of the latest window end of its
-     sub-tasks, under the same push-out-only rule.
+     `date_deadline` ← the latest window end of its sub-tasks
+     ({{ deadline_of_end }}), under the same push-out-only rule.
 {% else %}
-     planned dates. Write only its `date_deadline` ← the date part of the latest
-     window end of its sub-tasks, under the same push-out-only rule.
+     planned dates. Write only its `date_deadline` ← the latest window end of
+     its sub-tasks ({{ deadline_of_end }}), under the same push-out-only rule.
 {% endif %}
 {% else %}
 6. **Decide the writes** — `date_deadline` (`{{ 'date' if v16 else 'datetime' }}`) ← the window
