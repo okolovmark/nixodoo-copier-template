@@ -123,7 +123,13 @@ if [ "$RESTORE" = false ]; then
 fi
 
 STARTED_CLUSTER=false
-if [ "$(ls -A backup)" ]; then
+# The names sort chronologically, so the last match is the newest dump.
+DUMPS=(backup/*.dump)
+DUMP=""
+if [ -e "${DUMPS[-1]}" ]; then
+    DUMP="${DUMPS[-1]}"
+fi
+if [ -n "$DUMP" ]; then
     # Determine connection host: use socket for localhost, TCP for remote
     if [ "$PGHOST" = "localhost" ] || [ "$PGHOST" = "127.0.0.1" ]; then
         export PGDATA=$PWD/.postgres
@@ -158,10 +164,10 @@ if [ "$(ls -A backup)" ]; then
     # writes can make `odoo neutralize` fail on a serialization conflict, leaving
     # the copy live for good. So the staging name, renamed only once neutral.
     STAGING_DB="${PGDATABASE}_restoring"
-    echo "Restoring backup to staging database '$STAGING_DB'... ($RESTORE_JOBS jobs, errors: $PWD/backup/pg_restore.log)"
+    echo "Restoring $DUMP to staging database '$STAGING_DB'... ($RESTORE_JOBS jobs, errors: $PWD/backup/pg_restore.log)"
     env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d postgres -c "DROP DATABASE IF EXISTS $STAGING_DB WITH (FORCE);"
     env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d postgres -c "CREATE DATABASE $STAGING_DB OWNER $PGUSER;"
-    pg_restore --clean --no-acl --no-owner -j "$RESTORE_JOBS" -h "$PG_CONN_HOST" -p "$PGPORT" -U "$PGUSER" -d "$STAGING_DB" backup/*.dump 2>"$PWD/backup/pg_restore.log" || true
+    pg_restore --clean --no-acl --no-owner -j "$RESTORE_JOBS" -h "$PG_CONN_HOST" -p "$PGPORT" -U "$PGUSER" -d "$STAGING_DB" "$DUMP" 2>"$PWD/backup/pg_restore.log" || true
     if ! [ "$(env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d "$STAGING_DB" -tAc "SELECT count(*) FROM res_users" 2>/dev/null)" -gt 0 ] 2>/dev/null; then
         env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d postgres -c "DROP DATABASE IF EXISTS $STAGING_DB WITH (FORCE);"
         echo "ERROR: restore incomplete (res_users empty) — see $PWD/backup/pg_restore.log; '$PGDATABASE' left as it was" >&2
