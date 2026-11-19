@@ -81,7 +81,7 @@ jobs:
             args: >-
               -d project_name=ci-dashboard -d odoo_version=20.0
               -d status_mcp=teams -d tickets_mcp=odoo
-              -d task_ai_driven=true -d use_team_dashboard=true
+              -d task_ai_driven=true -d use_team_dashboard=true -d use_support_request=true
           - name: full-16
             args: >-
               -d project_name=ci-full -d odoo_version=16.0 -d use_queue_job=true
