@@ -88,7 +88,7 @@ jobs:
         include:
           - name: default-20
             args: -d project_name=ci-default
-          # the Team Dashboard on 20.0: no timeline glue, the Deadline kept in sync by hand
+          # the Team Dashboard on 20.0: no timeline glue, the Deadline follows the planned end itself in AI-driven projects
           - name: dashboard-20
             args: >-
               -d project_name=ci-dashboard -d odoo_version=20.0

@@ -116,9 +116,9 @@ writes that follow need no second read.
 | `{{ hours }}` | The estimate in hours (`estimate` skill). |
 {% endif %}
 {% if task_timeline %}
-| **Planned Dates** — `planned_date_start` / `planned_date_end` (both `datetime`) | The scheduled work window: drives the Gantt, team dashboard and overdue colouring, and `planned_date_end` is the **deadline** the dashboard shows. Set both for any task in progress / with a planned slot (`"YYYY-MM-DD HH:MM:SS"`; day-level granularity is enough). |
-| `date_deadline` (`{{ deadline_type }}`) | {% if team_dashboard_deadline %}In a project flagged AI-driven it **follows `planned_date_end` on its own** (the date in the saving user's time zone) whenever the plan changes, a rolled-up parent's included: write the Planned Dates, not the Deadline; a Deadline written by hand stays until the next plan change. Elsewhere keep it **in sync with `planned_date_end`** (its date part);{% else %}Keep **in sync with `planned_date_end`** (its date part);{% endif %} the status ETA reads it. Don't set it alone — set the Planned Dates window too, or the Gantt/dashboard stay empty. |
-| `is_planned_from_subtasks` (read only, {% if use_team_dashboard %}from `project_team_dashboard`, which rolls planned dates up in every project{% else %}where a module rolls planned dates up; check with `fields_get` before reading it{% endif %}) | True on a task with active sub-tasks: its Planned Dates are the span of theirs (earliest start, latest end) and stay **empty while none of them is dated**. Odoo refuses a write that changes them: date the sub-tasks instead. {% if team_dashboard_deadline %}In a project flagged AI-driven its `date_deadline` follows the rolled-up `planned_date_end` on its own; elsewhere it is not rolled up: keep it the date part of the rolled-up end.{% else %}`date_deadline` is not rolled up: keep it the date part of the rolled-up `planned_date_end`.{% endif %} |
+| **Planned Dates** — `planned_date_start` / `planned_date_end` (both `datetime`) | The scheduled work window: drives the Gantt, team dashboard and overdue colouring, and `planned_date_end` is the **deadline** the dashboard shows. Set both for any task in progress / with a planned slot (`"YYYY-MM-DD HH:MM:SS"`, in UTC: pick the hour in the user's time zone; day-level granularity is enough). |
+| `date_deadline` (`{{ deadline_type }}`) | {% if team_dashboard_deadline %}In a project flagged AI-driven it **follows `planned_date_end` on its own** ({% if odoo_version == '16.0' %}the date in the saving user's time zone{% else %}{{ deadline_of_end }}{% endif %}) whenever its planned end or its project changes, a rolled-up parent's included: write the Planned Dates, not the Deadline; a Deadline written by hand stays until then, and clearing the planned end keeps it. Elsewhere keep it **in sync with `planned_date_end`** ({{ deadline_of_end }});{% else %}Keep **in sync with `planned_date_end`** ({{ deadline_of_end }});{% endif %} the status ETA reads it. Don't set it alone — set the Planned Dates window too, or the Gantt/dashboard stay empty. |
+| `is_planned_from_subtasks` (read only, {% if use_team_dashboard %}from `project_team_dashboard`, which rolls planned dates up in every project{% else %}where a module rolls planned dates up; check with `fields_get` before reading it{% endif %}) | True on a task with active sub-tasks: its Planned Dates are the span of theirs (earliest start, latest end) and stay **empty while none of them is dated**. Odoo refuses a write that changes them: date the sub-tasks instead. {% if team_dashboard_deadline %}In a project flagged AI-driven its `date_deadline` follows the rolled-up `planned_date_end` on its own; elsewhere it is not rolled up: keep it in sync with the rolled-up end ({{ deadline_of_end }}).{% else %}`date_deadline` is not rolled up: keep it in sync with the rolled-up `planned_date_end` ({{ deadline_of_end }}).{% endif %} |
 {% else %}
 | `date_deadline` (`{{ deadline_type }}`) | The deadline; the status ETA reads it. |
 {% endif %}
@@ -503,9 +503,14 @@ conventions), the parent's window becomes the span of its sub-tasks the moment t
 first one exists, and is empty while none is dated: the parent drops off the Gantt.
 So give **every sub-task its window on create**: `planned_date_start` /
 `planned_date_end` laid out one after another in the order of the work, from the
-parent's start (or today), each by its `{{ hours }}` at ~6 focused h/day, with
-`date_deadline` the date part of its end. Then run `my-status` `rebalance` if the
-split pushed other work out.
+parent's start (or today), each by its `{{ hours }}` at ~6 focused h/day.
+{% if team_dashboard_deadline %}
+In a project flagged AI-driven a sub-task's `date_deadline` follows its end on its own;
+elsewhere write it with the window, in sync with its end ({{ deadline_of_end }}).
+{% else %}
+Write its `date_deadline` with the window, in sync with its end ({{ deadline_of_end }}).
+{% endif %}
+Then run `my-status` `rebalance` if the split pushed other work out.
 {% endif %}
 
 **Link a blocker** — create the blocker task first (full conventions), then add
@@ -644,13 +649,21 @@ Delivered write (revising earlier, once the real problem is clear, is fine):
 {% if task_timeline %}
   3. **set the Planned Dates window** so the ticket lands on the schedule:
      `planned_date_start` = now, `planned_date_end` = now + the estimate
-     (`{{ hours }}` at ~6 focused h/day), and
-     `date_deadline` = the date part of `planned_date_end`. A ticket taken into
+     (`{{ hours }}` at ~6 focused h/day). A ticket taken into
      work with no Planned Dates is invisible on the Gantt/dashboard.
      A task whose `is_planned_from_subtasks` is true gets no window of its own
      (the write is refused): its open sub-tasks get theirs (see
-     [Sub-tasks & blockers](#sub-tasks--blockers-tasktask-links)) and its
-     `date_deadline` follows their latest end.
+     [Sub-tasks & blockers](#sub-tasks--blockers-tasktask-links)).
+{% if team_dashboard_deadline %}
+     In a project flagged AI-driven `date_deadline` follows `planned_date_end`
+     on its own (a rolled-up parent's, the latest end of its sub-tasks): leave
+     it out of the write. Elsewhere write it by hand, in sync with that end
+     ({{ deadline_of_end }}).
+{% else %}
+     Write `date_deadline` by hand, in sync with `planned_date_end`
+     ({{ deadline_of_end }}); on a rolled-up parent, with the latest end of its
+     sub-tasks.
+{% endif %}
   4. **rebalance the user's other deadlines** — the new in-scope work pushes
      existing tickets out: run `my-status` `rebalance` (shifts their Planned
      Dates windows). See `feedback_rebalance_deadlines_on_scope_growth`.
