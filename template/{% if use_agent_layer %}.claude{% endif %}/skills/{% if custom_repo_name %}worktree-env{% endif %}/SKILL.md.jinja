@@ -1,6 +1,6 @@
 ---
 name: worktree-env
-description: "Spin up / list / tear down isolated per-session Odoo {{ odoo_version }} dev environments, each backed by a git worktree of the addons repo with its own port, database (own restore of the prod dump), data_dir and systemd service — so many tasks run in parallel without touching each other. There is no main env: every pipeline run (one task, or a block of tasks) runs in one. A session's UI is driven in the env's own headless browser (wt-browser.sh), which also records the demo video. Used by the pipeline skill and standalone. Use when asked to start/stop an isolated env, work on a task in parallel, run something against a throwaway Odoo, or look at or click through a session env's UI."
+description: "Spin up / list / tear down isolated per-session Odoo {{ odoo_version }} dev environments, each backed by a git worktree of the addons repo with its own port, database (own restore of the prod dump), data_dir and systemd service — so many tasks run in parallel without touching each other. There is no main env: every pipeline run (one task, or a block of tasks) runs in one. A session's UI is driven in the env's own headless browser (wt-browser.sh), which also records the demo video. A vanilla env (--vanilla) is instead a fresh database of Odoo's own addons only, with the modules named, to see how standard Odoo behaves. Used by the pipeline skill and standalone. Use when asked to start/stop an isolated env, work on a task in parallel, run something against a throwaway Odoo, look at or click through a session env's UI, or make a clean / basic / vanilla Odoo without customizations with some modules installed."
 argument-hint: "[start|stop|list] [slug]"
 ---
 
@@ -21,11 +21,14 @@ proxy and no main database, only the shared postgres cluster
 | Env repo | `.worktrees/_envrepo/<slug>`, only with `--env-repo`: this project's own repo on branch `<slug>`, off origin's default branch |
 | HTTP | `http://<DB>.localhost:<PORT>`, port auto-allocated in **{{ (odoo_major | int + 11) * 100 }}–{{ (odoo_major | int + 11) * 100 + 99 }}** (direct, no nginx) |
 | Browser | `.worktrees/_env/<slug>/browser/`: what `wt-browser.sh` writes (page snapshots, console logs, saved logins, demo files) |
+| Vanilla | `--vanilla` only: no code worktree and no dump. `<DB>` is `wt_<slug>`, a fresh init of Odoo's own addons, marked by `.worktrees/_env/<slug>/vanilla` (see [A vanilla env](#a-vanilla-env)) |
 
 ## Commands
 
 Invoke by absolute path under `${{ project_dir_var }}/.claude/skills/worktree-env/scripts/`:
 
+- **`wt-start.sh <slug> --vanilla[=<modules>] [--country=<code>]`** — a vanilla env instead:
+  standard Odoo with no custom or third-party module, see [A vanilla env](#a-vanilla-env).
 - **`wt-start.sh <slug> [--env-repo]`** — bring the env up: add the worktree off `origin/{{ odoo_version }}` as
   branch `<slug>`, allocate a free port, build the session addons farm, restore
   `<DB>` from the prod seed dump, the newest in `backup/` or the one `WT_DUMP=<path>` names (+ `odoo neutralize`, an update of the custom
@@ -57,7 +60,8 @@ Invoke by absolute path under `${{ project_dir_var }}/.claude/skills/worktree-en
   it cannot take the env's start or test lock (`start.lock` or `test.lock` not a writable
   file): env and service left as they are.
 - **`wt-list.sh`** — table of all active envs: slug / port / DB / service, then the
-  addons worktree and the env-repo worktree, each `clean`, `dirty` or `none`.
+  addons worktree and the env-repo worktree, each `clean`, `dirty` or `none` (`vanilla` for
+  a vanilla env's worktree column).
 - `wt-bootstrap.sh` — one-time, light: installs the `odoo{{ service_suffix }}-wt@.service` template unit
   and checks the seed dump is present. **No DB work.**
   `wt-start.sh` calls it automatically.
@@ -80,7 +84,8 @@ Invoke by absolute path under `${{ project_dir_var }}/.claude/skills/worktree-en
 - **`wt-browser.sh <slug> [--as <label>] <playwright-cli command...>`** — the env's own
   browser: `playwright-cli` driving the system's Chrome, headless, held to the env's URL.
   See [The session browser](#the-session-browser).
-- `wt-link.sh <tree> <farm>` / `wt-restore.sh <slug>` — internals used by `wt-start`.
+- `wt-link.sh <tree> <farm>` / `wt-restore.sh <slug>` / `wt-init.sh <slug> [--modules=<a,b>] [--country=<code>]`
+  — internals used by `wt-start` (`wt-init` for a vanilla env).
 
 **Slug** = kebab branch name, conventionally `<task-key-lower>-<short-desc>`
 (e.g. `{{ ticket_prefix | lower }}-1234-cash-in-cogs`). It is the git branch, the systemd instance, and (with
@@ -88,7 +93,45 @@ Invoke by absolute path under `${{ project_dir_var }}/.claude/skills/worktree-en
 
 Standalone: "spin up an env for {{ ticket_prefix }}-1234" → `wt-start.sh {{ ticket_prefix | lower }}-1234-<desc>`, hand back
 the `URL`. "what envs are running" → `wt-list.sh`. "tear down {{ ticket_prefix | lower }}-1234" →
-`wt-stop.sh {{ ticket_prefix | lower }}-1234-<desc>`.
+`wt-stop.sh {{ ticket_prefix | lower }}-1234-<desc>`. "a clean Odoo with Purchase and Invoicing" →
+`wt-start.sh <desc> --vanilla=purchase,account --country=<code>`.
+
+## A vanilla env
+
+`wt-start.sh <slug> --vanilla[=<modules>] [--country=<code>] [--env-repo]` brings up standard
+Odoo, without the customizations: to see what Odoo itself does before calling something a bug
+of ours, or to try a standard module in isolation. It gets the env's port, service, URL,
+browser, `wt-list` row and `wt-stop` like any other, and differs in what it holds:
+
+- **No code worktree, no addons farm, no dump.** The session's data_dir has no farm, so
+  Odoo's default `addons_path` holds its own addons alone (`src/odoo`): no custom or
+  third-party module can be installed, not even one that installs itself. The conf loads
+  `base,web` server-wide only. No branch is made, and no seed dump is needed.
+- **`<DB>` is `wt_<slug>`, made by `wt-init.sh`:** `odoo -i base` without demo data, then the
+  company's country (`--country=<code>`, an ISO code such as `PH`), then the comma-separated
+  `<modules>` with their dependencies, then `odoo neutralize` (outgoing mail to a dead server,
+  crons off, the banner). Each module named must come out installed: a misspelt one, or one
+  that is no standard module, fails the start and drops the new DB.
+- **Accounting needs `--country`.** With no country, Odoo installs no chart of accounts with
+  `account` (Invoicing): no journals, so no invoice or vendor bill can be made. With
+  `--country`, the country's localization comes with it (`l10n_<code>`, its currency and
+  taxes; the generic chart for a country without one). The country is set when the DB is
+  made only; `wt-init` warns when accounting came out without a chart. Remake such an env:
+  `wt-stop.sh <slug>`, then `wt-start.sh <slug> --vanilla=<modules> --country=<code>`.
+- **A later run keeps it vanilla**, with the flag or without; `--vanilla=<more modules>` on it
+  installs those (the service stops for the install and starts again). A failed install
+  leaves the DB as it was.
+- Logs: `.worktrees/_env/<slug>/init.log` (the init and the installs), `odoo.log` (the service).
+- `--vanilla` is refused on a slug whose env holds a restore (exit 2), and with `WT_DUMP`.
+  `wt-restore.sh` refuses a vanilla env.
+
+```bash
+bash .claude/skills/worktree-env/scripts/wt-start.sh odoo-basic --vanilla=purchase,account --country=PH
+bash .claude/skills/worktree-env/scripts/wt-start.sh odoo-basic --vanilla=stock   # later: add Inventory
+```
+
+Login `admin` / `admin`, as on a fresh Odoo. Without `--vanilla=<modules>` the DB has `base`
+alone, as a fresh database out of the database manager has before any app is installed.
 
 ## Prerequisite — the seed dump
 
@@ -375,7 +418,8 @@ video in one image: Read it to check the take), and a `WARNING:` past 90 s.
 
 ## Files
 
-`.worktrees/<slug>/` (worktree), `.worktrees/_env/<slug>/` (conf, data_dir, port) and
+`.worktrees/<slug>/` (worktree), `.worktrees/_env/<slug>/` (conf, data_dir, port; `vanilla` and
+`init.log` in a vanilla env) and
 `.worktrees/_envrepo/<slug>/` (env-repo worktree) are gitignored in the parent repo. The
 addons branch lives in the nested addons repo (`src/{{ custom_repo_name }}`, remote
 `{{ module_prefix }}-dev/{{ custom_repo_name }}`), the env-repo branch in the parent repo itself.

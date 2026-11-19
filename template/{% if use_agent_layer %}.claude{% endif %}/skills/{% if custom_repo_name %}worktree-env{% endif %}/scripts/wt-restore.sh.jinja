@@ -39,6 +39,7 @@ ODOO_BIN="$HOME/{{ nix_profile_rel }}/bin/odoo"
 # The env's start lock for the whole run (wt-start holds it already around this one): a
 # wt-stop meanwhile would drop <DB>_restoring and remove the env under the restore.
 [ -d "$WT_ENVROOT/$SLUG" ] || { echo "ERROR: no env $SLUG ($WT_ENVROOT/$SLUG) - wt-start makes it" >&2; exit 1; }
+! is_vanilla "$SLUG" || { echo "ERROR: env $SLUG is vanilla (wt-start --vanilla): it holds no prod copy to restore" >&2; exit 1; }
 LOCK_RC=0
 take_start_lock "$SLUG" "restoring $DB" || LOCK_RC=$?
 [ "$LOCK_RC" -ne 1 ] || { echo "ERROR: cannot take $WT_ENVROOT/$SLUG/start.lock: nothing restored" >&2; exit 1; }

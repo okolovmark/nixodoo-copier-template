@@ -43,7 +43,9 @@ if [ -f "$SRC_REPO/.pre-commit-config.yaml" ] && command -v pre-commit >/dev/nul
 fi
 
 SEED_DUMP="$(seed_dump)"
-if [ -n "$SEED_DUMP" ]; then
+if [ -n "${WT_VANILLA:-}" ]; then
+    echo "STATUS: bootstrap-ok (vanilla env: no seed dump needed)"
+elif [ -n "$SEED_DUMP" ]; then
     echo "STATUS: bootstrap-ok (seed dump: $(basename "$SEED_DUMP")${WT_DUMP:+, from WT_DUMP})"
 else
     echo "STATUS: bootstrap-ok-NO-DUMP — {% if backup_s3_bucket %}run \`nix run .#download-backup\` once to fetch the prod seed{% else %}put a prod dump into backup/{% endif %} before starting sessions"

@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# Make a vanilla env's DB, or install more modules in it: a fresh init of Odoo's own addons,
+# no prod data. wt-start --vanilla runs it once the conf is written; the env has no addons
+# farm, so Odoo's default addons_path holds its own addons alone. A new DB:
+#   1. `odoo -i base` creates it, without demo data;
+#   2. --country sets the main company's country before anything else installs, so an
+#      accounting module loads that country's chart (with no country it loads none: no
+#      journals, so no invoices or bills);
+#   3. `-i <modules>`, each of which must come out installed (a name Odoo does not find,
+#      it only logs);
+#   4. `odoo neutralize`: outgoing mail to a dead server, crons off, the banner on.
+# A failed step drops the new DB and its filestore. On a DB that exists, only step 3 runs.
+# The env's service is stopped first, one Odoo per DB; wt-start restarts it. The run holds the
+# env's start lock (a wt-stop waits for it) and its test lock (a wt-test run is waited for).
+#
+# Usage: wt-init.sh <slug> [--modules=<a,b>] [--country=<code>]
+set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/wt-common.sh"
+
+USAGE="usage: wt-init.sh <slug> [--modules=<a,b>] [--country=<code>]"
+SLUG="" MODULES="" COUNTRY=""
+for arg in "$@"; do
+    case "$arg" in
+        --modules=*) MODULES="${arg#--modules=}" ;;
+        --country=*) COUNTRY="${arg#--country=}" ;;
+        -*) echo "ERROR: unknown option $arg; $USAGE" >&2; exit 2 ;;
+        *) [ -z "$SLUG" ] || { echo "ERROR: one slug only; $USAGE" >&2; exit 2; }
+           SLUG="$arg" ;;
+    esac
+done
+[ -n "$SLUG" ] || { echo "$USAGE" >&2; exit 2; }
+if [ -n "$MODULES" ] && ! [[ "$MODULES" =~ ^[a-z0-9_]+(,[a-z0-9_]+)*$ ]]; then
+    echo "ERROR: --modules=$MODULES: module names separated by commas, no spaces" >&2; exit 2
+fi
+COUNTRY="${COUNTRY^^}"
+if [ -n "$COUNTRY" ] && ! [[ "$COUNTRY" =~ ^[A-Z]{2}$ ]]; then
+    echo "ERROR: --country=$COUNTRY: a two-letter ISO code, e.g. PH" >&2; exit 2
+fi
+
+ENV_DIR="$WT_ENVROOT/$SLUG"
+DB="$(db_name_for "$SLUG")"
+CONF="$ENV_DIR/odoo.conf"
+FILESTORE="$ENV_DIR/data/filestore"   # <data_dir>/filestore/<db>, data_dir as wt-start writes it
+INIT_LOG="$ENV_DIR/init.log"
+ODOO_BIN="$HOME/{{ nix_profile_rel }}/bin/odoo"
+{% if odoo_major | int >= 19 %}
+NO_DEMO=(--without-demo)
+{% else %}
+NO_DEMO=(--without-demo=all)
+{% endif %}
+
+[ -d "$ENV_DIR" ] || { echo "ERROR: no env $SLUG ($ENV_DIR) - wt-start --vanilla makes it" >&2; exit 1; }
+is_vanilla "$SLUG" || { echo "ERROR: env $SLUG is no vanilla env: its DB is a restore of the prod dump" >&2; exit 1; }
+[ -f "$CONF" ] || { echo "ERROR: $CONF missing - wt-start writes it before the init" >&2; exit 1; }
+
+# The start lock for the whole run (wt-start holds it already around this one), then the test lock.
+LOCK_RC=0
+take_start_lock "$SLUG" "initializing $DB" || LOCK_RC=$?
+[ "$LOCK_RC" -ne 1 ] || { echo "ERROR: cannot take $ENV_DIR/start.lock: nothing done" >&2; exit 1; }
+[ "$LOCK_RC" -eq 0 ] || { echo "ERROR: env $SLUG was stopped while the init waited for its start lock" >&2; exit 1; }
+LOCK_RC=0
+take_test_lock "$SLUG" "initializing $DB" || LOCK_RC=$?
+[ "$LOCK_RC" -ne 1 ] || { echo "ERROR: cannot take $ENV_DIR/test.lock: nothing done" >&2; exit 1; }
+[ "$LOCK_RC" -eq 0 ] || { echo "ERROR: env $SLUG was stopped while the init waited for its test lock" >&2; exit 1; }
+
+SERVICE="odoo{{ service_suffix }}-wt@$SLUG.service"
+WAS_ACTIVE=""
+if systemctl --user is-active --quiet "$SERVICE" 2>/dev/null; then WAS_ACTIVE=1; fi
+systemctl --user stop "$SERVICE" 2>/dev/null || true
+
+odoo_run() {
+    {{ project_dir_var }}="$PROJ" "$ODOO_BIN" -c "$CONF" -d "$DB" "$@" --no-http --stop-after-init --logfile="$INIT_LOG"
+}
+# Until the DB is ready every exit of a run that made it drops it, set -e's included. A failed
+# install on a DB that was there leaves it as it was, served again if it was.
+NEW_OPEN=""
+on_exit() {
+    local rc=$?
+    set +e
+    if [ -n "$NEW_OPEN" ]; then
+        drop_db "$DB"
+        rm -rf "${FILESTORE:?}/$DB"
+        echo "ERROR: the init stopped (exit $rc) before $DB was ready: $DB and its filestore dropped" >&2
+    elif [ "$rc" -ne 0 ] && [ -n "$WAS_ACTIVE" ]; then
+        systemctl --user start "$SERVICE"
+        echo "STATUS: $DB kept as it was, $SERVICE started again" >&2
+    fi
+}
+trap on_exit EXIT
+fail() {
+    echo "ERROR: $1 (log: $INIT_LOG)" >&2
+    exit 1
+}
+
+if db_exists "$DB"; then
+    [ -z "$COUNTRY" ] || echo "WARNING: --country applies when $DB is made: it exists, so its company keeps its country" >&2
+else
+    NEW_OPEN=1
+    : > "$INIT_LOG"
+    echo "STATUS: creating $DB: Odoo's own addons only, no demo data (log: $INIT_LOG) …"
+    odoo_run -i base "${NO_DEMO[@]}" || fail "creating $DB failed"
+    if [ -n "$COUNTRY" ]; then
+        COUNTRY_ID="$($PSQL -d "$DB" -tAc "SELECT id FROM res_country WHERE code = '$COUNTRY'")" \
+            || fail "cannot read the countries of $DB"
+        [ -n "$COUNTRY_ID" ] || fail "no country has the code $COUNTRY"
+        # A company's country is its partner's.
+        $PSQL -q -d "$DB" -c "UPDATE res_partner SET country_id = $COUNTRY_ID WHERE id = (SELECT partner_id FROM res_company ORDER BY id LIMIT 1);" \
+            >/dev/null || fail "cannot set the company's country"
+        echo "STATUS: company country $COUNTRY"
+    fi
+fi
+if [ -n "$MODULES" ]; then
+    echo "STATUS: installing $MODULES in $DB (log: $INIT_LOG) …"
+    odoo_run -i "$MODULES" "${NO_DEMO[@]}" || fail "installing $MODULES failed"
+    INSTALLED="$($PSQL -d "$DB" -tAc "SELECT name FROM ir_module_module WHERE state = 'installed'")" \
+        || fail "cannot read the installed modules of $DB"
+    MISSING="$(LC_ALL=C comm -23 <(tr , '\n' <<< "$MODULES" | LC_ALL=C sort -u) <(LC_ALL=C sort -u <<< "$INSTALLED") | paste -sd, -)"
+    [ -z "$MISSING" ] || fail "not installed: $MISSING - a vanilla env has Odoo's own addons only, check the names"
+fi
+if [ -n "$NEW_OPEN" ]; then
+    echo "STATUS: neutralizing $DB (odoo neutralize) …"
+    {{ project_dir_var }}="$PROJ" "$ODOO_BIN" neutralize -c "$CONF" -d "$DB" || fail "neutralizing $DB failed"
+fi
+NEW_OPEN=""
+
+ACCOUNT="$($PSQL -d "$DB" -tAc "SELECT count(*) FROM ir_module_module WHERE name = 'account' AND state = 'installed'")"
+if [ "$ACCOUNT" = 1 ] && [ "$($PSQL -d "$DB" -tAc "SELECT count(*) FROM account_journal")" = 0 ]; then
+    echo "WARNING: $DB has accounting and no chart of accounts (no journals: no invoices or bills), as its" \
+         "company had no country when accounting installed: wt-stop.sh $SLUG, then wt-start.sh $SLUG" \
+         "--vanilla=<modules> --country=<code>" >&2
+fi
+echo "STATUS: db-ready ($DB, vanilla)"

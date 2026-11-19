@@ -325,6 +325,7 @@ nix run .#download-backup
 # A worktree env per pipeline run: start (idempotent), list, stop
 bash .claude/skills/worktree-env/scripts/wt-start.sh <slug>     # prints URL, CONF, DB, PORT
 bash .claude/skills/worktree-env/scripts/wt-start.sh <slug> --env-repo   # + this repo on branch <slug>
+bash .claude/skills/worktree-env/scripts/wt-start.sh <slug> --vanilla=purchase,account --country=<code>   # standard Odoo, no prod data
 bash .claude/skills/worktree-env/scripts/wt-list.sh
 bash .claude/skills/worktree-env/scripts/wt-stop.sh <slug>
 

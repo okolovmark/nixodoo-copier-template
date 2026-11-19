@@ -21,6 +21,8 @@ for env_dir in "$WT_ENVROOT"/*/; do
     # is-active prints the state and exits non-zero for any but active: keep what it printed
     svc="$(systemctl --user is-active "odoo{{ service_suffix }}-wt@$slug.service" 2>/dev/null)" || true
     [ -n "$svc" ] || svc=unknown
+    # a vanilla env (wt-start --vanilla) has no worktree: Odoo's own addons only
+    if is_vanilla "$slug"; then tree=vanilla; else tree="$(tree_state "$WT_ROOT/$slug")"; fi
     printf "%-30s %-5s %-36s %-9s %-9s %s\n" "$slug" "$port" "$(db_name_for "$slug")" "$svc" \
-        "$(tree_state "$WT_ROOT/$slug")" "$(tree_state "$WT_ENVREPO_ROOT/$slug")"
+        "$tree" "$(tree_state "$WT_ENVREPO_ROOT/$slug")"
 done

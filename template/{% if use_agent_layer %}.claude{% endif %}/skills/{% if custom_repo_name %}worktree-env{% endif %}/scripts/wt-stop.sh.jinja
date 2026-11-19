@@ -40,6 +40,8 @@ elif [ "$LOCK_RC" -ne 0 ] && [ -d "$ENV_DIR" ]; then
 fi
 # Read under the locks: a wt-start waited for may have recorded a new name.
 DB="$(db_name_for "$SLUG")"
+VANILLA=""
+! is_vanilla "$SLUG" || VANILLA=1
 
 systemctl --user stop "odoo{{ service_suffix }}-wt@$SLUG.service" 2>/dev/null || true
 
@@ -76,4 +78,8 @@ if [ -n "$LOCKED" ] && [ -d "$ENV_DIR" ]; then
     mv "$ENV_DIR" "$GONE"
     rm -rf "$GONE"
 fi
-echo "STATUS: removed ($SLUG) — worktree$ENVREPO_NOTE + env + DB dropped; branch $SLUG kept"
+if [ -n "$VANILLA" ]; then
+    echo "STATUS: removed ($SLUG) — vanilla env$ENVREPO_NOTE + DB dropped"
+else
+    echo "STATUS: removed ($SLUG) — worktree$ENVREPO_NOTE + env + DB dropped; branch $SLUG kept"
+fi

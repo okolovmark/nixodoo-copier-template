@@ -26,6 +26,8 @@
 # A worktree env per pipeline run: start (idempotent), list, stop; --env-repo adds this repo's
 # own worktree on branch <slug> at .worktrees/_envrepo/<slug> (ticket scripts, ADRs, skills)
 bash .claude/skills/worktree-env/scripts/wt-start.sh <slug> [--env-repo]
+# A vanilla env: standard Odoo, its own addons only, no prod data (--country for a chart of accounts)
+bash .claude/skills/worktree-env/scripts/wt-start.sh <slug> --vanilla=purchase,account --country=<code>
 bash .claude/skills/worktree-env/scripts/wt-list.sh
 bash .claude/skills/worktree-env/scripts/wt-stop.sh <slug>
 
