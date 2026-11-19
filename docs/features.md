@@ -83,9 +83,9 @@ The full inventory behind the summary in [the README](../README.md#what-it-gener
   in `addons.yaml`: `release_notes` with `use_release_notes`, `project_ai_driven` with
   `task_ai_driven`, and on top of it the Team Dashboard (`project_team_dashboard`, plus on
   16.0 its glue with OCA project_timeline; on 20.0 the Deadline does not follow the plan yet)
-  with `use_team_dashboard`, and on 16.0 the header Support item (`project_support_request`)
-  with `use_support_request` and the header Timelog timer (`project_timesheet_systray`, plus
-  OCA `project_timesheet_time_control`) with `use_timesheet_systray`
+  with `use_team_dashboard`, the header Support item (`project_support_request`) with
+  `use_support_request`, and on 16.0 the header Timelog timer (`project_timesheet_systray`,
+  plus OCA `project_timesheet_time_control`) with `use_timesheet_systray`
 - `nix flake check` shellchecks every project script
 
 ## Memory

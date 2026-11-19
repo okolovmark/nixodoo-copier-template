@@ -233,10 +233,11 @@ use_team_dashboard:
 
 use_support_request:
   type: bool
-  help: The Support item in the Odoo header (project_support_request from okolovmark/nixodoo-addons through addons.yaml, on top of project_ai_driven; branch 16.0, the only version this is asked for until its 20.0 port)? Every internal user files a request about this Odoo from it, a title and a task type, as a task of the project flagged develops_this_odoo (Develops This Odoo), in its first unfolded stage, with the user as its UAT user, no assignee and no estimate; the item lists the user's open requests and is hidden until an active project carries the flag. That first stage stays out of the project's Stages Requiring a Type and an Estimate, or a request is refused. To the ticket skills a request is a task like any other - the start of work gives it its owner and estimate
+  help: The Support item in the Odoo header (project_support_request from okolovmark/nixodoo-addons through addons.yaml, on top of project_ai_driven; branches 16.0 and 20.0, the only versions this is asked for)? Every internal user files a request about this Odoo from it, a title and a task type, as a task of the project flagged develops_this_odoo (Develops This Odoo), in its first unfolded stage, with the user as its UAT user, no assignee and no estimate; the item lists the user's open requests and is hidden until an active project carries the flag. That first stage stays out of the project's Stages Requiring a Type and an Estimate, or a request is refused. To the ticket skills a request is a task like any other - the start of work gives it its owner and estimate
   default: false
-  when: "{{ tickets_mcp == 'odoo' and task_ai_driven and odoo_version == '16.0' }}"
-  validator: "{% if use_support_request and not (tickets_mcp == 'odoo' and task_ai_driven and odoo_version == '16.0') %}use_support_request needs tickets_mcp odoo, task_ai_driven and Odoo 16.0{% endif %}"
+  when: "{{ tickets_mcp == 'odoo' and task_ai_driven and odoo_version in ['16.0', '20.0'] }}"
+  # --data sets a skipped question too
+  validator: "{% if use_support_request and not (tickets_mcp == 'odoo' and task_ai_driven and odoo_version in ['16.0', '20.0']) %}use_support_request needs tickets_mcp odoo, task_ai_driven and Odoo 16.0 or 20.0{% endif %}"
 
 use_timesheet_systray:
   type: bool
