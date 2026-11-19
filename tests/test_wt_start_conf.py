@@ -17,6 +17,8 @@ The wt-restore.sh cases run it with psql, pg_restore and odoo stubbed on a
 worktree with a scripted git history. The wt-stop.sh cases share wt-test.sh's stubs.
 The --env-repo cases run wt-start.sh, wt-stop.sh and wt-list.sh on a project that is
 a real git repo, git stubbed for the addons repo only.
+The --vanilla cases run wt-start.sh with its helper scripts logging their calls, and
+wt-init.sh with psql, systemctl and odoo stubbed.
 The wt-browser.sh cases run it with playwright-cli, Chrome, ffmpeg and ffprobe stubbed, on a
 PATH that holds nothing else of this machine.
 CI runs this file once per push (the wt-scripts job); it needs jinja2, bash, flock and git.
@@ -868,6 +870,30 @@ def wt_list_shows_the_env_repo_worktree_state():
 
 
 @case
+def a_vanilla_env_is_listed_as_such_never_restored_and_stopped_without_a_branch():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        cmd, env, events = stop_project(root)
+        env_dir = root / ".worktrees/_env/x"
+        (env_dir / "vanilla").write_text("")
+        for name in ("wt-list.sh", "wt-restore.sh"):
+            (root / "scripts" / name).write_text(render_script(SRC.with_name(f"{name}.jinja")))
+        run = subprocess.run(["bash", str(root / "scripts/wt-list.sh")], capture_output=True, text=True, env=env,
+                             stdin=subprocess.DEVNULL, timeout=60)
+        rows = [line.split() for line in run.stdout.splitlines()]
+        assert run.returncode == 0 and rows[1][0] == "x" and rows[1][4:] == ["vanilla", "none"], rows
+        run = subprocess.run(["bash", str(root / "scripts/wt-restore.sh"), "x"], capture_output=True, text=True,
+                             env=env, stdin=subprocess.DEVNULL, timeout=60)
+        out = run.stdout + run.stderr
+        assert run.returncode == 1 and "env x is vanilla" in out, out
+        assert "psql" not in (events.read_text() if events.exists() else ""), "nothing restored"
+        run = subprocess.run(cmd, capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL, timeout=60)
+        out = run.stdout + run.stderr
+        assert run.returncode == 0 and "STATUS: removed (x) — vanilla env + DB dropped\n" in out, out
+        assert not env_dir.exists(), out
+
+
+@case
 def an_update_of_a_module_the_db_lacks_stops_before_odoo():
     rc, out, psql, odoo = run_wt_test(["-u", "acme_new", "--test-enable", "--test-tags", "/acme_new"],
                                       missing="acme_new uninstalled\n")
@@ -1186,7 +1212,8 @@ def run_wt_start(root, interface=None, argv=("x",), extra_env=None):
     """Run the rendered wt-start.sh with `argv` (slug `x`) in project `root` (made on the first call) with
     WT_HTTP_INTERFACE=`interface` in .env when given; its helper scripts are no-ops, the worktree
     and port exist, psql and systemctl are stubs, and so is git for the addons repo (the project's
-    own repo gets the real one). Returns (exit code, stdout+stderr, conf path)."""
+    own repo gets the real one). The helper scripts and the addons-repo git log their argv to
+    root/stubs.log. Returns (exit code, stdout+stderr, conf path)."""
     scripts, bin_dir, env_dir = root / "scripts", root / "bin", root / ".worktrees/_env/x"
     if not scripts.exists():
         for d in (scripts, bin_dir, env_dir, root / "backup"):
@@ -1195,9 +1222,10 @@ def run_wt_start(root, interface=None, argv=("x",), extra_env=None):
         (env_dir / "port").write_text("1700\n")
         for src in (SRC, COMMON_SRC):
             (scripts / src.name.removesuffix(".jinja")).write_text(render_script(src))
-        for name in ("wt-bootstrap.sh", "wt-link.sh", "wt-restore.sh"):
-            (scripts / name).write_text("exit 0\n")
-        stubs = {"git": f'case "$*" in "-C {root}/src/acme-addons "*) ;; *) exec {shlex.quote(shutil.which("git"))} "$@" ;; esac\n'
+        for name in ("wt-bootstrap.sh", "wt-link.sh", "wt-restore.sh", "wt-init.sh"):
+            (scripts / name).write_text(f'echo "{name} $*${{WT_VANILLA:+ (WT_VANILLA)}}" >> {root / "stubs.log"}\n')
+        stubs = {"git": f'case "$*" in "-C {root}/src/acme-addons "*) echo "git $*" >> {root / "stubs.log"} ;;'
+                        f' *) exec {shlex.quote(shutil.which("git"))} "$@" ;; esac\n'
                         f'case "$*" in *"worktree list"*) echo "worktree {root}/.worktrees/x" ;; esac\n',
                  "psql": "", "systemctl": ""}
         for name, body in stubs.items():
@@ -1502,6 +1530,64 @@ def an_unknown_option_or_a_second_slug_is_refused_before_anything_is_made():
             rc, out, conf_path = run_wt_start(pathlib.Path(tmp), argv=argv)
             assert rc == 2 and "usage: wt-start.sh <slug> [--env-repo]" in out, (argv, rc, out)
             assert not conf_path.exists(), argv
+
+
+def stubs_log(root):
+    path = root / "stubs.log"
+    return path.read_text().splitlines() if path.exists() else []
+
+
+@case
+def a_vanilla_env_inits_its_db_without_worktree_farm_dump_or_queue_job():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        rc, out, conf_path = run_wt_start(root, argv=("x", "--vanilla=purchase,account", "--country=ph"))
+        log = stubs_log(root)
+        assert rc == 0 and "wt-init.sh x --modules=purchase,account --country=PH" in log, (out, log)
+        assert any(line.startswith("wt-bootstrap.sh") and "(WT_VANILLA)" in line for line in log), log
+        assert not any(line.startswith(("wt-restore.sh", "wt-link.sh", "git ")) for line in log), log
+        assert "VANILLA: " in out and "WORKTREE:" not in out and "BRANCH:" not in out, out
+        assert "DB: wt_x\n" in out and "URL: http://wt_x.localhost:1700/web" in out, out
+        found = parse_conf(conf_path.read_text())
+        assert found["options"]["server_wide_modules"] == "base,web" and "queue_job" not in found, found
+        env_dir = conf_path.parent
+        assert (env_dir / "vanilla").exists() and not (env_dir / "dump").exists(), sorted(env_dir.iterdir())
+        assert (env_dir / "db").read_text() == "wt_x\n"
+
+
+@case
+def a_vanilla_env_stays_vanilla_without_a_dump_and_installs_what_a_later_run_names():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        rc, out, _conf = run_wt_start(root, argv=("x", "--vanilla"))
+        assert rc == 0 and stubs_log(root)[-1] == "wt-init.sh x", (out, stubs_log(root))
+        for dump in (root / "backup").glob("*.dump"):
+            dump.unlink()
+        rc, out, _conf = run_wt_start(root)
+        assert rc == 0 and "VANILLA: " in out and stubs_log(root)[-1] == "wt-init.sh x", (out, stubs_log(root))
+        rc, out, _conf = run_wt_start(root, argv=("x", "--vanilla=stock"))
+        assert rc == 0 and stubs_log(root)[-1] == "wt-init.sh x --modules=stock", (out, stubs_log(root))
+        assert not any(line.startswith("wt-restore.sh") for line in stubs_log(root)), stubs_log(root)
+
+
+@case
+def vanilla_is_refused_on_a_restored_env_with_wt_dump_and_with_bad_options():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        rc, out, _conf = run_wt_start(root)
+        assert rc == 0, out
+        rc, out, _conf = run_wt_start(root, argv=("x", "--vanilla"))
+        assert rc == 2 and "holds a restore of the prod dump" in out, out
+        assert not (root / ".worktrees/_env/x/vanilla").exists(), out
+        dump = newest(root / "elsewhere/odoo_2026-10-21-08-52-07.dump")
+        for argv, extra, said in ((("y", "--vanilla"), {"WT_DUMP": str(dump)}, "a vanilla env restores none"),
+                                  (("y", "--country=PH"), {}, "--country goes with --vanilla"),
+                                  (("y", "--vanilla=purchase, account"), {}, "no spaces"),
+                                  (("y", "--vanilla=Purchase"), {}, "no spaces"),
+                                  (("y", "--vanilla", "--country=PHL"), {}, "two-letter ISO code")):
+            rc, out, _conf = run_wt_start(root, argv=argv, extra_env=extra)
+            assert rc == 2 and said in out, (argv, rc, out)
+            assert not (root / ".worktrees/_env/y").exists(), argv
 
 
 RESTORE_SRC = SRC.with_name("wt-restore.sh.jinja")
@@ -1959,6 +2045,150 @@ def wt_stop_drops_the_db_the_env_recorded():
         text = events.read_text()
         assert run.returncode == 0 and "DROP DATABASE IF EXISTS wt_x_102026_restoring" in text, text
         assert "wt_x_restoring" not in text, text
+
+
+INIT_SRC = SRC.with_name("wt-init.sh.jinja")
+
+
+def wt_init_project(root, exists=False, installed=("base", "purchase", "account"), country_id="7",
+                    account="0", journals="0", base_rc=0, install_rc=0, active=False, vanilla=True):
+    """Lay out a project at `root` with the rendered wt-init.sh for a vanilla env `x` (DB wt_x).
+
+    psql, systemctl and the profile's odoo are stubs logging their argv, in call order, to one
+    file. psql finds wt_x when `exists`, or once an `odoo -i base` made it (a drop removes it); it
+    answers the country query with `country_id`, the installed-module list with `installed`, the
+    accounting check with `account` and the journal count with `journals`. odoo on `-i base` makes
+    the DB, files an attachment in its filestore and exits `base_rc`; on another `-i` it exits
+    `install_rc`. systemctl is-active says active when `active`. Without `vanilla` the env has no
+    marker. Returns the command of a run without options, its environment and the calls file."""
+    scripts, bin_dir, odoo_bin, calls = root / "scripts", root / "bin", root / ".nix-profile/bin", root / "calls"
+    env_dir = root / ".worktrees/_env/x"
+    for d in (scripts, bin_dir, odoo_bin, env_dir):
+        d.mkdir(parents=True)
+    (env_dir / "odoo.conf").write_text("[options]\n")
+    (env_dir / "db").write_text("wt_x\n")
+    if vanilla:
+        (env_dir / "vanilla").write_text("")
+    for src in (INIT_SRC, COMMON_SRC):
+        (scripts / src.name.removesuffix(".jinja")).write_text(render_script(src))
+    made, attachment = root / "made", root / FILESTORE / "wt_x/ab/ab12"
+    if exists:
+        made.touch()
+    stubs = {
+        bin_dir / "psql": 'case "$*" in\n'
+                          f'  *"DROP DATABASE"*) rm -f {made} ;;\n'
+                          f'  *pg_database*) [ ! -e {made} ] || echo 1 ;;\n'
+                          f'  *res_country*) printf "%s" {shlex.quote(country_id)} ;;\n'
+                          f'  *"name = \'account\'"*) echo {account} ;;\n'
+                          f'  *account_journal*) echo {journals} ;;\n'
+                          f'  *ir_module_module*) printf "%s\\n" {shlex.join(installed)} ;;\n'
+                          'esac\n',
+        bin_dir / "systemctl": f'case "$*" in *is-active*) exit {0 if active else 3} ;; esac\n',
+        odoo_bin / "odoo": 'case " $* " in\n'
+                           f'  *" -i base "*) touch {made}; mkdir -p {attachment.parent}; echo new > {attachment}\n'
+                           f'    exit {base_rc} ;;\n'
+                           f'  *" -i "*) exit {install_rc} ;;\n'
+                           'esac\n',
+    }
+    for path, body in stubs.items():
+        path.write_text(f'#!/usr/bin/env bash\necho "{path.name} $*" >> "{calls}"\n{body}')
+        path.chmod(0o755)
+    env = {**os.environ, "HOME": str(root), "WT_TEST_PROJECT_DIR": str(root), "PATH": f"{bin_dir}:{os.environ['PATH']}"}
+    return ["bash", str(scripts / "wt-init.sh"), "x"], env, calls
+
+
+def run_wt_init(args=(), **project):
+    """Run wt_init_project's wt-init.sh with `args`; returns the exit code, stdout+stderr, the calls
+    and the files left in the filestore."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        cmd, env, calls = wt_init_project(root, **project)
+        proc = subprocess.run([*cmd, *args], capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL,
+                              timeout=60)
+        files = sorted(str(p.relative_to(root / FILESTORE)) for p in (root / FILESTORE).rglob("*") if p.is_file())
+        return (proc.returncode, proc.stdout + proc.stderr, calls.read_text().splitlines() if calls.exists() else [],
+                files)
+
+
+@case
+def a_new_vanilla_db_gets_base_then_the_country_then_the_modules_then_neutralize():
+    rc, out, calls, files = run_wt_init(("--modules=purchase,account", "--country=ph"))
+    assert rc == 0 and "STATUS: db-ready (wt_x, vanilla)" in out and "WARNING" not in out, out
+    order = [call_index(calls, "systemctl", "stop", "odoo-wt@x.service"),
+             call_index(calls, "odoo", "-i", "base", "--without-demo=all", "--stop-after-init"),
+             call_index(calls, "psql", "res_country", "'PH'"),
+             call_index(calls, "psql", "UPDATE", "res_partner"),
+             call_index(calls, "odoo", "-i", "purchase,account", "--without-demo=all"),
+             call_index(calls, "odoo", "neutralize")]
+    assert None not in order and order == sorted(order), (order, calls)
+    assert "SET country_id = 7 " in calls[order[3]] and files == ["wt_x/ab/ab12"], (calls, files)
+
+
+@case
+def odoo_19_takes_the_bare_without_demo_flag():
+    env = jinja2.Environment(trim_blocks=True, lstrip_blocks=True, keep_trailing_newline=True)
+    for major, flag in (("16", "--without-demo=all"), ("18", "--without-demo=all"),
+                        ("19", "--without-demo"), ("20", "--without-demo")):
+        text = env.from_string(INIT_SRC.read_text()).render(**{
+            **BASE, "odoo_version": f"{major}.0", "odoo_major": major, "project_dir_var": "P", "project_name": "p",
+            "custom_repo_name": "acme-addons", "nix_profile_rel": ".nix-profile"})
+        assert re.findall(r"^NO_DEMO=.*$", text, re.M) == [f"NO_DEMO=({flag})"], (major, text)
+
+
+@case
+def a_module_that_does_not_install_drops_the_new_db_and_its_filestore():
+    rc, out, calls, files = run_wt_init(("--modules=purchase,acount",), installed=("base", "purchase"))
+    assert rc == 1 and "not installed: acount" in out and "wt_x and its filestore dropped" in out, out
+    assert any("DROP DATABASE IF EXISTS wt_x" in line for line in calls) and files == [], (calls, files)
+    assert call_index(calls, "odoo", "neutralize") is None, calls
+
+
+@case
+def an_unknown_country_stops_before_any_module_installs():
+    rc, out, calls, files = run_wt_init(("--modules=account", "--country=zz"), country_id="")
+    assert rc == 1 and "no country has the code ZZ" in out and files == [], (out, files)
+    assert call_index(calls, "odoo", "-i", "account") is None and call_index(calls, "psql", "UPDATE") is None, calls
+    assert any("DROP DATABASE IF EXISTS wt_x" in line for line in calls), calls
+
+
+@case
+def a_failed_base_init_drops_what_it_made():
+    rc, out, calls, files = run_wt_init(("--modules=account",), base_rc=1)
+    assert rc == 1 and "creating wt_x failed" in out and files == [], (out, files)
+    assert call_index(calls, "odoo", "-i", "account") is None, calls
+
+
+@case
+def on_an_existing_db_only_the_modules_install_and_a_failure_keeps_it_served():
+    rc, out, calls, _files = run_wt_init(("--modules=stock",), exists=True, installed=("base", "stock"))
+    assert rc == 0 and call_index(calls, "odoo", "-i", "stock") is not None, (out, calls)
+    assert call_index(calls, "odoo", "-i", "base") is None and call_index(calls, "odoo", "neutralize") is None, calls
+    rc, out, calls, _files = run_wt_init(("--modules=stock", "--country=PH"), exists=True, installed=("base",),
+                                         active=True)
+    assert rc == 1 and "not installed: stock" in out and "--country applies when wt_x is made" in out, out
+    assert not any("DROP DATABASE" in line for line in calls), calls
+    stop, start = call_index(calls, "systemctl", "stop"), call_index(calls, "systemctl", "start", "odoo-wt@x.service")
+    assert None not in (stop, start) and stop < start and "started again" in out, (calls, out)
+    rc, out, calls, _files = run_wt_init(("--modules=stock",), exists=True, installed=("base",))
+    assert rc == 1 and call_index(calls, "systemctl", "start") is None, calls
+
+
+@case
+def accounting_without_a_chart_is_warned_about():
+    rc, out, _calls, _files = run_wt_init(("--modules=account",), account="1", journals="0")
+    assert rc == 0 and "WARNING: wt_x has accounting and no chart of accounts" in out and "--country=<code>" in out, out
+    rc, out, _calls, _files = run_wt_init(("--modules=account", "--country=PH"), account="1", journals="7")
+    assert rc == 0 and "WARNING" not in out, out
+
+
+@case
+def the_init_refuses_an_env_that_is_not_vanilla_and_bad_options():
+    rc, out, calls, _files = run_wt_init(("--modules=account",), vanilla=False)
+    assert rc == 1 and "is no vanilla env" in out and calls == [], (out, calls)
+    for args, said in ((("--modules=a b",), "no spaces"), (("--country=PHL",), "two-letter ISO code"),
+                       (("--force",), "unknown option")):
+        rc, out, calls, _files = run_wt_init(args)
+        assert rc == 2 and said in out and calls == [], (args, out, calls)
 
 
 BOOTSTRAP_SRC = SRC.with_name("wt-bootstrap.sh.jinja")

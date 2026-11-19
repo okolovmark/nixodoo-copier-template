@@ -6,26 +6,44 @@
 # the service restart its test lock (a wt-test run on the env is waited for).
 #
 # Usage: [WT_DUMP=<dump>] wt-start.sh <slug> [--env-repo]   # <slug> = branch name, e.g. {{ ticket_prefix | lower }}-1234-cash-in-cogs
+#        wt-start.sh <slug> --vanilla[=<modules>] [--country=<code>] [--env-repo]
 #   WT_DUMP     restore that dump instead of the newest in backup/ (a new env's DB only;
 #               it is named wt_<slug>_<MMDDYY> from the dump's name either way)
 #   --env-repo  also check out the project's own repo at .worktrees/_envrepo/<slug> on branch
 #               <slug> (off origin's default branch), for the task's ticket scripts, ADRs and
 #               skill edits. Later runs, with the flag or without, keep the one that exists.
-# Prints WORKTREE / BRANCH / URL / CONF / DB / PORT (+ ENVREPO) for the orchestrator.
+#   --vanilla   no prod copy and no addons worktree: DB wt_<slug> is a fresh init of Odoo's own
+#               addons only (the custom and third-party repos stay off the path), no demo data,
+#               neutralized; =<modules> (comma-separated) installs those, now or on a later run.
+#               Later runs keep the env vanilla, with the flag or without.
+#   --country   the company's country (ISO code, e.g. PH) set before <modules> install, so an
+#               accounting module loads that country's chart; only when the DB is made.
+# Prints WORKTREE / BRANCH (or VANILLA) / URL / CONF / DB / PORT (+ ENVREPO) for the orchestrator.
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/wt-common.sh"
 
-USAGE="usage: wt-start.sh <slug> [--env-repo]"
-SLUG="" WITH_ENVREPO=""
+USAGE="usage: wt-start.sh <slug> [--env-repo] [--vanilla[=<modules>] [--country=<code>]]"
+SLUG="" WITH_ENVREPO="" VANILLA_FLAG="" MODULES="" COUNTRY=""
 for arg in "$@"; do
     case "$arg" in
         --env-repo) WITH_ENVREPO=1 ;;
+        --vanilla) VANILLA_FLAG=1 ;;
+        --vanilla=*) VANILLA_FLAG=1 MODULES="${arg#--vanilla=}" ;;
+        --country=*) COUNTRY="${arg#--country=}" ;;
         -*) echo "ERROR: unknown option $arg; $USAGE" >&2; exit 2 ;;
         *) [ -z "$SLUG" ] || { echo "ERROR: one slug only; $USAGE" >&2; exit 2; }
            SLUG="$arg" ;;
     esac
 done
 [ -n "$SLUG" ] || { echo "$USAGE" >&2; exit 2; }
+if [ -n "$MODULES" ] && ! [[ "$MODULES" =~ ^[a-z0-9_]+(,[a-z0-9_]+)*$ ]]; then
+    echo "ERROR: --vanilla=$MODULES: module names separated by commas, no spaces; $USAGE" >&2; exit 2
+fi
+if [ -n "$COUNTRY" ]; then
+    [ -n "$VANILLA_FLAG" ] || { echo "ERROR: --country goes with --vanilla; $USAGE" >&2; exit 2; }
+    [[ "$COUNTRY" =~ ^[A-Za-z]{2}$ ]] || { echo "ERROR: --country=$COUNTRY: a two-letter ISO code, e.g. PH" >&2; exit 2; }
+    COUNTRY="${COUNTRY^^}"
+fi
 WT_PATH="$WT_ROOT/$SLUG"
 ENVREPO_PATH="$WT_ENVREPO_ROOT/$SLUG"
 refuse_in_claude_worktree "$WT_PATH"
@@ -37,14 +55,24 @@ DATA_DIR="$ENV_DIR/data"
 FARM="$DATA_DIR/addons/{{ odoo_version }}"
 CONF="$ENV_DIR/odoo.conf"
 
-bash "$WT_SCRIPT_DIR/wt-bootstrap.sh"
+# Vanilla: asked for now, or the env was made so. An env holding a restore stays one.
+VANILLA=""
+if [ -n "$VANILLA_FLAG" ] || is_vanilla "$SLUG"; then
+    VANILLA=1
+    if [ -n "$VANILLA_FLAG" ] && ! is_vanilla "$SLUG" && { [ -s "$ENV_DIR/db" ] || [ -d "$WT_PATH" ]; }; then
+        echo "ERROR: env $SLUG holds a restore of the prod dump: a vanilla env needs a slug of its own" >&2; exit 2
+    fi
+    [ -z "${WT_DUMP:-}" ] || { echo "ERROR: WT_DUMP names a dump to restore, a vanilla env restores none" >&2; exit 2; }
+fi
+
+WT_VANILLA="$VANILLA" bash "$WT_SCRIPT_DIR/wt-bootstrap.sh"
 if [ -n "${WT_DUMP:-}" ]; then
     [ -f "$WT_DUMP" ] || { echo "ERROR: WT_DUMP=$WT_DUMP: no such dump" >&2; exit 1; }
     # Recorded for wt-restore, which may run from another cwd: made absolute, its file name
     # kept as given (a link's own name, as the dump's day is read from the name).
     WT_DUMP="$(CDPATH='' cd -- "$(dirname -- "$WT_DUMP")" && pwd)/$(basename -- "$WT_DUMP")"
 fi
-[ -n "${WT_DUMP:-}" ] || ls "$BACKUP_DIR"/*.dump >/dev/null 2>&1 || {
+[ -n "$VANILLA" ] || [ -n "${WT_DUMP:-}" ] || ls "$BACKUP_DIR"/*.dump >/dev/null 2>&1 || {
     echo "ERROR: no prod seed dump in $BACKUP_DIR — {% if backup_s3_bucket %}run \`nix run .#download-backup\`{% else %}put a prod dump into backup/{% endif %}, then retry" >&2; exit 1; }
 
 # 2 (stale): a wt-stop removed the env while this waited; it is made again.
@@ -57,9 +85,12 @@ done
 [ "$LOCK_RC" -eq 0 ] || { echo "ERROR: cannot take $ENV_DIR/start.lock: env $SLUG left as it is" >&2; exit 1; }
 
 # A DB this env already has (the recorded name, or an older env's undated wt_<slug>) is kept.
-# A new one is named after its dump, and the dump is recorded for wt-restore to take.
+# A new one is named after its dump, and the dump is recorded for wt-restore to take. A vanilla
+# env has no dump: its DB is the undated wt_<slug>, and the marker keeps later runs vanilla.
 DB="$(db_name_for "$SLUG")"
-if ! db_exists "$DB"; then
+if [ -n "$VANILLA" ]; then
+    : > "$ENV_DIR/vanilla"
+elif ! db_exists "$DB"; then
     DUMP="$(seed_dump)"
     DB="$(dated_db_name "$SLUG" "$DUMP")"
     echo "$DUMP" > "$ENV_DIR/dump"
@@ -70,13 +101,15 @@ HOST="$(session_host "$DB")"
 # --- critical section: worktree add + port allocation (serialized) ---
 exec 9>"$LOCKFILE"
 flock 9
-git -C "$SRC_REPO" fetch -q origin {{ odoo_version }}
-if git -C "$SRC_REPO" worktree list --porcelain | grep -qx "worktree $WT_PATH"; then
-    :                                                                       # reuse
-elif git -C "$SRC_REPO" show-ref --verify -q "refs/heads/$SLUG"; then
-    git -C "$SRC_REPO" worktree add -q "$WT_PATH" "$SLUG"                    # branch exists
-else
-    git -C "$SRC_REPO" worktree add -q -b "$SLUG" "$WT_PATH" origin/{{ odoo_version }}
+if [ -z "$VANILLA" ]; then
+    git -C "$SRC_REPO" fetch -q origin {{ odoo_version }}
+    if git -C "$SRC_REPO" worktree list --porcelain | grep -qx "worktree $WT_PATH"; then
+        :                                                                   # reuse
+    elif git -C "$SRC_REPO" show-ref --verify -q "refs/heads/$SLUG"; then
+        git -C "$SRC_REPO" worktree add -q "$WT_PATH" "$SLUG"                # branch exists
+    else
+        git -C "$SRC_REPO" worktree add -q -b "$SLUG" "$WT_PATH" origin/{{ odoo_version }}
+    fi
 fi
 if [ -n "$WITH_ENVREPO" ]; then
     git -C "$PROJ" fetch -q origin
@@ -107,7 +140,8 @@ flock -u 9
 # --- outside the lock (parallel): farm, conf, DB restore, filestore, service ---
 # conf is written BEFORE the restore: wt-restore's `odoo neutralize` needs it
 # (session data_dir/addons farm resolves the installed modules' neutralize.sql).
-bash "$WT_SCRIPT_DIR/wt-link.sh" "$WT_PATH" "$FARM"
+# A vanilla env gets no farm: Odoo's default addons_path is its own addons alone.
+[ -n "$VANILLA" ] || bash "$WT_SCRIPT_DIR/wt-link.sh" "$WT_PATH" "$FARM"
 
 is_loopback() {
     [[ "$1" =~ ^(::1|localhost|127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})$ ]]
@@ -158,9 +192,16 @@ EOF
 # ^%d$ finds the session DB only by a Host whose first label is the DB name, which
 # $HOST is (locally $DB.localhost, resolving to ::1, where the session listens).
 is_loopback "$WT_HTTP_INTERFACE" || sed -i '/^admin_passwd = /a list_db = False' "$CONF_TMP"
+# No farm, so no server-wide module of it: a vanilla Odoo loads base and web alone.
+[ -z "$VANILLA" ] || sed -i -e 's/^server_wide_modules = .*/server_wide_modules = base,web/' \
+    -e '/^\[queue_job\]$/,$d' "$CONF_TMP"
 mv "$CONF_TMP" "$CONF"
 
-bash "$WT_SCRIPT_DIR/wt-restore.sh" "$SLUG"
+if [ -n "$VANILLA" ]; then
+    bash "$WT_SCRIPT_DIR/wt-init.sh" "$SLUG" ${MODULES:+"--modules=$MODULES"} ${COUNTRY:+"--country=$COUNTRY"}
+else
+    bash "$WT_SCRIPT_DIR/wt-restore.sh" "$SLUG"
+fi
 
 # The restart would put the service on the DB beside a wt-test run (a -u above all): one Odoo
 # per DB, so a run on the env is waited for. The conf was rewritten without it: a running Odoo
@@ -182,8 +223,12 @@ $PSQL -q -d "$DB" -c "INSERT INTO ir_config_parameter (key, value) VALUES ('repo
 
 systemctl --user restart "odoo{{ service_suffix }}-wt@$SLUG.service"
 
-echo "WORKTREE: $WT_PATH"
-echo "BRANCH: $SLUG"
+if [ -n "$VANILLA" ]; then
+    echo "VANILLA: Odoo's own addons only, no worktree"
+else
+    echo "WORKTREE: $WT_PATH"
+    echo "BRANCH: $SLUG"
+fi
 echo "URL: http://$HOST:$PORT/web"
 echo "CONF: $CONF"
 echo "DB: $DB"
