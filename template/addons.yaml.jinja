@@ -56,8 +56,11 @@ nixodoo-addons:
 {% endif %}
 {% if use_team_dashboard %}
   - "project_team_dashboard"
+{# the glue has no 20.0 version: OCA project_timeline has none #}
+{% if odoo_version == '16.0' %}
   # installs itself where OCA project_timeline is installed too, else stays out
   - "project_team_dashboard_timeline"
+{% endif %}
 {% endif %}
 {% if use_support_request %}
   - "project_support_request"
