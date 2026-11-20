@@ -685,12 +685,18 @@ Delivered write (revising earlier, once the real problem is clear, is fine):
      `kb query 'MATCH (r:Record {external_id: $k}) RETURN r.id AS id' -p k=<{% if task_keys %}KEY{% else %}record id{% endif %}>`. Then
      `kb context <id>`: the record's area tags, the knowledge records that share them
      (`[id] kind title — summary`; `kb show <id>` reads one in full) and the other open
-     tasks there.
-     - **Exit 4: the record has no area tag yet**, as every synced ticket arrives. Choose the
-       area from the ticket: the module or subsystem its title and description are about,
-       from the vocabulary `kb tags` lists (the project's `.kb/tags.toml` plus kb's built-in
-       areas). `kb edit <id> --tag <area>`, then `kb context <id>` again. When no area fits,
-       ask the user: a new area is a line in `.kb/tags.toml`, added through a PR.
+     tasks there. {% if task_ai_driven %}The sync tags a ticket with what Odoo already says: an area for each module of
+     the task's Modules named like an area of the vocabulary, and the type `bug` or `feature`
+     from its task type{% else %}The sync tags a ticket with the type `bug` or `feature` from its task type{% endif %}. `kb sync odoo --dry-run` prints what a sync would change,
+     record by record, and writes nothing.
+     - **Exit 4: the record has no area tag yet**{% if task_ai_driven %}: its task has no Modules, or none named like an
+       area{% endif %}. Choose the area from the ticket: the module or subsystem its title and
+       description are about, from the vocabulary `kb tags` lists (the project's
+       `.kb/tags.toml` plus kb's built-in areas). `kb edit <id> --tag <area>`, then
+       `kb context <id>` again. When no area fits, ask the user: a new area is a line in
+       `.kb/tags.toml`, added through a PR.
+     - A task that an open task blocks is silent: `kb today` and `kb next` leave it out,
+       `kb next --all` lists it, and `kb why <id>` names the blocker.
      - A kb without the `context` command: say so in one line and go on.
 {% endif %}
   Stage-move + {% if task_timeline %}Planned Dates{% else %}deadline{% endif %} + rebalance + sent status are a mandatory set;

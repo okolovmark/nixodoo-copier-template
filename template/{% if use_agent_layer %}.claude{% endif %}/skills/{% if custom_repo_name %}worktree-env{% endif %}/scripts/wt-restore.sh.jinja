@@ -12,6 +12,7 @@
 # <db>_YYYY-MM-DD-HH-MM-SS.dump (named otherwise: every installed custom module),
 # plus every installed module of the session's addons farm whose manifest version is
 # newer than the dump's (a pin bump of another repo, a release deployed after the dump).
+# A module of the farm older than the dump's stops the restore before the neutralization.
 # A dump older than the code otherwise fails the registry load on a column added
 # since. The day starts at its earliest instant anywhere (UTC+14), as the name's
 # clock is the dump host's: a needless update costs minutes, a missed one breaks
@@ -123,9 +124,10 @@ for query in get_neutralization_queries(os.environ["WT_NEUTRALIZE_MODULES"].spli
 env.cr.commit()
 PY
 }
-# Prints, from rows "name|latest_version" on stdin, the modules whose manifest in the farm
-# ($2) is newer, its version completed with the series ($1) as Odoo's adapt_version does.
-VERSIONS_AHEAD='
+# Compares, from rows "name|latest_version" on stdin, each module's manifest in the farm ($2),
+# its version completed with the series ($1) as Odoo's adapt_version does: prints
+# "ahead <name>" for one newer on disk, "behind <name> <dump's> <disk's> <its dir>" for one older.
+COMPARE_VERSIONS='
 import ast, os, sys
 series, farm = sys.argv[1], sys.argv[2]
 def full(version):
@@ -138,9 +140,11 @@ for row in sys.stdin:
     if not name or not os.path.isfile(path):
         continue
     with open(path) as manifest:
-        version = str(ast.literal_eval(manifest.read()).get("version", "1.0"))
-    if key(full(version)) > key(latest or "0"):
-        print(name)
+        version = full(str(ast.literal_eval(manifest.read()).get("version", "1.0")))
+    if key(version) > key(latest or "0"):
+        print("ahead", name)
+    elif latest and key(version) < key(latest):
+        print("behind", name, latest, version, os.path.realpath(os.path.join(farm, name)))
 '
 # Until the rename every exit drops the copy, set -e's included: a neutralized but
 # unfinished copy left behind would only confuse the next run.
@@ -163,6 +167,27 @@ pg_restore --clean --no-acl --no-owner -j "$RESTORE_JOBS" -h "$WT_DB_HOST" -p "$
 [ "$($PSQL -d "$STAGING_DB" -tAc "SELECT count(*) FROM res_users" 2>/dev/null)" -gt 0 ] 2>/dev/null \
     || abort_restore "restore incomplete (res_users empty) — see $RESTORE_LOG"
 
+# The farm's manifests against the dump's latest_version of every installed module. A module of
+# the farm the dump has at a NEWER version stops the restore here, before the neutralization's
+# minutes: Odoo would load code older than its data (views and fields the code lacks), and the
+# update below would fail on it. A shared checkout behind its addons.yaml pin (wt-start names
+# those), or a session branch older than the dump. One newer on disk is updated below. A module
+# the farm does not hold (Odoo's own) is left out: an Odoo pin bump still needs `-u all` by hand.
+VERSIONS="$($PSQL -d "$STAGING_DB" -tA -F '|' \
+          -c "SELECT name, latest_version FROM ir_module_module WHERE state IN ('installed', 'to upgrade')" \
+        | python3 -I -c "$COMPARE_VERSIONS" "{{ odoo_version }}" "$FARM")" \
+    || abort_restore "cannot compare the installed module versions of $STAGING_DB with $FARM"
+BEHIND="$(sed -n 's/^behind //p' <<< "$VERSIONS")"
+if [ -n "$BEHIND" ]; then
+    echo "ERROR: modules older on disk than in $(basename "$DUMP"): the copy would run code older than its data" >&2
+    while read -r name in_dump on_disk dir; do
+        echo "  $name: $in_dump in the dump, $on_disk on disk ($dir, commit $(git -C "$dir" rev-parse --short HEAD 2>/dev/null || echo unknown))" >&2
+    done <<< "$BEHIND"
+    echo "A shared repo behind its addons.yaml pin: \`nix run .#update-repos\` (it moves the checkout of every env);" \
+         "this env's branch behind the dump: rebase it on origin/{{ odoo_version }}." >&2
+    exit 1
+fi
+
 echo "STATUS: neutralizing $STAGING_DB (odoo neutralize) …"
 {{ project_dir_var }}="$PROJ" "$ODOO_BIN" neutralize -c "$CONF" -d "$STAGING_DB" \
     || abort_restore "neutralization failed"
@@ -173,12 +198,8 @@ CHANGED_INSTALLED="$(LC_ALL=C comm -12 <(LC_ALL=C sort -u <<< "$CHANGED") <(LC_A
 # A module of the farm whose manifest is newer than the dump's latest_version (an
 # addons.yaml pin bump of another repo, a release deployed after the dump) changed no
 # file of the worktree, yet a changed module that depends on it loads views and fields
-# it does not have until it is updated too. A module the farm does not hold (Odoo's
-# own) is left out: an Odoo pin bump still needs `-u all` by hand.
-AHEAD="$($PSQL -d "$STAGING_DB" -tA -F '|' \
-          -c "SELECT name, latest_version FROM ir_module_module WHERE state IN ('installed', 'to upgrade')" \
-        | python3 -I -c "$VERSIONS_AHEAD" "{{ odoo_version }}" "$FARM")" \
-    || abort_restore "cannot compare the installed module versions of $STAGING_DB with $FARM"
+# it does not have until it is updated too.
+AHEAD="$(sed -n 's/^ahead //p' <<< "$VERSIONS")"
 UPDATE_MODULES="$(printf '%s\n%s\n' "${CHANGED_INSTALLED//,/$'\n'}" "$AHEAD" | sed '/^$/d' | LC_ALL=C sort -u | paste -sd, -)"
 AHEAD="$(sed '/^$/d' <<< "$AHEAD" | LC_ALL=C sort -u | paste -sd, -)"
 if [ -z "$UPDATE_MODULES" ]; then

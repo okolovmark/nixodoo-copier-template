@@ -194,6 +194,11 @@ jobs:
           if [ ! -d "$skill" ]; then echo "no settings-sync in this render"; exit 0; fi
           for f in "$skill"/baseline/*.json; do python3 -m json.tool "$f" > /dev/null; done
           python3 -m unittest discover -s "$skill/tests" -p 'test_*.py'
+      - name: deploy-checks (invariant scripts on canned answers)
+        run: |
+          skill=/tmp/gen/.claude/skills/deploy-checks
+          if [ ! -d "$skill" ]; then echo "no deploy-checks in this render"; exit 0; fi
+          python3 -m unittest discover -s "$skill/tests" -p 'test_*.py'
       - name: nix flake check
         run: |
           cd /tmp/gen

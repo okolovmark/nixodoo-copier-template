@@ -1449,6 +1449,68 @@ def wt_starts_service_restart_waits_for_a_test_run():
         assert "report.url" in log and "systemctl --user restart odoo-wt@x.service" in log, log
 
 
+def pinned_repos(root):
+    """addons.yaml at `root` with src/ clones: oca-web pinned at its second commit, checked out at
+    its first; shared pinned at its head (quoted key, a comment after the revision); a repo
+    tracking its branch, one pinned by a name, and one never cloned. Returns oca-web's two commits."""
+    heads = {}
+    for repo in ("oca-web", "shared", "tracking", "named"):
+        path = root / "src" / repo
+        path.mkdir(parents=True)
+        git(path, "init", "-q")
+        commit(path, "2026-10-01", {"a/__manifest__.py": "{}\n"})
+        commit(path, "2026-10-02", {"a/models.py": "x\n"})
+        heads[repo] = subprocess.run(["git", "-C", str(path), "rev-list", "HEAD"], capture_output=True,
+                                     text=True, check=True).stdout.split()
+    git(root / "src/oca-web", "checkout", "-q", heads["oca-web"][1])
+    (root / "addons.yaml").write_text(
+        'ENV:\n  DEFAULT_REPO_PATTERN: "https://github.com/OCA/{}.git"\n  ODOO_VERSION: "16.0"\n\n'
+        f'oca-web:\n  revision: {heads["oca-web"][0]}\n  modules:\n    - "a"\n'
+        'tracking:\n  - "a"\n'
+        'named:\n  revision: 16.0\n  modules:\n    - "a"\n'
+        'missing:\n  revision: 0123456789abcdef0123456789abcdef01234567\n  modules:\n    - "a"\n'
+        '---\n# shared modules\nENV:\n  DEFAULT_REPO_PATTERN: "https://github.com/acme/{}.git"\n'
+        f'"shared":\n  revision: "{heads["shared"][0]}"  # the last release\n  modules:\n    - "a"\n')
+    return heads["oca-web"]
+
+
+@case
+def a_repo_off_its_addons_yaml_pin_stops_a_new_env_and_warns_otherwise():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        pin, head = pinned_repos(root)
+        rc, out, _conf = run_wt_start(root)
+        line = f"  oca-web: checkout {head[:12]}, addons.yaml pins {pin[:12]}"
+        assert rc == 3 and line in out and "ERROR: addons repos off their addons.yaml pin" in out, (rc, out)
+        assert "WT_SKIP_PIN_CHECK=1" in out and "nix run .#update-repos" in out, out
+        assert out.count("addons.yaml pins") == 1, out  # shared at its pin, the rest left out
+        log = (root / "stubs.log").read_text()
+        assert "wt-link.sh" not in log and "wt-restore.sh" not in log, log
+        assert not (root / ".worktrees/_env/x/db").exists(), "nothing recorded for the env"
+
+        rc, out, _conf = run_wt_start(root, extra_env={"WT_SKIP_PIN_CHECK": "1"})
+        assert rc == 0 and "WARNING: addons repos off their addons.yaml pin" in out and line in out, (rc, out)
+        assert "wt-restore.sh x" in (root / "stubs.log").read_text()
+
+        # an env keeping its DB is warned, not stopped
+        (root / "bin/psql").write_text('#!/usr/bin/env bash\ncase "$*" in *pg_database*) echo 1 ;; esac\n')
+        rc, out, _conf = run_wt_start(root)
+        assert rc == 0 and "WARNING" in out and line in out, (rc, out)
+
+        git(root / "src/oca-web", "checkout", "-q", pin)
+        rc, out, _conf = run_wt_start(root)
+        assert rc == 0 and "addons.yaml" not in out, (rc, out)
+
+
+@case
+def a_vanilla_env_skips_the_pin_check():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        pinned_repos(root)
+        rc, out, _conf = run_wt_start(root, argv=("x", "--vanilla"))
+        assert rc == 0 and "addons.yaml" not in out, (rc, out)
+
+
 def env_repo_project(tmp):
     """A project cloned from a bare origin whose default branch is main (README.md "a").
     Returns (project root, origin, a second clone to push from)."""
@@ -1797,7 +1859,6 @@ AHEAD_VERSIONS = {
     "pinned_ahead": ("16.0.2.6.1", "16.0.2.15.0"),  # a pin bump: 15 > 6 as numbers, not as text
     "short_ahead": ("16.0.1.0.0", "1.1.0"),         # a manifest without the series
     "same": ("16.0.1.0.0", "1.0.0"),
-    "older_on_disk": ("16.0.3.0.0", "16.0.2.0.0"),
     "not_in_farm": ("16.0.1.0", None),               # Odoo's own module
 }
 
@@ -1823,6 +1884,21 @@ def modules_level_with_the_dump_add_nothing_to_the_update():
     rc, out, calls, _files = run_wt_restore(versions=level)
     assert (rc, updated_modules(calls)) == (0, CHANGED), (rc, calls, out)
     assert "newer on disk" not in out, out
+
+
+@case
+def a_module_older_on_disk_than_in_the_dump_stops_the_restore_before_neutralize():
+    # a shared checkout behind its addons.yaml pin: Odoo would load code older than its data
+    versions = {**AHEAD_VERSIONS, "older_on_disk": ("16.0.3.0.0", "16.0.2.0.0"),
+                "short_older": ("16.0.2.6.1", "2.2.0")}
+    rc, out, calls, files = run_wt_restore(versions=versions)
+    assert rc == 1 and call_index(calls, "odoo", "neutralize") is None, (rc, calls, out)
+    assert updated_modules(calls) is None and call_index(calls, "psql", "RENAME") is None, calls
+    assert "DROP DATABASE IF EXISTS wt_x_restoring" in calls[-1], calls
+    assert f"modules older on disk than in {DUMP}" in out, out
+    assert "  older_on_disk: 16.0.3.0.0 in the dump, 16.0.2.0.0 on disk (" in out, out
+    assert "  short_older: 16.0.2.6.1 in the dump, 16.0.2.2.0 on disk (" in out, out
+    assert "pinned_ahead" not in out and "nix run .#update-repos" in out and files == [], out
 
 
 @case

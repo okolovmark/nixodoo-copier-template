@@ -50,7 +50,8 @@ Invoke by absolute path under `${{ project_dir_var }}/.claude/skills/worktree-en
   Edit/Write in the base checkout, which is where `.worktrees/<slug>` lives, so the
   session would get an env it cannot edit. Addons work runs in a session started in
   the base checkout (`use_worktree: false`); `WT_ALLOW_CLAUDE_WORKTREE=1` lets a
-  read-only or test-only run through.
+  read-only or test-only run through. A new env whose shared addons repos are off their
+  `addons.yaml` pins is refused with exit 3 (see the gotchas).
 - **`wt-stop.sh <slug>`** — wait for a `wt-start.sh` or `wt-restore.sh` building the env,
   then for a `wt-test.sh` run on it (see the gotchas), stop the env's Odoo; if the worktree is clean, remove it,
   drop `<DB>`, delete the runtime dir (the branch stays on origin). A **dirty**
@@ -301,6 +302,17 @@ video in one image: Read it to check the take), and a `WARNING:` past 90 s.
   Without it, a changed module that depends on one of them fails the update on a field
   or view the old copy lacks, and the copy is dropped. The `STATUS:` line names them
   after "newer on disk than in the dump".
+- **Code older than the dump stops the start.** The OCA/CE side of every farm is the
+  shared checkouts under `src/`, which `nix run .#update-repos` puts at their
+  `addons.yaml` pins and nothing keeps there: a pin bump merged since leaves them behind.
+  `wt-start.sh` compares each pinned repo's checkout with its pin before anything is made;
+  for a new env one off its pin is exit 3, naming the repo, its checkout and its pin (an env
+  keeping its DB, or a run with `WT_SKIP_PIN_CHECK=1`, gets a `WARNING:` instead). Aligning
+  them is `update-repos`, which moves them under every env that links them. Then
+  `wt-restore.sh` stops (before `odoo neutralize`, the copy dropped) on any module of the
+  farm older on disk than its `latest_version` in the dump, naming each with both versions,
+  its directory and commit: a shared repo behind its pin, or a kept branch behind the dump
+  (rebase it).
 - **What that update misses:** Odoo's own modules (not in the farm), so an Odoo pin
   bump; and a module whose files changed with its manifest version left alone (a
   change merged before the dump's day but deployed to prod after it, without a

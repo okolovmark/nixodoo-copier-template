@@ -124,3 +124,11 @@ findings should grade them against the **equal-length window before**
 `INV_SINCE`: at the usual rate that is a `WARN`, and only a rate past the
 baseline is the deploy's `FAIL`. A count with no baseline fires on every
 deploy and trains everyone to ignore the line.
+
+## Tests
+
+`tests/` runs both scripts without Odoo, on canned query answers
+(`tests/harness.py`): `python3 -m unittest discover -s .claude/skills/deploy-checks/tests`.
+Run it after editing either script. `tests/test_invariant_local.py` is
+project-owned like `invariant_local.py`: each local check gets its cases there
+(the rows that pass, warn and fail, a module not installed).
