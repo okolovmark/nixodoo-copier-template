@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Show all active session envs (handy when several run in parallel).
+# Show all active session envs (handy when several run in parallel), then, on stderr, the shared
+# addons repos off their addons.yaml pin when a listed env links them.
 # Usage: wt-list.sh
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/wt-common.sh"
@@ -14,6 +15,7 @@ tree_state() {
 
 printf "%-30s %-5s %-36s %-9s %-9s %s\n" SLUG PORT DB SERVICE WORKTREE ENVREPO
 [ -d "$WT_ENVROOT" ] || exit 0
+LINKS_SRC=""
 for env_dir in "$WT_ENVROOT"/*/; do
     [ -d "$env_dir" ] || continue
     slug="$(basename "$env_dir")"
@@ -22,7 +24,12 @@ for env_dir in "$WT_ENVROOT"/*/; do
     svc="$(systemctl --user is-active "odoo{{ service_suffix }}-wt@$slug.service" 2>/dev/null)" || true
     [ -n "$svc" ] || svc=unknown
     # a vanilla env (wt-start --vanilla) has no worktree: Odoo's own addons only
-    if is_vanilla "$slug"; then tree=vanilla; else tree="$(tree_state "$WT_ROOT/$slug")"; fi
+    if is_vanilla "$slug"; then tree=vanilla; else tree="$(tree_state "$WT_ROOT/$slug")"; LINKS_SRC=1; fi
     printf "%-30s %-5s %-36s %-9s %-9s %s\n" "$slug" "$port" "$(db_name_for "$slug")" "$svc" \
         "$tree" "$(tree_state "$WT_ENVREPO_ROOT/$slug")"
 done
+
+[ -n "$LINKS_SRC" ] || exit 0
+PIN_DRIFT="$(pin_drift | sed 's/^/  /')"
+[ -z "$PIN_DRIFT" ] || printf 'WARNING: addons repos off their addons.yaml pin, which the envs above link:\n%s\n%s\n' \
+    "$PIN_DRIFT" "$PIN_FIX" >&2

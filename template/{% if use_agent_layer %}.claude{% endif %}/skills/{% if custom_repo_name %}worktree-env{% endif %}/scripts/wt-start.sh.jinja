@@ -80,20 +80,23 @@ fi
 # The shared repos the farm links at their addons.yaml pins, checked before anything is made: a
 # restore on a checkout behind its pin runs code older than the dump's, and one off its pin tests
 # code production does not run. Aligning them is update-repos' job, not this env's: every env
-# links them. An env keeping its DB gets a warning, as does a run with WT_SKIP_PIN_CHECK=1.
+# links them. An env keeping its DB gets a warning, as does a run with WT_SKIP_PIN_CHECK=1, and
+# so does a pinned repo not cloned at all: it has no code to be older than the dump's.
 if [ -z "$VANILLA" ]; then
-    OFF_PIN="$(off_pin_repos | sed 's/^/  /')"
-    if [ -n "$OFF_PIN" ] && { [ -n "${WT_SKIP_PIN_CHECK:-}" ] || db_exists "$(db_name_for "$SLUG")"; }; then
-        printf 'WARNING: addons repos off their addons.yaml pin, which this env links:\n%s\n' "$OFF_PIN" >&2
-    elif [ -n "$OFF_PIN" ]; then
+    OFF_PIN="$(off_pin_repos)"
+    PIN_DRIFT="$(pin_drift | sed 's/^/  /')"
+    if [ -n "$OFF_PIN" ] && [ -z "${WT_SKIP_PIN_CHECK:-}" ] && ! db_exists "$(db_name_for "$SLUG")"; then
         cat >&2 <<OFF_PIN_EOF
 ERROR: addons repos off their addons.yaml pin, which this env would link and restore the dump on:
-$OFF_PIN
+$PIN_DRIFT
 Code older than the dump's fails the restore, and code off the pin is not what production runs.
-\`nix run .#update-repos\` checks them out at their pins (under every env that links them:
-mind the other sessions), or WT_SKIP_PIN_CHECK=1 starts the env on them as they are.
+$PIN_FIX
+Or WT_SKIP_PIN_CHECK=1 starts the env on them as they are.
 OFF_PIN_EOF
         exit 3
+    elif [ -n "$PIN_DRIFT" ]; then
+        printf 'WARNING: addons repos off their addons.yaml pin, shared by every env:\n%s\n%s\n' \
+            "$PIN_DRIFT" "$PIN_FIX" >&2
     fi
 fi
 

@@ -88,21 +88,13 @@ session_host() { echo "$1.$WT_HOST_SUFFIX"; }                          # DB -> h
 db_exists()   { $PSQL -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$1'" | grep -q 1; }
 tree_dirty()  { [ -n "$(git -C "$1" status --porcelain 2>/dev/null)" ]; }  # uncommitted or untracked files in a worktree
 
-# One line per repo of addons.yaml whose checkout under src/ is not at the commit it pins:
-# "<repo>: checkout <head>, addons.yaml pins <revision>". update-repos checks a pinned repo out
-# at its pin, and nothing keeps it there: a pin bump merged since leaves the checkout behind,
-# and every env links it (the OCA/CE side of the farm). A repo that tracks its branch (no
-# revision), one pinned by a name rather than a commit, and one not cloned yet are left out.
-off_pin_repos() {
-    local repo rev head
+# "<repo> <revision>" per repo of addons.yaml pinned to a commit; a repo that tracks its branch
+# (no revision) and one pinned by a name are left out. awk: yq is on update-repos' PATH only.
+pinned_repos() {
     [ -f "$PROJ/addons.yaml" ] || return 0
-    while read -r repo rev; do
-        [ -e "$PROJ/src/$repo/.git" ] || continue
-        head="$(git -C "$PROJ/src/$repo" rev-parse -q --verify HEAD 2>/dev/null)" || head="none"
-        [[ "$head" == "$rev"* ]] || echo "$repo: checkout ${head:0:12}, addons.yaml pins ${rev:0:12}"
     # A top-level line names the repo its indented lines belong to: "key:", with a trailing comment
     # or an anchor; any other top-level line (a document break, a key with an inline value) ends it.
-    done < <(awk '
+    awk '
         /^[^ \t#]/ {
             repo = ""; line = $0; sub(/[ \t]+#.*$/, "", line)
             if (line ~ /^[^ \t:-][^:]*:[ \t]*(&[^ \t]+)?[ \t]*$/) {
@@ -113,8 +105,33 @@ off_pin_repos() {
         repo != "" && repo != "ENV" && /^[ \t]+revision:/ {
             rev = $0; sub(/^[ \t]+revision:[ \t]*/, "", rev); sub(/[ \t]*(#.*)?$/, "", rev); gsub(/["\047]/, "", rev)
             if (rev ~ /^[0-9a-f]+$/ && length(rev) >= 7 && length(rev) <= 40) print repo, rev
-        }' "$PROJ/addons.yaml")
+        }' "$PROJ/addons.yaml"
 }
+
+# One line per pinned repo whose checkout under src/ is not at its pin: "<repo>: checkout <head>,
+# addons.yaml pins <revision>". update-repos checks a pinned repo out at its pin, and nothing
+# keeps it there: a pin bump merged since leaves the checkout behind, and every env links it
+# (the OCA/CE side of the farm).
+off_pin_repos() {
+    local repo rev head
+    while read -r repo rev; do
+        [ -e "$PROJ/src/$repo/.git" ] || continue
+        head="$(git -C "$PROJ/src/$repo" rev-parse -q --verify HEAD 2>/dev/null)" || head="none"
+        [[ "$head" == "$rev"* ]] || echo "$repo: checkout ${head:0:12}, addons.yaml pins ${rev:0:12}"
+    done < <(pinned_repos)
+}
+
+# One line per pinned repo with no git checkout at src/<repo> (update-repos has not run since it
+# was added): no env links its modules.
+uncloned_repos() {
+    local repo rev
+    while read -r repo rev; do
+        [ -e "$PROJ/src/$repo/.git" ] || echo "$repo: no checkout at src/$repo, addons.yaml pins ${rev:0:12}"
+    done < <(pinned_repos)
+}
+pin_drift() { off_pin_repos; uncloned_repos; }
+# The fix, said after every report of pin_drift.
+PIN_FIX="\`nix run .#update-repos\` in $PROJ checks them out at their pins, under every env that links them: mind the other sessions."
 
 # A session running in a Claude worktree of this project (<project>/.claude/worktrees/<name>,
 # where the desktop app and EnterWorktree put them) cannot edit an env it brings up: the

@@ -62,7 +62,8 @@ Invoke by absolute path under `${{ project_dir_var }}/.claude/skills/worktree-en
   file): env and service left as they are.
 - **`wt-list.sh`** — table of all active envs: slug / port / DB / service, then the
   addons worktree and the env-repo worktree, each `clean`, `dirty` or `none` (`vanilla` for
-  a vanilla env's worktree column).
+  a vanilla env's worktree column); then, on stderr, a `WARNING:` naming the shared repos off
+  their `addons.yaml` pin while a listed env links them (see the gotchas).
 - `wt-bootstrap.sh` — one-time, light: installs the `odoo{{ service_suffix }}-wt@.service` template unit
   and checks the seed dump is present. **No DB work.**
   `wt-start.sh` calls it automatically.
@@ -302,13 +303,15 @@ video in one image: Read it to check the take), and a `WARNING:` past 90 s.
   Without it, a changed module that depends on one of them fails the update on a field
   or view the old copy lacks, and the copy is dropped. The `STATUS:` line names them
   after "newer on disk than in the dump".
-- **Code older than the dump stops the start.** The OCA/CE side of every farm is the
+- **A shared checkout behind its pin stops the start.** The OCA/CE side of every farm is the
   shared checkouts under `src/`, which `nix run .#update-repos` puts at their
   `addons.yaml` pins and nothing keeps there: a pin bump merged since leaves them behind.
   `wt-start.sh` compares each pinned repo's checkout with its pin before anything is made;
   for a new env one off its pin is exit 3, naming the repo, its checkout and its pin (an env
-  keeping its DB, or a run with `WT_SKIP_PIN_CHECK=1`, gets a `WARNING:` instead). Aligning
-  them is `update-repos`, which moves them under every env that links them. Then
+  keeping its DB, or a run with `WT_SKIP_PIN_CHECK=1`, gets a `WARNING:` instead). A pinned
+  repo with no checkout at `src/<repo>` only warns: no env has its modules. `wt-list.sh`
+  names both after its table. Aligning them is `update-repos`, which moves them under every
+  env that links them. Then
   `wt-restore.sh` stops (before `odoo neutralize`, the copy dropped) on any module of the
   farm older on disk than its `latest_version` in the dump, naming each with both versions,
   its directory and commit: a shared repo behind its pin (or behind the branch it tracks), or a

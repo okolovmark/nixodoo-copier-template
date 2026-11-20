@@ -1483,24 +1483,76 @@ def a_repo_off_its_addons_yaml_pin_stops_a_new_env_and_warns_otherwise():
         rc, out, _conf = run_wt_start(root)
         line = f"  oca-web: checkout {head[:12]}, addons.yaml pins {pin[:12]}"
         assert rc == 3 and line in out and "ERROR: addons repos off their addons.yaml pin" in out, (rc, out)
-        assert "WT_SKIP_PIN_CHECK=1" in out and "nix run .#update-repos" in out, out
-        assert out.count("addons.yaml pins") == 1, out  # shared at its pin, the rest left out
+        assert "WT_SKIP_PIN_CHECK=1" in out and f"`nix run .#update-repos` in {root} " in out, out
+        assert UNCLONED_LINE in out and out.count("addons.yaml pins") == 2, out  # shared at its pin, the rest left out
         log = (root / "stubs.log").read_text()
         assert "wt-link.sh" not in log and "wt-restore.sh" not in log, log
         assert not (root / ".worktrees/_env/x/db").exists(), "nothing recorded for the env"
 
         rc, out, _conf = run_wt_start(root, extra_env={"WT_SKIP_PIN_CHECK": "1"})
         assert rc == 0 and "WARNING: addons repos off their addons.yaml pin" in out and line in out, (rc, out)
+        assert "nix run .#update-repos" in out and "ERROR" not in out, out
         assert "wt-restore.sh x" in (root / "stubs.log").read_text()
 
         # an env keeping its DB is warned, not stopped
         (root / "bin/psql").write_text('#!/usr/bin/env bash\ncase "$*" in *pg_database*) echo 1 ;; esac\n')
         rc, out, _conf = run_wt_start(root)
-        assert rc == 0 and "WARNING" in out and line in out, (rc, out)
+        assert rc == 0 and "WARNING" in out and line in out and "nix run .#update-repos" in out, (rc, out)
 
         git(root / "src/oca-web", "checkout", "-q", pin)
         rc, out, _conf = run_wt_start(root)
+        assert rc == 0 and "oca-web" not in out, (rc, out)
+
+
+UNCLONED_LINE = "  missing: no checkout at src/missing, addons.yaml pins 0123456789ab"
+
+
+@case
+def a_pinned_repo_never_cloned_warns_and_the_env_starts():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        pin, _head = pinned_repos(root)
+        git(root / "src/oca-web", "checkout", "-q", pin)
+        rc, out, _conf = run_wt_start(root)
+        assert rc == 0 and "WARNING: addons repos off their addons.yaml pin" in out and UNCLONED_LINE in out, (rc, out)
+        assert "nix run .#update-repos" in out and "ERROR" not in out, out
+        assert "wt-restore.sh x" in (root / "stubs.log").read_text()
+
+        # a directory that is no git checkout is not one: git there would answer for the project's repo
+        git(root, "init", "-q")
+        git(root, "commit", "-q", "--allow-empty", "-m", "the project")
+        (root / "src/missing").mkdir()
+        rc, out, _conf = run_wt_start(root)
+        assert rc == 0 and UNCLONED_LINE in out and "missing: checkout" not in out, (rc, out)
+
+        yaml = root / "addons.yaml"
+        yaml.write_text(yaml.read_text().replace('missing:\n  revision: 0123456789abcdef0123456789abcdef01234567\n'
+                                                 '  modules:\n    - "a"\n', ""))
+        rc, out, _conf = run_wt_start(root)
         assert rc == 0 and "addons.yaml" not in out, (rc, out)
+
+
+@case
+def wt_list_names_the_repos_off_their_pin_on_stderr_while_an_env_links_them():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        _cmd, env, _events = stop_project(root)
+        (root / "scripts/wt-list.sh").write_text(render_script(SRC.with_name("wt-list.sh.jinja")))
+        pin, head = pinned_repos(root)
+
+        def wt_list():
+            run = subprocess.run(["bash", str(root / "scripts/wt-list.sh")], capture_output=True, text=True,
+                                 env=env, stdin=subprocess.DEVNULL, timeout=60)
+            assert run.returncode == 0 and run.stdout.splitlines()[1].split()[0] == "x", run.stdout + run.stderr
+            assert len(run.stdout.splitlines()) == 2, run.stdout  # the table alone
+            return run.stderr
+
+        err = wt_list()
+        assert err.startswith("WARNING: addons repos off their addons.yaml pin, which the envs above link:\n"), err
+        assert f"  oca-web: checkout {head[:12]}, addons.yaml pins {pin[:12]}\n" in err and UNCLONED_LINE in err, err
+        assert f"`nix run .#update-repos` in {root} " in err, err
+        (root / ".worktrees/_env/x/vanilla").write_text("")
+        assert wt_list() == "", "a vanilla env links none of them"
 
 
 @case
