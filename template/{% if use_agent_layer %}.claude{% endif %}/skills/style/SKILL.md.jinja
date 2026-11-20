@@ -9,7 +9,7 @@ description: "Odoo {{ odoo_version }} code style and conventions for {{ project_
 
 - Custom addons live under `src/{{ custom_repo_name }}/` with standard Odoo structure
 - All custom modules prefixed `{{ module_prefix }}_*` (except `connector_odoo2odoo` and `account_move_name_sequence`)
-- Formatting/linting: RUFF (line length 100)
+- Formatting/linting: RUFF (line length from `ruff.toml` of the custom addons repo)
 - PEP8 exceptions (per Odoo convention): E501, E301, E302
 - **ASCII hyphen, not em-dash**: use `-` (U+002D), never `—` (U+2014) in comments,
   docstrings, user-facing strings, view decoration expressions, test assertions.
