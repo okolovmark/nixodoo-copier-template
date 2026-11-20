@@ -157,9 +157,12 @@ guard (step 8).
      takes datetimes: a UTC 18:00 is already the next day east of UTC+6.
 {% if team_dashboard_deadline %}
    - `date_deadline`: in a project flagged AI-driven it follows the new
-     `planned_date_end` on its own, so leave it out of the write; elsewhere
-     ← `planned_date_end` ({{ deadline_of_end }}), kept in sync (the dashboard
-     treats `planned_date_end` as the deadline).
+     `planned_date_end` on its own, so leave it out of the write, unless the
+     task's Deadline is later than the new `planned_date_end` (set by hand):
+     then write that Deadline unchanged in the same write, which keeps it (a
+     Deadline given with the plan stays). Elsewhere ← `planned_date_end`
+     ({{ deadline_of_end }}), kept in sync (the dashboard treats
+     `planned_date_end` as the deadline).
 {% else %}
    - `date_deadline` ← `planned_date_end` ({{ deadline_of_end }}), kept in sync
      (the dashboard treats `planned_date_end` as the deadline).
@@ -178,7 +181,9 @@ guard (step 8).
      the work and get the windows, and Odoo refuses a write that changes its
 {% if team_dashboard_deadline %}
      planned dates. In a project flagged AI-driven its Deadline follows the
-     rolled-up end on its own: write nothing on it. Elsewhere write only its
+     rolled-up end on its own: write nothing on it, unless its Deadline was
+     later than the new rolled-up end: then write that Deadline back unchanged
+     after its sub-tasks' writes. Elsewhere write only its
      `date_deadline` ← the latest window end of its sub-tasks
      ({{ deadline_of_end }}), under the same push-out-only rule.
 {% else %}
@@ -216,7 +221,8 @@ guard (step 8).
    {{ written_fields }} fields; never another person's tasks, never any other
    field, never closed tasks. Report each change as `<{{ ticket_prefix }} key> <name>:
 {% if task_timeline %}
-   <old planned_date_end> → <new planned_date_end>` (the Planned Dates window).
+   <old planned_date_end> → <new planned_date_end>` (the Planned Dates window),
+   followed by `, Deadline <old> → <new>` when the Deadline moves with it.
 {% else %}
    <old date_deadline> → <new date_deadline>`.
 {% endif %}
