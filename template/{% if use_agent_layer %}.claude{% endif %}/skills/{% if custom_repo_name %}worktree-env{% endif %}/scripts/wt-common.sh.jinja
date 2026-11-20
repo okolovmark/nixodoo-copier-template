@@ -100,9 +100,16 @@ off_pin_repos() {
         [ -e "$PROJ/src/$repo/.git" ] || continue
         head="$(git -C "$PROJ/src/$repo" rev-parse -q --verify HEAD 2>/dev/null)" || head="none"
         [[ "$head" == "$rev"* ]] || echo "$repo: checkout ${head:0:12}, addons.yaml pins ${rev:0:12}"
+    # A top-level line names the repo its indented lines belong to: "key:", with a trailing comment
+    # or an anchor; any other top-level line (a document break, a key with an inline value) ends it.
     done < <(awk '
-        /^---/ { repo = ""; next }
-        /^[^ \t#-][^:]*:[ \t]*$/ { repo = $0; sub(/:[ \t]*$/, "", repo); gsub(/["\047]/, "", repo); next }
+        /^[^ \t#]/ {
+            repo = ""; line = $0; sub(/[ \t]+#.*$/, "", line)
+            if (line ~ /^[^ \t:-][^:]*:[ \t]*(&[^ \t]+)?[ \t]*$/) {
+                repo = line; sub(/:.*$/, "", repo); gsub(/["\047]/, "", repo)
+            }
+            next
+        }
         repo != "" && repo != "ENV" && /^[ \t]+revision:/ {
             rev = $0; sub(/^[ \t]+revision:[ \t]*/, "", rev); sub(/[ \t]*(#.*)?$/, "", rev); gsub(/["\047]/, "", rev)
             if (rev ~ /^[0-9a-f]+$/ && length(rev) >= 7 && length(rev) <= 40) print repo, rev

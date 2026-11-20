@@ -96,9 +96,9 @@ Docs accrete lazily, module by module — there is no mass backfill:
    HOOKS="$(git -C "$ADDON" rev-parse --show-toplevel)/.pre-commit-config.yaml"
    GEN="{{ readme_gen_source }}"; WITH=()
    if [ -f "$HOOKS" ]; then
-       PIN=$(grep -oE 'git\+https://[^" ]*maintainer-tools@[0-9a-f]{7,40}' "$HOOKS" | head -1)
+       PIN=$(grep -oE 'git\+https://[^" ]*maintainer-tools(\.git)?@[0-9a-f]{7,40}' "$HOOKS" | head -1)
        GEN=${PIN:-$GEN}
-       for dep in $(grep -oiE '"(docutils|pygments)==[^"]+"' "$HOOKS" | tr -d '"'); do WITH+=(--with "$dep"); done
+       for dep in $(grep -oiE '(docutils|pygments)==[0-9][0-9A-Za-z.]*' "$HOOKS"); do WITH+=(--with "$dep"); done
    fi
    uvx --from "$GEN" "${WITH[@]}" oca-gen-addon-readme \
        --org-name "$ORG" --repo-name "$REPO" --branch {{ odoo_version }} \

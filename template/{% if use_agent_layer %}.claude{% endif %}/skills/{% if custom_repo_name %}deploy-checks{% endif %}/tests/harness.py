@@ -60,28 +60,31 @@ class Shell:
         self.env = Env(models or {}, self.cr)
         self.environ = {"INV_SINCE": "2026-01-01 00:00:00", **(environ or {})}
         self.lines = []
-        self.scope = {"__name__": "invariants", "env": self.env, "print": self._print}
+        # odoo shell runs its stdin as __main__
+        self.scope = {"__name__": "__main__", "env": self.env, "print": self._print}
 
     def _print(self, *args, **_kwargs):
         self.lines.append(" ".join(str(a) for a in args))
 
-    def _exec(self, path, body):
-        tree = ast.Module(body=body, type_ignores=[])
-        with mock.patch.dict(os.environ, self.environ):
-            exec(compile(tree, str(path), "exec"), self.scope)
+    def _exec(self, filename, body):
+        # the test's INV_* only: one set in the caller's shell would change what a test sees
+        environ = {key: value for key, value in os.environ.items() if not key.startswith("INV_")}
+        with mock.patch.dict(os.environ, {**environ, **self.environ}, clear=True):
+            exec(compile(ast.Module(body=body, type_ignores=[]), filename, "exec"), self.scope)
 
     def load(self, *paths):
         """Execute the definitions of each script in order: what a test calls by name."""
         for path in paths:
             tree = ast.parse(pathlib.Path(path).read_text(), str(path))
             kept = (ast.Import, ast.ImportFrom, ast.FunctionDef, ast.ClassDef, ast.Assign, ast.AnnAssign)
-            self._exec(path, [node for node in tree.body if isinstance(node, kept)])
+            self._exec(str(path), [node for node in tree.body if isinstance(node, kept)])
         return self
 
     def run(self, *paths):
-        """Execute each script whole, calls included, as the shell reads them from stdin."""
-        for path in paths:
-            self._exec(path, ast.parse(pathlib.Path(path).read_text(), str(path)).body)
+        """Execute the scripts whole, calls included, as one stdin, the way `cat core local | odoo
+        shell` reads them: a syntax error in one stops them all."""
+        source = "\n".join(pathlib.Path(path).read_text() for path in paths)
+        self._exec("<stdin>", ast.parse(source, "<stdin>").body)
         return self
 
     def call(self, name, *args):

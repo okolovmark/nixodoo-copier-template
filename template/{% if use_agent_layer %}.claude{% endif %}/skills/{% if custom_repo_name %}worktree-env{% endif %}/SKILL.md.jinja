@@ -311,8 +311,14 @@ video in one image: Read it to check the take), and a `WARNING:` past 90 s.
   them is `update-repos`, which moves them under every env that links them. Then
   `wt-restore.sh` stops (before `odoo neutralize`, the copy dropped) on any module of the
   farm older on disk than its `latest_version` in the dump, naming each with both versions,
-  its directory and commit: a shared repo behind its pin, or a kept branch behind the dump
-  (rebase it).
+  its directory and commit: a shared repo behind its pin (or behind the branch it tracks), or a
+  kept branch behind the dump (rebase it). With `WT_SKIP_PIN_CHECK=1` it warns and goes on.
+- **No filestore:** the dump carries the database only, so no file of a production attachment
+  is in an env. Right after the restore `wt-restore.sh` drops the rows of binary field values
+  kept in files (`res_field` set: menu icons, the company favicon, images, signatures; the
+  `STATUS:` line counts them), which then read empty and show Odoo's placeholder; before, each
+  failed its `/web/image` read with a 500 or a `_read_file` traceback, in every HttpCase run
+  that loads the web client. Attachments of records stay, and opening one fails.
 - **What that update misses:** Odoo's own modules (not in the farm), so an Odoo pin
   bump; and a module whose files changed with its manifest version left alone (a
   change merged before the dump's day but deployed to prod after it, without a

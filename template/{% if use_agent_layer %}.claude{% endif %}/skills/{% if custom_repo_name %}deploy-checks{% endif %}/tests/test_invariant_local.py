@@ -19,9 +19,11 @@ from harness import CORE, LOCAL, Shell  # noqa: E402
 class LocalScript(unittest.TestCase):
     def test_the_local_script_runs_after_the_core_one_on_the_same_stdin(self):
         # what `cat invariant-check.py invariant_local.py | odoo shell` does: the local
-        # file finds sql(), report(), check(), deep_check() and SINCE defined
+        # file finds sql(), report(), check(), deep_check() and SINCE defined. Once it
+        # defines checks, assert their INVARIANT lines here instead of the stub's marker.
         shell = Shell().run(CORE, LOCAL)
         self.assertTrue(any(line.startswith("INVARIANT_CORE_DONE") for line in shell.lines), shell.lines)
+        self.assertTrue(any(line.startswith("INVARIANT_LOCAL_DONE") for line in shell.lines), shell.lines)
 
 
 if __name__ == "__main__":
