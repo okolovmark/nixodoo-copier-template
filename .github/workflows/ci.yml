@@ -30,6 +30,18 @@ jobs:
       - name: tests/test_kb_session_start.py (kb stubbed)
         run: uv run --no-project --with jinja2 python tests/test_kb_session_start.py
 
+  # Renders the deploy lock / deploy scripts and runs them against a fake ssh and a throwaway box.
+  deploy-scripts:
+    name: deploy lock and phases corpus
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: false
+      - name: tests/test_prod_deploy_lock.py (ssh, git, python and systemctl stubbed)
+        run: uv run --no-project --with jinja2 python tests/test_prod_deploy_lock.py
+
   # Builds its own bare origin and clones (plain git, nothing rendered), so once per push.
   adr-number:
     name: ADR number guard corpus

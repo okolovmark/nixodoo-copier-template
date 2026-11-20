@@ -354,6 +354,16 @@ prod_link_addons_cmd:
   default: "nix run .#update-repos"
   when: "{{ prod_ssh_host != '' and use_agent_layer and custom_repo_name }}"
 
+deploy_status_file:
+  type: str
+  help: >-
+    File on the prod/test box where a running deploy publishes its state (state,
+    phase, eta; never who deploys) for a reverse proxy's maintenance page. Empty:
+    nothing is published. A box whose directory for it is missing is skipped.
+  default: ""
+  when: "{{ prod_ssh_host != '' and use_agent_layer and custom_repo_name }}"
+  validator: "{% if deploy_status_file and not (deploy_status_file | regex_search('^/[A-Za-z0-9._/-]+$')) %}An absolute path of letters, digits and . _ - /{% endif %}"
+
 # Test boxes: one SSH alias per entry, all sharing the user and port below. A
 # single box is `{test: 203.0.113.2}`; a per-developer fleet is
 # `{odoo1.example.lan: 10.0.0.11, odoo2.example.lan: 10.0.0.12}`. Every alias goes

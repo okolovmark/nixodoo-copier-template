@@ -7,8 +7,9 @@ belongs here, not inline in `SKILL.md`.
 
 | Script | Deploy step | Writes | Success marker |
 |---|---|---|---|
-| `prod-deploy-lock.sh` | Step 3.5 (acquire), Step 7 (release / mark-failed) | the lock directory `{{ prod_remote_project_dir }}/.deploy-lock` on the box | `LOCK_ACQUIRED` / `LOCK_RELEASED` / `LOCK_MARKED_FAILED` |
-| `prod-deploy-modules.sh` | Step 2, every deploy | pulls `{{ odoo_version }}`, updates modules, restarts the service | `DEPLOY_EXIT=0` |
+| `prod-deploy-lock.sh` | Step 3.5 (acquire), Step 2b (phase), Step 7 (release / mark-failed) | the lock directory `{{ prod_remote_project_dir }}/.deploy-lock` on the box | `LOCK_ACQUIRED` / `LOCK_PHASE` / `LOCK_RELEASED` / `LOCK_MARKED_FAILED` |
+| `prod-deploy-modules.sh` | Step 2, every deploy | pulls `{{ odoo_version }}`, updates modules, restarts the service, waits for it to serve; stamps the phases | `DEPLOY_EXIT=0` |
+| `deploy-phase.sh` | (sent to the box by both scripts above) | the phase stamp on the lock, `.deploy-history` | `DEPLOY_PHASE <phase>` |
 {% if use_queue_job %}| `prod-requeue-jobs.sh` | Step 6, after a clean deploy | `queue.job` enqueued/started → pending | `REQUEUED <n>` |
 {% endif %}
 
@@ -44,8 +45,9 @@ Two rule shapes, and the difference matters:
   deploy script needs, and the script validates its own arguments (host,
   `-u`/`-i`, `^[a-z0-9_,]+$` module list) so the prose can describe a closed set.
   The lock script needs the same shape: its PR number changes every deploy, and
-  it validates host, action (`acquire|status|release|mark-failed`), a numeric
-  PR, a numeric `--wait` and `--force`.
+  it validates host, action (`acquire|status|release|mark-failed|phase`), a
+  numeric PR, a phase name (`update|restart|stopped|up`), a numeric `--wait`
+  and `--force`.
 
 **Claude cannot write its own permission file** — by any tool, and the refusal
 is not negotiable. Compose the entry, hand it to the user, and let them paste
@@ -80,6 +82,42 @@ have read yet. `prod-deploy-lock.sh` is the machine check: a directory
   releases it.
 - Test boxes carry their own lock, same script, the alias as host.
 - The lock lives in this checkout on the box and is in `.gitignore`.
+
+## Deploy phases
+
+While a deploy runs, the lock's info line also says where it is and when it
+should be done, so something outside the deploy (a reverse proxy serving a
+"being updated" page while Odoo cannot answer) can tell users:
+
+```
+holder=<login> pr=<n> since=<UTC> state=deploying phase=<phase> phase_at=<UTC> eta=<UTC>
+```
+
+| phase | stamped by | means |
+|---|---|---|
+| `update` | `prod-deploy-modules.sh`, before the pull | pull + module update; the service still serves, on the old code |
+| `restart` | `prod-deploy-modules.sh`, before the restart | the service restarts on the new code |
+| `stopped` | `prod-deploy-lock.sh prod phase <PR> stopped`, Step 2b | the service is down for the update |
+| `up` | both, once the service answers `/web/login` again (`phase … up` waits for it, exit 6 when it does not) | no `eta`; the lock stays until Step 7 |
+
+- Leaving a phase appends its duration to `{{ prod_remote_project_dir }}/.deploy-history`
+  (`<UTC> pr=<n> phase=<p> seconds=<n>`, kept across deploys, in `.gitignore`).
+  The `eta` of the next stamp is the median of that phase's last 10 records;
+  until a phase has 3, a measured default stands in (`deploy-phase.sh`).
+- A stamp never fails the deploy: one that cannot be written prints
+  `DEPLOY_PHASE_SKIPPED` and the deploy goes on. `mark-failed` keeps the phase
+  as it was, so a reader sees `state=failed` with the step it failed in.
+- The phase lives only as long as the lock: `release` removes both, the
+  history stays. A phase left after `mark-failed` is not recorded.
+- **The public copy.** The lock sits in the checkout, and a proxy given read
+  access there could read every world-readable file beside it. So when the
+  copier answer `deploy_status_file` names a file ({% if deploy_status_file %}here `{{ deploy_status_file }}`{% else %}empty here: off{% endif %}),
+  the lock is also written to it as one line `state=… phase=… phase_at=… [eta=…]`,
+  without holder or PR, mode 644, **only while the service is affected**
+  (`update`, `restart`, `stopped`) **or the deploy failed**. Before the pull
+  and from `up` on the file does not exist, so a real error then reads as one.
+  A `release` of a free lock also clears a stale copy. The directory is the box
+  owner's to create, writable by the SSH user; a box without it is skipped.
 
 ## Project write steps
 

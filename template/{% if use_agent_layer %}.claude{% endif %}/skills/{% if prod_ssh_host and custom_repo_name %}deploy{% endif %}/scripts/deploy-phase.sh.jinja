@@ -1,0 +1,117 @@
+# Deploy phases: where a running deploy is, and when it should be done.
+#
+# Not a script of its own. prod-deploy-lock.sh and prod-deploy-modules.sh send
+# this file to the box ahead of their remote part, so both stamp the same way.
+#
+# The stamp goes on the deploy lock's info line, for whatever shows users a
+# "being updated" page while the deploy runs (a reverse proxy reading the file):
+#   holder=<login> pr=<n> since=<UTC> state=deploying phase=<p> phase_at=<UTC> eta=<UTC>
+# <p> is update (pull + module update, the service still serving), restart,
+# stopped (a Step-2b update with the service down) or up (the service answers
+# again; no eta).
+#
+# Leaving a phase appends how long it took to .deploy-history beside the lock:
+#   <UTC> pr=<n> phase=<p> seconds=<n>
+# and the next eta for that phase is the median of its last 10 records. Until a
+# phase has 3 records the default below stands in.
+#
+# The lock sits in the checkout, which a proxy should not be able to read. So
+# while the service is affected (phase update, restart or stopped) or the
+# deploy failed, the lock is also published, without holder and pr, as one line
+#   state=<deploying|failed> phase=<p> phase_at=<UTC> [eta=<UTC>]
+# to the file named by the copier answer deploy_status_file; at any other time
+# (lock just taken, phase up, lock released) that file does not exist. Empty
+# answer, or no directory for it on this box: nothing is published.
+#
+# A stamp is information, not a step: it never fails the deploy. When it cannot
+# be written it prints DEPLOY_PHASE_SKIPPED and the deploy goes on.
+DEPLOY_LOCK_DIR={{ prod_remote_project_dir }}/.deploy-lock
+DEPLOY_HISTORY={{ prod_remote_project_dir }}/.deploy-history
+DEPLOY_STATUS_FILE="{{ deploy_status_file }}"
+DEPLOY_ODOO_CONF={{ prod_remote_odoo_conf }}
+
+# Defaults, from one production box (Nov 2026): a module update took 32 s (an
+# install pass 96 s); a restart kept the port closed ~1.7 s and the registry
+# preload took ~3 s more; a stopped-service update kept it down 22-262 s,
+# median 91 s.
+deploy_estimate() {
+    local default
+    case "$1" in
+        update) default=60 ;;
+        restart) default=15 ;;
+        stopped) default=120 ;;
+        *) default=60 ;;
+    esac
+    { grep -h " phase=$1 seconds=" "$DEPLOY_HISTORY" 2>/dev/null || true; } \
+        | sed -n 's/.* seconds=\([0-9][0-9]*\).*/\1/p' | tail -n 10 | sort -n \
+        | awk -v d="$default" '{ v[NR] = $1 } END { print (NR < 3 ? d : v[int((NR + 1) / 2)]) }'
+}
+
+_deploy_ts() { date -u -d "@$1" +%Y-%m-%dT%H:%M:%SZ; }
+
+# deploy_publish: bring the public status file in line with the lock. Never fails.
+deploy_publish() {
+    local dir
+    [ -n "$DEPLOY_STATUS_FILE" ] || return 0
+    dir="$(dirname "$DEPLOY_STATUS_FILE")"
+    [ -d "$dir" ] && [ -w "$dir" ] || return 0
+    if grep -qE ' state=failed( |$)| phase=(update|restart|stopped)( |$)' "$DEPLOY_LOCK_DIR/info" 2>/dev/null; then
+        { tr ' ' '\n' < "$DEPLOY_LOCK_DIR/info" | grep -E '^(state|phase|phase_at|eta)=' | paste -sd ' ' > "$DEPLOY_STATUS_FILE.tmp" \
+            && chmod 644 "$DEPLOY_STATUS_FILE.tmp" && mv -f "$DEPLOY_STATUS_FILE.tmp" "$DEPLOY_STATUS_FILE"; } 2>/dev/null \
+            || echo "DEPLOY_STATUS_SKIPPED (could not write $DEPLOY_STATUS_FILE)" >&2
+    else
+        rm -f "$DEPLOY_STATUS_FILE" 2>/dev/null || true
+    fi
+    return 0
+}
+
+_deploy_phase() {
+    local info="$DEPLOY_LOCK_DIR/info" new="$1" base now cur at pr line
+    [ -f "$info" ] || return 1
+    base="$(sed -E 's/ (phase|phase_at|eta)=[^ ]*//g' "$info" | tr -d '\n')"
+    # Never write back a line that lost the lock's own fields.
+    case "$base" in *" pr="*" state="*) ;; *) return 1 ;; esac
+    now="$(date -u +%s)" || return 1
+    cur="$(sed -n 's/.* phase=\([a-z]*\).*/\1/p' "$info")"
+    at="$(sed -n 's/.* phase_at=\([^ ]*\).*/\1/p' "$info")"
+    pr="$(sed -n 's/.* pr=\([^ ]*\).*/\1/p' "$info")"
+    # A phase left after a failure is not a duration worth learning from.
+    if [ -n "$cur" ] && [ "$cur" != up ] && [ -n "$at" ] && ! grep -q ' state=failed' "$info" \
+        && at="$(date -u -d "$at" +%s 2>/dev/null)"; then
+        echo "$(_deploy_ts "$now") pr=${pr:-?} phase=$cur seconds=$(( now - at ))" >> "$DEPLOY_HISTORY"
+    fi
+    line="$base phase=$new phase_at=$(_deploy_ts "$now")"
+    [ "$new" = up ] || line="$line eta=$(_deploy_ts $(( now + $(deploy_estimate "$new") )))"
+    printf '%s\n' "$line" > "$info.tmp" && mv -f "$info.tmp" "$info" || return 1
+    deploy_publish
+    echo "DEPLOY_PHASE $new${line##*phase=$new}"
+}
+
+# deploy_wait_odoo <seconds>: wait until Odoo serves /web/login with a 200, on
+# the port and interface its config names (http_* or the legacy xmlrpc_* keys;
+# a port given only on the service's command line is not seen). Prints
+# ODOO_ANSWERING, or ODOO_NOT_ANSWERING and returns 1 once <seconds> have passed.
+deploy_wait_odoo() {
+    local port host deadline start
+    port="$(sed -n -E 's/^[[:space:]]*(http_port|xmlrpc_port)[[:space:]]*=[[:space:]]*([0-9]+).*/\2/p' "$DEPLOY_ODOO_CONF" 2>/dev/null | tail -n 1)"
+    host="$(sed -n -E 's/^[[:space:]]*(http_interface|xmlrpc_interface)[[:space:]]*=[[:space:]]*([^[:space:]]+).*/\2/p' "$DEPLOY_ODOO_CONF" 2>/dev/null | tail -n 1)"
+    port="${port:-8069}"
+    case "$host" in ""|0.0.0.0|::) host=127.0.0.1 ;; *:*) host="[$host]" ;; esac
+    start="$(date +%s)"; deadline=$(( start + $1 ))
+    until PATH="$HOME/{{ nix_profile_rel }}/bin:$PATH" python -c \
+        'import sys, urllib.request; urllib.request.urlopen("http://%s:%s/web/login" % (sys.argv[1], sys.argv[2]), timeout=5)' \
+        "$host" "$port" < /dev/null 2>/dev/null; do
+        if [ "$(date +%s)" -ge "$deadline" ]; then
+            echo "ODOO_NOT_ANSWERING: http://$host:$port/web/login gave no 200 within $1 s" >&2
+            return 1
+        fi
+        sleep 2
+    done
+    echo "ODOO_ANSWERING http://$host:$port after $(( $(date +%s) - start ))s"
+}
+
+# deploy_phase <update|restart|stopped|up>
+deploy_phase() {
+    _deploy_phase "$1" || echo "DEPLOY_PHASE_SKIPPED $1 (no lock info, or it could not be written)" >&2
+    return 0
+}
