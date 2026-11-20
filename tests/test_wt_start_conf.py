@@ -1449,6 +1449,69 @@ def wt_starts_service_restart_waits_for_a_test_run():
         assert "report.url" in log and "systemctl --user restart odoo-wt@x.service" in log, log
 
 
+def pinned_repos(root):
+    """addons.yaml at `root` with src/ clones: oca-web pinned at its second commit, checked out at
+    its first, its key line commented (as the template's own addons.yaml comments it) and right
+    after a repo tracking its branch; shared pinned at its head (quoted key, comments after the key
+    and the revision); one pinned by a name, one never cloned. Returns oca-web's two commits."""
+    heads = {}
+    for repo in ("oca-web", "shared", "tracking", "named"):
+        path = root / "src" / repo
+        path.mkdir(parents=True)
+        git(path, "init", "-q")
+        commit(path, "2026-10-01", {"a/__manifest__.py": "{}\n"})
+        commit(path, "2026-10-02", {"a/models.py": "x\n"})
+        heads[repo] = subprocess.run(["git", "-C", str(path), "rev-list", "HEAD"], capture_output=True,
+                                     text=True, check=True).stdout.split()
+    git(root / "src/oca-web", "checkout", "-q", heads["oca-web"][1])
+    (root / "addons.yaml").write_text(
+        'ENV:\n  DEFAULT_REPO_PATTERN: "https://github.com/OCA/{}.git"\n  ODOO_VERSION: "16.0"\n\n'
+        'tracking:\n  - "a"\n'
+        f'oca-web:              # pinned to an exact commit\n  revision: {heads["oca-web"][0]}\n  modules:\n    - "a"\n'
+        'named:\n  revision: 16.0\n  modules:\n    - "a"\n'
+        'missing:\n  revision: 0123456789abcdef0123456789abcdef01234567\n  modules:\n    - "a"\n'
+        '---\n# shared modules\nENV:\n  DEFAULT_REPO_PATTERN: "https://github.com/acme/{}.git"\n'
+        f'"shared":  # ours\n  revision: "{heads["shared"][0]}"  # the last release\n  modules:\n    - "a"\n')
+    return heads["oca-web"]
+
+
+@case
+def a_repo_off_its_addons_yaml_pin_stops_a_new_env_and_warns_otherwise():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        pin, head = pinned_repos(root)
+        rc, out, _conf = run_wt_start(root)
+        line = f"  oca-web: checkout {head[:12]}, addons.yaml pins {pin[:12]}"
+        assert rc == 3 and line in out and "ERROR: addons repos off their addons.yaml pin" in out, (rc, out)
+        assert "WT_SKIP_PIN_CHECK=1" in out and "nix run .#update-repos" in out, out
+        assert out.count("addons.yaml pins") == 1, out  # shared at its pin, the rest left out
+        log = (root / "stubs.log").read_text()
+        assert "wt-link.sh" not in log and "wt-restore.sh" not in log, log
+        assert not (root / ".worktrees/_env/x/db").exists(), "nothing recorded for the env"
+
+        rc, out, _conf = run_wt_start(root, extra_env={"WT_SKIP_PIN_CHECK": "1"})
+        assert rc == 0 and "WARNING: addons repos off their addons.yaml pin" in out and line in out, (rc, out)
+        assert "wt-restore.sh x" in (root / "stubs.log").read_text()
+
+        # an env keeping its DB is warned, not stopped
+        (root / "bin/psql").write_text('#!/usr/bin/env bash\ncase "$*" in *pg_database*) echo 1 ;; esac\n')
+        rc, out, _conf = run_wt_start(root)
+        assert rc == 0 and "WARNING" in out and line in out, (rc, out)
+
+        git(root / "src/oca-web", "checkout", "-q", pin)
+        rc, out, _conf = run_wt_start(root)
+        assert rc == 0 and "addons.yaml" not in out, (rc, out)
+
+
+@case
+def a_vanilla_env_skips_the_pin_check():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        pinned_repos(root)
+        rc, out, _conf = run_wt_start(root, argv=("x", "--vanilla"))
+        assert rc == 0 and "addons.yaml" not in out, (rc, out)
+
+
 def env_repo_project(tmp):
     """A project cloned from a bare origin whose default branch is main (README.md "a").
     Returns (project root, origin, a second clone to push from)."""
@@ -1718,6 +1781,7 @@ def wt_restore_project(root, dump=DUMP, installed=INSTALLED, installed_after=Non
         bin_dir / "psql": f'case "$*" in\n  *pg_database*) printf "%s" {shlex.quote(exists)} ;;\n'
                           f'  *is_neutralized*) echo {"true" if neutralized else ""} ;;\n'
                           '  *"FROM res_users"*) echo 1 ;;\n'
+                          '  *"FROM ir_attachment"*) echo 7 ;;\n'
                           f'  *latest_version*) printf "%s\\n" {shlex.join(version_rows)} | sed "/^$/d" ;;\n'
                           f'  *ir_module_module*) if [ -e {updated} ]; then printf "%s\\n" {after}; '
                           f'else printf "%s\\n" {shlex.join(installed)}; fi ;;\nesac\n',
@@ -1738,13 +1802,15 @@ def wt_restore_project(root, dump=DUMP, installed=INSTALLED, installed_after=Non
     return ["bash", str(scripts / "wt-restore.sh"), "x"], env, calls
 
 
-def run_wt_restore(dump=DUMP, **options):
-    """Run wt_restore_project's wt-restore.sh; returns the exit code, stdout+stderr, the calls
-    and the filestore's files."""
+def run_wt_restore(dump=DUMP, extra_env=None, **options):
+    """Run wt_restore_project's wt-restore.sh, `extra_env` added to its environment; returns the exit
+    code, stdout+stderr, the calls and the filestore's files."""
     with tempfile.TemporaryDirectory() as tmp:
         root = pathlib.Path(tmp)
         cmd, env, calls = wt_restore_project(root, dump, **options)
-        proc = subprocess.run(cmd, capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL)
+        env.pop("WT_SKIP_PIN_CHECK", None)
+        proc = subprocess.run(cmd, capture_output=True, text=True, env={**env, **(extra_env or {})},
+                              stdin=subprocess.DEVNULL)
         files = sorted(str(p.relative_to(root / FILESTORE)) for p in (root / FILESTORE).rglob("*") if p.is_file())
         return (proc.returncode, proc.stdout + proc.stderr, calls.read_text().splitlines() if calls.exists() else [],
                 files)
@@ -1797,7 +1863,7 @@ AHEAD_VERSIONS = {
     "pinned_ahead": ("16.0.2.6.1", "16.0.2.15.0"),  # a pin bump: 15 > 6 as numbers, not as text
     "short_ahead": ("16.0.1.0.0", "1.1.0"),         # a manifest without the series
     "same": ("16.0.1.0.0", "1.0.0"),
-    "older_on_disk": ("16.0.3.0.0", "16.0.2.0.0"),
+    "trailing_zeros": ("16.0.1.0.0", "16.0.1.0"),    # equal for Odoo's parse_version: neither side
     "not_in_farm": ("16.0.1.0", None),               # Odoo's own module
 }
 
@@ -1823,6 +1889,43 @@ def modules_level_with_the_dump_add_nothing_to_the_update():
     rc, out, calls, _files = run_wt_restore(versions=level)
     assert (rc, updated_modules(calls)) == (0, CHANGED), (rc, calls, out)
     assert "newer on disk" not in out, out
+
+
+@case
+def binary_field_values_without_their_files_are_dropped_right_after_the_restore():
+    # the dump carries no filestore: such a value fails every /web/image read with a 500
+    rc, out, calls, _files = run_wt_restore()
+    drop = call_index(calls, "psql", "ir_attachment")
+    assert rc == 0 and drop is not None, (rc, calls, out)
+    assert call_index(calls, "pg_restore") < drop < call_index(calls, "odoo", "neutralize"), calls
+    query = calls[drop]
+    assert "-d wt_x_restoring" in query and "res_field IS NOT NULL AND store_fname IS NOT NULL" in query, query
+    assert "STATUS: 7 binary field values kept in files the dump does not carry dropped" in out, out
+
+
+@case
+def a_module_older_on_disk_than_in_the_dump_stops_the_restore_before_neutralize():
+    # a shared checkout behind its addons.yaml pin: Odoo would load code older than its data
+    versions = {**AHEAD_VERSIONS, "older_on_disk": ("16.0.3.0.0", "16.0.2.0.0"),
+                "short_older": ("16.0.2.6.1", "2.2.0")}
+    rc, out, calls, files = run_wt_restore(versions=versions)
+    assert rc == 1 and call_index(calls, "odoo", "neutralize") is None, (rc, calls, out)
+    assert updated_modules(calls) is None and call_index(calls, "psql", "RENAME") is None, calls
+    assert "DROP DATABASE IF EXISTS wt_x_restoring" in calls[-1], calls
+    assert f"modules older on disk than in {DUMP}" in out, out
+    assert "  older_on_disk: 16.0.3.0.0 in the dump, 16.0.2.0.0 on disk (" in out, out
+    assert "  short_older: 16.0.2.6.1 in the dump, 16.0.2.2.0 on disk (" in out, out
+    assert "pinned_ahead" not in out and "nix run .#update-repos" in out and files == [], out
+    assert "ERROR: modules older on disk" in out and "WT_SKIP_PIN_CHECK=1" in out, out
+
+
+@case
+def wt_skip_pin_check_restores_on_older_code_with_a_warning():
+    versions = {**AHEAD_VERSIONS, "older_on_disk": ("16.0.3.0.0", "16.0.2.0.0")}
+    rc, out, calls, _files = run_wt_restore(versions=versions, extra_env={"WT_SKIP_PIN_CHECK": "1"})
+    assert rc == 0 and call_index(calls, "odoo", "neutralize") is not None, (rc, calls, out)
+    assert "WARNING: modules older on disk" in out and "  older_on_disk: 16.0.3.0.0 in the dump" in out, out
+    assert updated_modules(calls) == CHANGED + ",pinned_ahead,short_ahead", calls
 
 
 @case

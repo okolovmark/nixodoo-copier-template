@@ -980,6 +980,15 @@ returns no closing block. The fix brief waits for every verdict.
    name selects a (nonexistent) TAG, runs 0 tests and goes false-green.
    Confirm the log reports a **non-zero test count** (`odoo.tests.result:
    … of N tests`).
+   Run it in the **foreground**: the Bash call itself with `timeout` 600000, never
+   `run_in_background`. With the pipeline-gates mod a test run counts only when its result line is
+   in the Bash tool's own output; a run in the background, read later from its log or its
+   notification, never counts, and `qc_verdict` `pass` is refused. A call that passes 10 minutes
+   is moved to the background at the limit and does not count either. So when the suite takes
+   longer: the gate gets a foreground run of the test classes the change touches
+   (`--test-tags /<MODULE_NAME>:<TestClass>,/<MODULE_NAME>:<OtherClass>`, without `-u` once the
+   module is updated), and the whole suite runs in the background for the record, its result in
+   the gate report. Two modules that pass 10 minutes together go one per call.
 3. Check for ERROR, CRITICAL, test failures, tracebacks.
 4. Start this session's Odoo: `systemctl --user start odoo{{ service_suffix }}-wt@<slug>.service`
 5. **Browser UI testing** in the session's own browser (worktree-env skill, "The session

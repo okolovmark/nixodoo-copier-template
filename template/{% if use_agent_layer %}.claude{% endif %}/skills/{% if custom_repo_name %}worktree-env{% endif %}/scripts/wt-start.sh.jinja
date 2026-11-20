@@ -18,6 +18,8 @@
 #               Later runs keep the env vanilla, with the flag or without.
 #   --country   the company's country (ISO code, e.g. PH) set before <modules> install, so an
 #               accounting module loads that country's chart; only when the DB is made.
+#   WT_SKIP_PIN_CHECK=1  start a new env though an addons.yaml repo under src/ is off its pin
+#               (without it: exit 3 before anything is made, naming the repos)
 # Prints WORKTREE / BRANCH (or VANILLA) / URL / CONF / DB / PORT (+ ENVREPO) for the orchestrator.
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/wt-common.sh"
@@ -74,6 +76,26 @@ if [ -n "${WT_DUMP:-}" ]; then
 fi
 [ -n "$VANILLA" ] || [ -n "${WT_DUMP:-}" ] || ls "$BACKUP_DIR"/*.dump >/dev/null 2>&1 || {
     echo "ERROR: no prod seed dump in $BACKUP_DIR — {% if backup_s3_bucket %}run \`nix run .#download-backup\`{% else %}put a prod dump into backup/{% endif %}, then retry" >&2; exit 1; }
+
+# The shared repos the farm links at their addons.yaml pins, checked before anything is made: a
+# restore on a checkout behind its pin runs code older than the dump's, and one off its pin tests
+# code production does not run. Aligning them is update-repos' job, not this env's: every env
+# links them. An env keeping its DB gets a warning, as does a run with WT_SKIP_PIN_CHECK=1.
+if [ -z "$VANILLA" ]; then
+    OFF_PIN="$(off_pin_repos | sed 's/^/  /')"
+    if [ -n "$OFF_PIN" ] && { [ -n "${WT_SKIP_PIN_CHECK:-}" ] || db_exists "$(db_name_for "$SLUG")"; }; then
+        printf 'WARNING: addons repos off their addons.yaml pin, which this env links:\n%s\n' "$OFF_PIN" >&2
+    elif [ -n "$OFF_PIN" ]; then
+        cat >&2 <<OFF_PIN_EOF
+ERROR: addons repos off their addons.yaml pin, which this env would link and restore the dump on:
+$OFF_PIN
+Code older than the dump's fails the restore, and code off the pin is not what production runs.
+\`nix run .#update-repos\` checks them out at their pins (under every env that links them:
+mind the other sessions), or WT_SKIP_PIN_CHECK=1 starts the env on them as they are.
+OFF_PIN_EOF
+        exit 3
+    fi
+fi
 
 # 2 (stale): a wt-stop removed the env while this waited; it is made again.
 LOCK_RC=2

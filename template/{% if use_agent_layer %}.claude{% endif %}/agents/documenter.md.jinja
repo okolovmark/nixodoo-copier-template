@@ -84,12 +84,23 @@ Docs accrete lazily, module by module — there is no mass backfill:
 5. **Regenerate README.rst** (+ `static/description/index.html`) after editing
    fragments. The organisation and repository names come from the module's own
    repository (its `origin` remote), so a module of a shared addons repository
-   gets that repository's links, not the project's:
+   gets that repository's links, not the project's. So does the generator: where
+   that repository's `.pre-commit-config.yaml` pins it (a `maintainer-tools@<commit>`
+   pip spec, with `docutils==` and `pygments==` beside it, as a readme check hook
+   installs them), the run takes those pins, so it writes what the hook checks;
+   elsewhere it takes `{{ readme_gen_source }}`:
    ```bash
    ADDON=<path/to/module>
    URL=$(git -C "$ADDON" remote get-url origin); URL=${URL%.git}
    REPO=${URL##*/}; URL=${URL%/*}; ORG=${URL##*[:/]}
-   uvx --from "{{ readme_gen_source }}" oca-gen-addon-readme \
+   HOOKS="$(git -C "$ADDON" rev-parse --show-toplevel)/.pre-commit-config.yaml"
+   GEN="{{ readme_gen_source }}"; WITH=()
+   if [ -f "$HOOKS" ]; then
+       PIN=$(grep -oE 'git\+https://[^" ]*maintainer-tools(\.git)?@[0-9a-f]{7,40}' "$HOOKS" | head -1)
+       GEN=${PIN:-$GEN}
+       for dep in $(grep -oiE '(docutils|pygments)==[0-9][0-9A-Za-z.]*' "$HOOKS"); do WITH+=(--with "$dep"); done
+   fi
+   uvx --from "$GEN" "${WITH[@]}" oca-gen-addon-readme \
        --org-name "$ORG" --repo-name "$REPO" --branch {{ odoo_version }} \
        --addon-dir "$ADDON" --gen-html
    ```
