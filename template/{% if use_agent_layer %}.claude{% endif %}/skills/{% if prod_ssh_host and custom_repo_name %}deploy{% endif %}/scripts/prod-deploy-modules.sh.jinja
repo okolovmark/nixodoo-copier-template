@@ -21,6 +21,12 @@
 # prod-deploy-lock.sh beside this file): DEPLOY_LOCK_MISSING, DEPLOY_EXIT=3,
 # nothing pulled. The lock is what keeps two developers' deploys apart.
 #
+# Stamps the deploy's phase on the lock as it goes (deploy-phase.sh beside this
+# file): update before the pull, restart before the restart, up once Odoo
+# answers /web/login again. After the restart it waits for that answer (up to
+# DEPLOY_ODOO_WAIT_SECONDS, default 180): a service that restarted but does not
+# serve is ODOO_NOT_ANSWERING, DEPLOY_EXIT=4, not a deploy.
+#
 # Prints the full remote log, then DEPLOY_EXIT=<n>. Exits non-zero if the
 # update failed, so a broken deploy cannot read as success.
 set -euo pipefail
@@ -34,6 +40,8 @@ case "$HOST" in {{ hosts | join('|') }}) ;; *) echo "refusing unknown host: $HOS
 case "$FLAG" in -u|-i) ;; *) echo "flag must be -u or -i, got: $FLAG" >&2; exit 2 ;; esac
 [[ "$MODULES" =~ ^[a-z0-9_,]+$ ]] || { echo "module list must be comma-separated names: $MODULES" >&2; exit 2; }
 case "$LINK" in ""|--link-addons) ;; *) echo "unknown 4th argument: $LINK" >&2; exit 2 ;; esac
+ODOO_WAIT="${DEPLOY_ODOO_WAIT_SECONDS:-180}"
+[[ "$ODOO_WAIT" =~ ^[0-9]+$ ]] && [ "$ODOO_WAIT" -gt 0 ] || { echo "DEPLOY_ODOO_WAIT_SECONDS must be a positive number: $ODOO_WAIT" >&2; exit 2; }
 
 # Each box has its own database: prod's is {{ prod_db_name }}, a test box has its own.
 # Odoo creates a database it cannot find and installs base into it, so a wrong
@@ -49,12 +57,14 @@ PROJECT_DIR="${{ project_dir_var }}"
 [ -n "$PROJECT_DIR" ] || PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)"
 SSH_CONFIG="$PROJECT_DIR/.ssh/config"
 [ -f "$SSH_CONFIG" ] || { echo "no ssh config at $SSH_CONFIG (run: nix run .#setup-ssh-access)" >&2; exit 2; }
-
-link_step=""
-[ "$LINK" = "--link-addons" ] && link_step='cd {{ prod_remote_project_dir }} && {{ prod_link_addons_cmd }}'
+PHASE_LIB="$(dirname "${BASH_SOURCE[0]}")/deploy-phase.sh"
+[ -f "$PHASE_LIB" ] || { echo "missing $PHASE_LIB" >&2; exit 2; }
 
 # -A: the box's `origin` is a git SSH remote and the pull runs on your
 # forwarded key, not on a deploy key sitting in the box's ~/.ssh.
+#
+# The remote part is read from stdin (deploy-phase.sh first), so every command
+# in it reads /dev/null instead: one that read stdin would eat the script.
 #
 # --logfile= is empty on purpose: Odoo realpaths the option, so /dev/stdout
 # becomes /proc/<pid>/fd/pipe:[N] over SSH and cannot be opened. Empty leaves it
@@ -65,14 +75,23 @@ link_step=""
 # reloaded yet is read from the database, and a field the new code removed fails
 # on the box an update every local rehearsal passed. The restart runs without it.
 set +e
-ssh -A -F "$SSH_CONFIG" "$HOST" "set -euo pipefail
-[ -d {{ prod_remote_project_dir }}/.deploy-lock ] || { echo 'DEPLOY_LOCK_MISSING: take the deploy lock first (prod-deploy-lock.sh <host> acquire <PR>)' >&2; exit 3; }
-export PATH=\"\$HOME/{{ nix_profile_rel }}/bin:\$PATH\"
+{ cat "$PHASE_LIB"; cat <<'REMOTE'; } | ssh -A -F "$SSH_CONFIG" "$HOST" "bash -s -- '$DB' '$FLAG' '$MODULES' '$LINK' '$ODOO_WAIT'"
+set -euo pipefail
+DB="$1"; FLAG="$2"; MODULES="$3"; LINK="$4"; ODOO_WAIT="$5"
+[ -d "$DEPLOY_LOCK_DIR" ] || { echo 'DEPLOY_LOCK_MISSING: take the deploy lock first (prod-deploy-lock.sh <host> acquire <PR>)' >&2; exit 3; }
+export PATH="$HOME/{{ nix_profile_rel }}/bin:$PATH"
+deploy_phase update
 cd {{ prod_remote_project_dir }}/src/{{ custom_repo_name }}
-git pull origin {{ odoo_version }}
-$link_step
-python {{ prod_remote_project_dir }}/src/odoo/odoo-bin -c {{ prod_remote_odoo_conf }} --workers 0 -d $DB $FLAG $MODULES --stop-after-init --dev=xml --logfile=
-systemctl --user restart odoo{{ service_suffix }}.service"
+git pull origin {{ odoo_version }} < /dev/null
+if [ "$LINK" = --link-addons ]; then
+    (cd {{ prod_remote_project_dir }} && {{ prod_link_addons_cmd }}) < /dev/null
+fi
+python {{ prod_remote_project_dir }}/src/odoo/odoo-bin -c {{ prod_remote_odoo_conf }} --workers 0 -d "$DB" "$FLAG" "$MODULES" --stop-after-init --dev=xml --logfile= < /dev/null
+deploy_phase restart
+systemctl --user restart odoo{{ service_suffix }}.service < /dev/null
+deploy_wait_odoo "$ODOO_WAIT" || exit 4
+deploy_phase up
+REMOTE
 status=$?
 set -e
 

@@ -171,17 +171,34 @@ bash "${{ project_dir_var }}/.claude/skills/deploy/scripts/prod-deploy-modules.s
 - Prints the whole remote log, then `DEPLOY_EXIT=<n>`, and exits non-zero when
   the update failed, so a broken deploy cannot read as success.
 - It runs exactly this on the box (the live service keeps serving during
-  `-u --stop-after-init`; the final `restart` brings it up on the new code):
+  `-u --stop-after-init`; the final `restart` brings it up on the new code;
+  every command reads `/dev/null`, since the script itself arrives on stdin):
 
 ```sh
 set -euo pipefail
 export PATH="$HOME/{{ nix_profile_rel }}/bin:$PATH"   # non-interactive SSH lacks the nix PATH; bare `python` = exit 127
+deploy_phase update                                    # stamps the lock: phase, eta
 cd {{ prod_remote_project_dir }}/src/{{ custom_repo_name }}
 git pull origin {{ odoo_version }}
 cd {{ prod_remote_project_dir }} && {{ prod_link_addons_cmd }}          # --link-addons only
 python {{ prod_remote_project_dir }}/src/odoo/odoo-bin -c {{ prod_remote_odoo_conf }} --workers 0 -d {{ prod_db_name }} <-u|-i> <modules> --stop-after-init --dev=xml --logfile=
+deploy_phase restart
 systemctl --user restart odoo{{ service_suffix }}.service
+deploy_wait_odoo 180                                   # polls /web/login until it answers 200
+deploy_phase up
 ```
+
+- **It waits for Odoo to serve again.** The restart returns at once; the
+  script then asks `/web/login` every 2 s, on the port and interface `odoo.conf`
+  names. `ODOO_ANSWERING http://<host>:<port> after <n>s` is the success line.
+  No 200 within 180 s (`DEPLOY_ODOO_WAIT_SECONDS`) →
+  `ODOO_NOT_ANSWERING`, `DEPLOY_EXIT=4`: the service restarted but does not
+  serve, which is a failed deploy (Step 7, failing step `restart`).
+- **The phase stamps** (`DEPLOY_PHASE <phase> phase_at=… eta=…` lines) put where
+  the deploy is, and when it should be done, on the lock's info line{% if deploy_status_file %} and in
+  its public copy `{{ deploy_status_file }}`{% endif %}, for a "being updated" page to read;
+  `scripts/README.md`, Deploy phases. A stamp never fails the deploy
+  (`DEPLOY_PHASE_SKIPPED` when it cannot be written).
 
 **`--dev=xml` on the update is deliberate.** The local `odoo` wrapper always runs
 with `--dev=...,xml`, which makes Odoo read every view's arch from its file on
@@ -228,6 +245,7 @@ ssh -A -F "${{ project_dir_var }}/.ssh/config" prod 'set -euo pipefail
 export PATH="$HOME/{{ nix_profile_rel }}/bin:$PATH"
 cd {{ prod_remote_project_dir }}/src/{{ custom_repo_name }} && git pull origin {{ odoo_version }}'
 
+bash "${{ project_dir_var }}/.claude/skills/deploy/scripts/prod-deploy-lock.sh" prod phase <PR> stopped
 ssh -A -F "${{ project_dir_var }}/.ssh/config" prod 'systemctl --user stop odoo{{ service_suffix }}.service'
 
 ssh -A -F "${{ project_dir_var }}/.ssh/config" prod 'export PATH="$HOME/{{ nix_profile_rel }}/bin:$PATH"; rm -f /tmp/deploy-pr<PR>.log; setsid nohup bash -c "python {{ prod_remote_project_dir }}/src/odoo/odoo-bin -c {{ prod_remote_odoo_conf }} --workers 0 -d {{ prod_db_name }} -u <modules> --stop-after-init --dev=xml --logfile=/tmp/deploy-pr<PR>.log; echo RETRY_EXIT=\$? >> /tmp/deploy-pr<PR>.log" > /dev/null 2>&1 < /dev/null & echo LAUNCHED'
@@ -237,7 +255,14 @@ until ssh -A -F "${{ project_dir_var }}/.ssh/config" prod 'grep -q "RETRY_EXIT="
 ssh -A -F "${{ project_dir_var }}/.ssh/config" prod 'grep -aE "RETRY_EXIT=|Modules loaded" /tmp/deploy-pr<PR>.log; grep -acE " (ERROR|CRITICAL) " /tmp/deploy-pr<PR>.log'
 
 ssh -A -F "${{ project_dir_var }}/.ssh/config" prod 'systemctl --user start odoo{{ service_suffix }}.service'
+bash "${{ project_dir_var }}/.claude/skills/deploy/scripts/prod-deploy-lock.sh" prod phase <PR> up
 ```
+
+The two `phase` calls stamp the lock (`stopped` with its eta before the stop,
+`up` after the start) and record the downtime for the next eta. `phase … up`
+first waits for Odoo to serve `/web/login`, as Step 2 does; no answer within
+180 s → `ODOO_NOT_ANSWERING`, exit 6, nothing stamped: a failed deploy (Step 7).
+A failed update keeps `stopped` until Step 7 marks the lock failed.
 
 `RETRY_EXIT=0` + `Modules loaded.` is the success pair. **Non-zero → prod is
 down and half-migrated**: do not start the service on old code, fix forward or
@@ -491,8 +516,8 @@ expected there and a finding at T+60.
     success (Odoo exits non-zero only when the update itself fails; log-only
     errors don't fail the deploy). Post ✅ to the chat as normal, but show the
     user (not the chat) those lines as warnings.
-- **Non-zero deploy exit** -> name the failing step, paste the last error lines,
-  STOP:
+- **Non-zero deploy exit** -> name the failing step (`ODOO_NOT_ANSWERING`,
+  exit 4, is `restart`), paste the last error lines, STOP:
   ```html
   <p>❌ <strong>Deploy FAILED: {PR title}</strong></p>
   <p><strong>Step:</strong> {git pull | link-addons | module update | restart}</p>
