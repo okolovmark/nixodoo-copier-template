@@ -74,3 +74,7 @@ Things that surprised somebody once, kept out of [the README](../README.md) so i
   it a session on a restored production dump renders reports against the dump's
   `web.base.url`, i.e. production. Corpus: `python3 tests/test_wt_start_conf.py` (needs
   jinja2), which CI runs once per push in its `wt-scripts` job.
+- A new `revision:` in `addons.yaml` moves nothing on disk: the shared checkouts under `src/`,
+  which every worktree env links, move only with `nix run .#update-repos`. `wt-start.sh` refuses
+  a new env on a checkout off its pin (exit 3; `WT_SKIP_PIN_CHECK=1` goes on), warns of a
+  pinned repo not cloned, and `wt-list.sh` names both after its table.
