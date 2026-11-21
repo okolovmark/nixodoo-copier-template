@@ -14,8 +14,10 @@
 #   prod-deploy-modules.sh prod -u {{ module_prefix }}_sale
 #   prod-deploy-modules.sh prod -i {{ module_prefix }}_new --link-addons
 #
-# --link-addons re-links the addon symlinks; pass it ONLY when a module was
-# added or removed in the merged PR.
+# --link-addons runs `{{ prod_link_addons_cmd }}` on the box: it re-links the addon
+# symlinks and checks each pinned repo out at its revision. Pass it when a module
+# was added or removed in the merged PR, or when the deploy lands a re-pin of
+# repos.yaml or addons.yaml (deploy skill, Step 1).
 #
 # Refuses to run unless the box's deploy lock is held (deploy skill Step 3.5,
 # prod-deploy-lock.sh beside this file): DEPLOY_LOCK_MISSING, DEPLOY_EXIT=3,
