@@ -170,7 +170,9 @@ if [ "$ACTION" != acquire ]; then
     exit "$status"
 fi
 
-deadline=$(( $(date +%s) + WAIT ))
+# date +%s drops the fraction of the start second: one second more with --wait,
+# so the wait is never shorter than asked (at most a second longer); none without
+deadline=$(( $(date +%s) + WAIT + (WAIT > 0) ))
 unreachable=0
 while :; do
     set +e; out=$(remote acquire); status=$?; set -e
