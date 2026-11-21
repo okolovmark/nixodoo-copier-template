@@ -108,6 +108,16 @@ RANGE="$MC^1..$MC"
 - **added/removed module** (`added`/`removed` on a `__manifest__.py`) → the
   `--link-addons` step is required this deploy. (Removing from code does not
   uninstall from the DB — flag that as a separate manual step.)
+- **a re-pin** (the change lives in a repo that `repos.yaml` or `addons.yaml`
+  pins at a `revision:`, and lands through a PR of this repo that moves that
+  line) → the modules are the top-level dirs of that repo's diff between the
+  old and the new revision. Two more moves, both required: fast-forward the
+  box's own checkout to the merged re-pin before Step 5
+  (`git -C {{ prod_remote_project_dir }} pull --ff-only origin <its branch>`
+  over `ssh -A`), since the deploy script pulls only
+  `src/{{ custom_repo_name }}`; and pass `--link-addons`, the one step that
+  checks a pinned repo out at its new revision. Without either the update
+  reloads the old code and still exits 0.
 {% if tickets_mcp == 'odoo' %}
 - **task key(s)** = the `{{ ticket_prefix }}-xxxx` key(s) in the PR title / body / branch.
   Resolve each to its task now, a read before the merge (`odoo-tickets` → Resolve a
@@ -166,8 +176,8 @@ and for the permission-rule shapes.
 bash "${{ project_dir_var }}/.claude/skills/deploy/scripts/prod-deploy-modules.sh" <prod{% if test_ssh_hosts %}|<test alias>{% endif %}> <-u|-i> <modules> [--link-addons]
 ```
 
-- `<modules>` comma-separated, no spaces. `--link-addons` **only** when a module
-  was added or removed.
+- `<modules>` comma-separated, no spaces. `--link-addons` when a module was
+  added or removed, or on a re-pin (Step 1); nowhere else.
 - Prints the whole remote log, then `DEPLOY_EXIT=<n>`, and exits non-zero when
   the update failed, so a broken deploy cannot read as success.
 - It runs exactly this on the box (the live service keeps serving during
