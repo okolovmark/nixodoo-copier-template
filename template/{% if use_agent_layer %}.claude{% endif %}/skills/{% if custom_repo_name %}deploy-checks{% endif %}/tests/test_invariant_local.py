@@ -19,11 +19,13 @@ from harness import CORE, LOCAL, Shell  # noqa: E402
 class LocalScript(unittest.TestCase):
     def test_the_local_script_runs_after_the_core_one_on_the_same_stdin(self):
         # what `cat invariant-check.py invariant_local.py | odoo shell` does: the local
-        # file finds sql(), report(), check(), deep_check() and SINCE defined. Once it
-        # defines checks, assert their INVARIANT lines here instead of the stub's marker.
+        # file finds sql(), report(), check(), deep_check() and SINCE defined. Whatever
+        # it holds, the stub's marker or the project's own checks, it prints after the
+        # core script's last line; an empty local file prints nothing and fails here.
         shell = Shell().run(CORE, LOCAL)
-        self.assertTrue(any(line.startswith("INVARIANT_CORE_DONE") for line in shell.lines), shell.lines)
-        self.assertTrue(any(line.startswith("INVARIANT_LOCAL_DONE") for line in shell.lines), shell.lines)
+        core_done = [i for i, line in enumerate(shell.lines) if line.startswith("INVARIANT_CORE_DONE")]
+        self.assertTrue(core_done, shell.lines)
+        self.assertTrue(shell.lines[core_done[-1] + 1 :], shell.lines)
 
 
 if __name__ == "__main__":

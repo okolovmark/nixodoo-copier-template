@@ -185,13 +185,15 @@ def _(b):
     expect("holder=tester pr=1 " in (b.lock_dir() / "info").read_text(), "info overwritten")
 
 
-@case("--wait expires: WAITING lines, then LOCK_HELD, exit 3")
+@case("--wait expires: WAITING lines, then LOCK_HELD, exit 3, never before --wait is over")
 def _(b):
     b.run(b.lock, "prod", "acquire", "1")
+    # start late in a second: a deadline in whole seconds then ends the wait ~1 s early
+    time.sleep(max(0.0, 0.9 - time.time() % 1))
     t0 = time.time()
     rc, out = b.run(b.lock, "prod", "acquire", "2", "--wait", "2", DEPLOY_LOCK_HOLDER="other")
     expect(rc == 3 and "WAITING holder=tester pr=1" in out and out.rstrip().splitlines()[-1].startswith("LOCK_HELD"), (rc, out))
-    expect(1.5 <= time.time() - t0 <= 10, f"waited {time.time() - t0:.1f}s")
+    expect(2 <= time.time() - t0 <= 10, f"waited {time.time() - t0:.1f}s")
 
 
 @case("--wait wins when the holder releases meanwhile")
