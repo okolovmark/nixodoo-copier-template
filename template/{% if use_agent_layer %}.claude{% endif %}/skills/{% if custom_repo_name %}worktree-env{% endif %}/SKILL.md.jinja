@@ -83,6 +83,14 @@ Invoke by absolute path under `${{ project_dir_var }}/.claude/skills/worktree-en
   (see the gotchas). TERM or HUP to a test run is passed on to Odoo (its clean stop); a
   terminal's Ctrl-C reaches Odoo itself; whatever Odoo got, it is sent a TERM 30 s later if
   it still runs, and the script exits 128 + the signal.
+{% if odoo_version == '16.0' %}
+  A test run, `--test-file` included, also loads `scripts/test-addons/wt_test_browser_origin`
+  server-wide: Odoo 16's test browser asks Chrome to clear storage for the origin `127.0.0.1`,
+  which Chrome 158 rejects as no URL, failing every tour and QUnit test; the shim adds the scheme
+  and the run's port. An `--addons-path` or `--load` of your own replaces the shim's, so a browser
+  test on Chrome 158 then fails as before; with `-c` another conf the shim stays, but the addons
+  path and server-wide modules beside it are the session conf's.
+{% endif %}
 - **`wt-browser.sh <slug> [--as <label>] <playwright-cli command...>`** — the env's own
   browser: `playwright-cli` driving the system's Chrome, headless, held to the env's URL.
   See [The session browser](#the-session-browser).
