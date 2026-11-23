@@ -21,9 +21,11 @@ The --vanilla cases run wt-start.sh with its helper scripts logging their calls,
 wt-init.sh with psql, systemctl and odoo stubbed.
 The wt-browser.sh cases run it with playwright-cli, Chrome, ffmpeg and ffprobe stubbed, on a
 PATH that holds nothing else of this machine.
+The browser origin shim cases run its post_load hook on a stand-in odoo.tests.common.
 CI runs this file once per push (the wt-scripts job); it needs jinja2, bash, flock and git.
 """
 
+import ast
 import itertools
 import json
 import os
@@ -77,11 +79,11 @@ def conf(text):
     return sections(text)["options"]
 
 
-def render_script(src):
+def render_script(src, **overrides):
     env = jinja2.Environment(trim_blocks=True, lstrip_blocks=True, keep_trailing_newline=True)
     answers = dict(BASE, project_dir_var="WT_TEST_PROJECT_DIR", project_name="p", custom_repo_name="acme-addons",
                    nix_profile_rel=".nix-profile", module_prefix="acme")
-    return env.from_string(src.read_text()).render(**answers)
+    return env.from_string(src.read_text()).render(**{**answers, **overrides})
 
 
 CASES = []
@@ -1152,6 +1154,105 @@ def a_signal_before_odoo_starts_stops_the_run_without_it():
 def a_run_without_tests_is_not_counted():
     rc, out, psql, odoo = run_wt_test(["-u", "all"])
     assert (rc, psql_vars(psql).get("modules"), odoo is not None) == (0, "all", True), (rc, psql, odoo, out)
+
+
+SHIM_ROOT = SRC.with_name("{% if odoo_version == '16.0' %}test-addons{% endif %}")
+SHIM = SHIM_ROOT / "wt_test_browser_origin"
+
+
+def shim_args(argv):
+    """The --addons-path and --load values Odoo got, None for one it did not get."""
+    values = dict(itertools.pairwise(argv or []))
+    return values.get("--addons-path"), values.get("--load")
+
+
+@case
+def an_odoo_16_test_run_loads_the_browser_origin_shim_beside_the_confs_own():
+    for conf_text, addons_path, load in (
+            ("[options]\n", "{root}/src/odoo/addons", "base,web"),
+            ("[options]\naddons_path = /a,/b\nserver_wide_modules = base,web,queue_job\n", "/a,/b",
+             "base,web,queue_job")):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            cmd, env = wt_test_project(root, f'printf "%s\\n" {shlex.quote(RESULT.format(0, 1))} >&2\n')
+            (root / ".worktrees/_env/x/odoo.conf").write_text(conf_text)
+            proc = subprocess.run([*cmd, "--test-tags", "/acme_mod"], capture_output=True, text=True, env=env)
+            argv = read_argv(root / "odoo.argv")
+            assert proc.returncode == 0, proc.stdout + proc.stderr
+            assert shim_args(argv) == (f"{addons_path.format(root=root)},{root}/scripts/test-addons",
+                                       f"{load},wt_test_browser_origin"), argv
+            assert argv.index("--load") < argv.index("--test-tags"), argv
+
+
+@case
+def a_run_without_tests_gets_no_browser_origin_shim():
+    _rc, out, _psql, odoo = run_wt_test(["-u", "all"])
+    assert odoo is not None and shim_args(odoo) == (None, None), (odoo, out)
+
+
+@case
+def a_test_file_run_loads_the_browser_origin_shim_and_stays_uncounted():
+    # Odoo 16 starts its HTTP server, and with it the test browser, for a test file too
+    for args in (["--test-file", "acme_mod/tests/test_x.py"], ["--test-fi=acme_mod/tests/test_x.py"]):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            cmd, env = wt_test_project(root, "")
+            proc = subprocess.run([*cmd, *args], capture_output=True, text=True, env=env)
+            argv = read_argv(root / "odoo.argv")
+            assert proc.returncode == 0 and "WARNING" not in proc.stderr, (args, proc.stdout + proc.stderr)
+            assert shim_args(argv) == (f"{root}/src/odoo/addons,{root}/scripts/test-addons",
+                                       "base,web,wt_test_browser_origin"), (args, argv)
+            assert "--log-handler" not in argv, (args, argv)
+
+
+@case
+def the_browser_origin_shim_is_generated_for_odoo_16_alone():
+    for version in ("16.0", "17.0", "18.0", "19.0", "20.0"):
+        text = render_script(TEST_SRC, odoo_version=version, odoo_major=version.removesuffix(".0"))
+        is_16 = version == "16.0"
+        assert ("wt_test_browser_origin" in text, "test-addons" in text, "TEST_FILE" in text) == (is_16,) * 3, version
+        # copier skips a path segment that renders empty
+        assert jinja2.Template(SHIM_ROOT.name).render(odoo_version=version) == ("test-addons" if is_16 else ""), version
+
+
+@case
+def the_shim_gives_a_bare_storage_origin_the_runs_scheme_and_port_and_passes_the_rest():
+    manifest = ast.literal_eval((SHIM / "__manifest__.py").read_text())
+    assert manifest["installable"] is False, manifest
+    with tempfile.TemporaryDirectory() as tmp:
+        fake = pathlib.Path(tmp, "odoo")
+        for package in ("", "tests", "tools"):
+            (fake / package).mkdir(exist_ok=True)
+            (fake / package / "__init__.py").write_text("")
+        (fake / "tests/common.py").write_text(
+            "class ChromeBrowser:\n"
+            "    def _websocket_request(self, method, *, params=None, timeout=10.0):\n"
+            "        return method, params, timeout\n")
+        (fake / "tools/__init__.py").write_text("config = {'http_port': 8123}\n")
+        driver = f"""
+import importlib.util, json, sys
+sys.path.insert(0, {tmp!r})
+spec = importlib.util.spec_from_file_location("shim", {str(SHIM / "__init__.py")!r})
+shim = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(shim)
+getattr(shim, {manifest["post_load"]!r})()
+from odoo.tests.common import ChromeBrowser
+cleared = {{"origin": "127.0.0.1", "storageTypes": "local_storage, session_storage"}}
+calls = [("Storage.clearDataForOrigin", cleared), ("Storage.clearDataForOrigin", {{"origin": "http://h:1"}}),
+         ("Network.clearBrowserCache", None), ("Page.navigate", {{"url": "127.0.0.1"}})]
+print(json.dumps([ChromeBrowser()._websocket_request(m, params=p, timeout=3) for m, p in calls] + [cleared]))
+"""
+        proc = subprocess.run([sys.executable, "-I", "-B", "-c", driver], capture_output=True, text=True)
+    assert proc.returncode == 0, proc.stderr
+    assert not (SHIM / "__pycache__").exists(), "the shim's run wrote bytecode into the template tree"
+    assert json.loads(proc.stdout) == [
+        ["Storage.clearDataForOrigin",
+         {"origin": "http://127.0.0.1:8123", "storageTypes": "local_storage, session_storage"}, 3],
+        ["Storage.clearDataForOrigin", {"origin": "http://h:1"}, 3],
+        ["Network.clearBrowserCache", None, 3],
+        ["Page.navigate", {"url": "127.0.0.1"}, 3],
+        {"origin": "127.0.0.1", "storageTypes": "local_storage, session_storage"},
+    ], proc.stdout
 
 
 @case
