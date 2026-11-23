@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { ADDONS, PORTS } from '../hooks/config'
+import { ADDONS, PORTS, PROJECT_DIR_VAR } from '../hooks/config'
 import { parseActive, parseGitStatus, touchedBy, worktreeSlug, wtDb } from '../hooks/env'
 
 const PROJECT = '/p'
@@ -137,7 +137,11 @@ describe('parsers', () => {
     expect(touchedBy('Bash', { command: `git -C /p/${ADDONS} commit -m x` }, AT).addons).toBe(true)
     expect(touchedBy('Bash', { command: `git -C /p/${ADDONS} worktree list` }, AT)).toEqual(none)
     expect(touchedBy('Bash', { command: 'git add -A && git commit -m "[DOC] adr"' }, AT)).toEqual({ ...none, env: true })
-    expect(touchedBy('Bash', { command: 'git -C "$ODOO16_PROJECT_DIR" push' }, AT)).toEqual({ ...none, env: true })
+    expect(touchedBy('Bash', { command: `git -C "$${PROJECT_DIR_VAR}" push` }, AT)).toEqual({ ...none, env: true })
+    // the project's own root variable, from a cwd that is not the project root
+    const inWt = { ...AT, cwd: '/p/.worktrees/proj-1' }
+    expect(touchedBy('Bash', { command: `git -C "$${PROJECT_DIR_VAR}/${ADDONS}" commit -m x` }, inWt)).toEqual({ ...none, addons: true })
+    expect(touchedBy('Bash', { command: `git -C \${${PROJECT_DIR_VAR}} push` }, inWt)).toEqual({ ...none, env: true })
     expect(touchedBy('Bash', { command: `git -C ${ADDONS} pull` }, AT)).toEqual({ ...none, addons: true })
     expect(touchedBy('Bash', { command: 'bash wt-start.sh proj-9 && ls /p/.worktrees/_env' }, AT).wts).toEqual(['proj-9'])
     expect(touchedBy('Read', { file_path: '/p/.worktrees/proj-1/x.py' }, AT)).toEqual(none)

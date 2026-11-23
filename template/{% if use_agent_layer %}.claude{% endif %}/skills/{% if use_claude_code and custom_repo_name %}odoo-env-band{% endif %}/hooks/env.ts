@@ -1,4 +1,5 @@
 import type { GitStatus, Touched } from '../types'
+import { PROJECT_DIR_VAR } from './config'
 
 // `git status --porcelain=v2 --branch`: header lines start with '#', every other line is one changed path
 export function parseGitStatus(out: string): GitStatus {
@@ -73,9 +74,12 @@ function classify(path: string, where: Where): Touched {
   return { env: true, addons: false, wts: [] }
 }
 
-// a `git -C` argument as written: quotes off, $ODOO16_PROJECT_DIR and relative paths resolved
+// the project's own root variable at the start of a path: $VAR or ${VAR}
+const PROJECT_DIR_REF = new RegExp(`^\\$\\{?${PROJECT_DIR_VAR}\\}?`)
+
+// a `git -C` argument as written: quotes off, the project root variable and relative paths resolved
 function resolvePath(raw: string, where: Where): string {
-  const bare = raw.replace(/^["']|["']$/g, '').replace(/^\$\{?ODOO16_PROJECT_DIR\}?/, where.project)
+  const bare = raw.replace(/^["']|["']$/g, '').replace(PROJECT_DIR_REF, where.project)
   return bare.startsWith('/') ? bare : `${where.cwd.replace(/\/+$/, '')}/${bare}`
 }
 
