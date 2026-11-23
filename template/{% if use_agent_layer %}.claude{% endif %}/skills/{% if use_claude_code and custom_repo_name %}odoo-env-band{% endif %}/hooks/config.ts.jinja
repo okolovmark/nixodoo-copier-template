@@ -5,3 +5,5 @@ export const ADDONS_BRANCH = '{{ odoo_version }}'
 export const ENV_BRANCHES: readonly string[] = ['main', 'master']
 export const SERVICE_SUFFIX = '{{ service_suffix }}'
 export const PORTS = { pg: '{{ postgres_port }}' } as const
+// The shell variable holding the project root, as commands write it ($VAR or ${VAR})
+export const PROJECT_DIR_VAR = '{{ project_dir_var }}'
