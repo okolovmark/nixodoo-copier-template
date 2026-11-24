@@ -2,13 +2,16 @@
     description = "Odoo {{ odoo_version }} Development Environment for {{ project_name }}";
 
     inputs = {
-        nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+        # nixos-26.05 ships neither python310 nor postgresql_13, so a project on
+        # Python 3.10 (Odoo 16, or 17 on 3.10) or on PostgreSQL 13 keeps
+        # nixos-25.05, which has both.
+        nixpkgs.url = "github:NixOS/nixpkgs/{% if python_version == '3.10' or postgres_version | int == 13 %}nixos-25.05{% else %}nixos-26.05{% endif %}";
         flake-utils.url = "github:numtide/flake-utils";
 
         # Second pin, used for NOTHING but a PostgreSQL major the main pin does
-        # not carry (nixos-25.05 stops at 17). A release that carries every
-        # major from 13 to 18, so any answer to postgres_version resolves; it
-        # needs nothing else from this pin, python included.
+        # not carry: 18 under a nixos-25.05 main pin, which stops at 17. Under a
+        # nixos-26.05 main pin it is never read. It needs nothing else from
+        # this pin, python included.
         nixpkgs-postgres.url = "github:NixOS/nixpkgs/nixos-26.05";
 
         # Core pyproject-nix ecosystem tools
@@ -33,9 +36,8 @@
                 python = pkgs.python{{ python_version | replace('.', '') }};
 
                 # PostgreSQL for this project's own cluster and its client
-                # tools. Majors the main pin carries come from it, so nothing
-                # moves for an existing project; a newer major (18) comes from
-                # the second pin.
+                # tools. Majors the main pin carries come from it; 18 under a
+                # nixos-25.05 main pin comes from the second pin.
                 postgresqlAttr = "postgresql_{{ postgres_version }}";
                 mainPinHasPostgresql = pkgs ? ${postgresqlAttr};
                 postgresql =
