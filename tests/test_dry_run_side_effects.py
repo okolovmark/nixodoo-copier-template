@@ -27,8 +27,10 @@ import jinja2
 SCRIPTS = pathlib.Path(
     "template/{% if use_agent_layer %}.claude{% endif %}/skills/"
     "{% if prod_ssh_host and custom_repo_name %}prod-ops{% endif %}/scripts")
-RUNNER = SCRIPTS / "dry-run-side-effects.sh.jinja"
-PRELUDE = SCRIPTS / "side_effects_prelude.py"
+ONLY_16 = "{% if odoo_version == '16.0' %}", "{% endif %}"
+RUNNER = SCRIPTS / ("dry-run-side-effects.sh".join(ONLY_16) + ".jinja")
+PRELUDE = SCRIPTS / "side_effects_prelude.py".join(ONLY_16)
+SKILL = SCRIPTS.parent / "SKILL.md.jinja"
 
 ANSWERS = dict(nix_profile_rel=".nix-profile", postgres_port=16432)
 
@@ -62,7 +64,7 @@ class Run:
         env = jinja2.Environment(trim_blocks=True, lstrip_blocks=True, keep_trailing_newline=True)
         out.write_text(env.from_string(RUNNER.read_text()).render(**ANSWERS))
         out.chmod(0o755)
-        shutil.copy(PRELUDE, self.tmp / PRELUDE.name)
+        shutil.copy(PRELUDE, self.tmp / "side_effects_prelude.py")
         self.runner = out
 
     def run(self, *args, out="", **env):
@@ -134,6 +136,7 @@ def _():
         expect(run.seen("stdin") == PRELUDE.read_text(), "stdin is not the prelude")
         args = run.seen("args").split("\n")
         expect(args[:3] == ["shell", "-c", str(run.conf)] and "--no-http" in args, args)
+        expect("--logfile=" in args, ("the Odoo log must reach the run's output", args))
         expect("-d" not in args, args)
     with_run(check)
 
@@ -245,6 +248,44 @@ def _():
         expect(proc.returncode == 4, (proc.returncode, proc.stdout))
         expect("SIDE_EFFECTS_FOUND=3" in proc.stdout, proc.stdout)
     with_run(check)
+
+
+@case("a report that raised fails the run instead of passing as no side effects")
+def _():
+    def check(run):
+        proc = run.run(out="SIDE-EFFECT REPORT FAILED:\\nTraceback (most recent call last):\\nSCRIPT_DONE mode=dry\\n")
+        expect(proc.returncode == 1, (proc.returncode, proc.stdout, proc.stderr))
+        expect("REPORT_FAILED" in proc.stderr and "DRY_RUN_OK" not in proc.stdout, proc.stdout + proc.stderr)
+    with_run(check)
+
+
+@case("a report that was skipped or never printed fails the run")
+def _():
+    for out in ("SE_SUMMARY side_effects=unknown while_reporting=unknown\\nSCRIPT_DONE mode=dry\\n",
+                "SCRIPT_DONE mode=dry\\n",
+                "SE_SUMMARY side_effects=0 while_reporting=0\\n"
+                "SE_SUMMARY side_effects=unknown while_reporting=unknown\\nSCRIPT_DONE mode=dry\\n"):
+        def check(run):
+            proc = run.run(out=out)
+            expect(proc.returncode == 1, (out, proc.returncode, proc.stdout, proc.stderr))
+            expect("REPORT_MISSING" in proc.stderr and "DRY_RUN_OK" not in proc.stdout,
+                   (out, proc.stdout + proc.stderr))
+        with_run(check)
+
+
+@case("the tool and its SKILL.md section render for Odoo 16 only")
+def _():
+    env = jinja2.Environment(trim_blocks=True, lstrip_blocks=True, keep_trailing_newline=True,
+                             undefined=jinja2.ChainableUndefined)
+    for version, present in (("16.0", True), ("17.0", False), ("20.0", False)):
+        for path in (RUNNER, PRELUDE):
+            name = env.from_string(path.name).render(odoo_version=version)
+            expect(bool(name.replace(".jinja", "")) == present, (version, path.name, name))
+        text = env.from_string(SKILL.read_text()).render(odoo_version=version)
+        for needle in ("dry-run-side-effects.sh", "**Side effects: the dry run that shows them.**"):
+            expect((needle in text) == present, (version, needle))
+        expect("The report only reads" in text, (version, "the report-only-reads rule is for every version"))
+        expect("\n\n\n" not in text.split("The report only reads", 1)[1][:2000], (version, "blank lines"))
 
 
 @case("a script that called commit() fails the run")

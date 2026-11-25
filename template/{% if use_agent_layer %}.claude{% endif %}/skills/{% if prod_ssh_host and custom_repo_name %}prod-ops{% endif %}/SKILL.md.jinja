@@ -104,9 +104,9 @@ print("SCRIPT_DONE mode=%s" % MODE)
 
 The ladder, in order, no skipping:
 
-1. **dry on a worktree env's DB** (a prod-dump restore: `{{ odoo_cmd }} shell -c .worktrees/_env/<slug>/odoo.conf`) — logic and counts,
+1. **dry on a worktree env's DB** (a prod-dump restore: `{{ odoo_cmd }} shell -c .worktrees/_env/<slug>/odoo.conf`) — logic and counts{% if odoo_version == '16.0' %},
    and once through `dry-run-side-effects.sh` for what else the run writes
-   (see "Side effects" below);
+   (see "Side effects" below){% endif %};
 2. **dry on prod** — same counts expected; a surprise here is a data drift
    worth understanding before writing;
 3. **commit on prod** — after showing the dry output and getting an explicit
@@ -185,56 +185,33 @@ The report only reads: what the script prints comes from fields, never from a
 button or UI method (`action_*`, an onchange), because a module's override of
 it may write, and a commit then keeps a write that no output shows.
 
-**Side effects: the dry run that shows them.** Before the prod ladder, run
-the script once on a worktree env's copy through the side-effect runner:
+{% if odoo_version == '16.0' %}
+**Side effects: the dry run that shows them.** Before the prod ladder, run the
+script once on a worktree env's copy through the side-effect runner:
 
 ```bash
 bash "${{ project_dir_var }}/.claude/skills/prod-ops/scripts/dry-run-side-effects.sh" .worktrees/_env/<slug>/odoo.conf scripts/<TICKET>/<name>.py
 ```
 
-It runs the script in `odoo shell` with `SCRIPT_MODE=dry`, records every ORM
-create, write and unlink with the call path that made it, and before the
-rollback prints a **SIDE EFFECTS** section first: every record that code the
-script called changed, rather than the script's own create/write/unlink, one
-block per script line that started it. Each record carries its old -> new
-values, the function that wrote it and the call path; each block says what
-happened and what to do. A write made while the script was printing is marked
-`!!`. Below come the stored fields Odoo recomputed, writes below the ORM (SQL
-and relation tables, found through the transaction's `xmin`), the script's own
-writes, and every table the transaction wrote. Exit codes: 0 no side effects,
-4 side effects found, 1 the script failed, missed its `SCRIPT_DONE` marker or
-called `commit()`, 3 refused. Read every block before the commit run: a side
-effect that is intended goes into what the script prints as planned, one that
-is not means changing the call that makes it.
+The report opens with **SIDE EFFECTS**: every record changed by code the script
+called rather than by its own create/write/unlink, fields an override added to
+the script's own write included, one block per script line. Each record shows
+old -> new values and the function that wrote it; each block says what to do. A
+write made while the script was printing is marked `!!`. Recomputed fields,
+writes below the ORM, the script's own writes and every table written follow.
+Read every block before the commit run: an intended side effect goes into what
+the script prints as planned, any other means changing the call that makes it.
 
-It is for a copy on the project's own cluster, never prod. The runner refuses
-a config whose `db_host` is not local or whose `db_port` is not
-`{{ postgres_port }}`, a database name that is a URI or a `key=value` string,
-and drops `PGHOST`/`PGSERVICE` and the like. The prelude then identifies the
-server it reached, and every connection the script opens: a Unix socket or
-loopback address, port `{{ postgres_port }}`, and a backend that is a child of
-a `postgres` server on this machine started when the server says it started
-(read from `/proc`, so a PostgreSQL in a container is refused too). The
-transaction cannot commit, whatever the script does: a temporary deferred
-constraint trigger that always raises arms every transaction before its first
-statement (under `session_replication_role = origin`, so a script's `replica`
-setting does not silence it), and a `COMMIT` however sent fails on the server;
-PostgreSQL itself refuses to disable or drop the trigger while it is pending.
-On top of that, Odoo's `commit()` becomes a rollback, the driver's `commit()`
-and autocommit are refused, `COMMIT`/`BEGIN`/`END`, any `dblink` call and any
-statement naming the guard are refused, `psycopg2.connect` goes through the
-same patched connection class, a transaction that ends behind the driver is
-caught before the next statement, and the report checks the guard is intact;
-each fails the run. A script that runs `SET CONSTRAINTS ALL IMMEDIATE` trips
-the trigger and fails.
+Exit codes: 0 no side effects, 4 side effects found, 1 the script failed, missed
+`SCRIPT_DONE`, tried to commit, or the report failed or gave no count, 3 refused
+(the database is not a copy on the project's own cluster). It always rolls back
+and never runs against prod.
 
-These are guards against mistakes, not against a script written to get past
-them: the local role is usually a superuser, so a script that reaches the raw
-driver cursor on purpose, or calls `dblink` through dynamic SQL, can still do
-what it likes on the copy. What it does not see: SQL writes inside a savepoint
-(only in the table counts), and the PostgreSQL sequences the run advanced,
-which do not roll back (it names those).
+Limits: it guards against mistakes, not against a script written to get past it.
+SQL writes inside a savepoint show only in the table counts, and the
+PostgreSQL sequences the run advanced do not roll back (it names them).
 
+{% endif %}
 **The run record: `RUNS.html` beside the scripts.** Every ticket folder whose
 scripts ran anywhere carries a `RUNS.html` answering *what has run, where, and
 what has not*. A folder of scripts without one cannot be acted on safely,

@@ -11,8 +11,8 @@
 #   ODOO_BIN=...  the odoo command (default: the project profile's odoo)
 #
 # Exit: 0 no side effects, 4 side effects found (read the report), 1 the
-# script failed, did not print SCRIPT_DONE mode=dry or tried to commit,
-# 2 usage, 3 refused (not a local database).
+# script failed, did not print SCRIPT_DONE mode=dry or tried to commit, or the
+# report failed or gave no count, 2 usage, 3 refused (not a local database).
 set -euo pipefail
 
 CONF="${1:-}"
@@ -50,7 +50,7 @@ while IFS= read -r VAR; do unset "$VAR"; done < <(compgen -v | grep '_COMMIT$' |
 LOG="$(mktemp)"
 trap 'rm -f "$LOG"' EXIT
 
-ARGS=(shell -c "$CONF" --no-http --log-level=warn)
+ARGS=(shell -c "$CONF" --no-http --log-level=warn --logfile=)
 [ -n "$DB" ] && ARGS+=(-d "$DB")
 set +e
 SE_SCRIPT="$(realpath "$SCRIPT")" SE_PG_PORT="{{ postgres_port }}" SCRIPT_MODE=dry "$ODOO_BIN" "${ARGS[@]}" \
@@ -85,8 +85,17 @@ if ! grep -q "SCRIPT_DONE mode=dry" "$LOG"; then
   echo "MARKER_MISSING: script did not print 'SCRIPT_DONE mode=dry'" >&2
   exit 1
 fi
-FOUND=$(sed -n 's/^SE_SUMMARY side_effects=\([0-9]*\).*/\1/p' "$LOG" | tail -n 1)
-if [ -n "$FOUND" ] && [ "$FOUND" -gt 0 ]; then
+if grep -q '^SIDE-EFFECT REPORT FAILED' "$LOG"; then
+  echo "REPORT_FAILED: the side-effect report raised (traceback above); this run shows nothing about side effects" >&2
+  exit 1
+fi
+SUMMARY=$(grep '^SE_SUMMARY ' "$LOG" | tail -n 1 || true)
+FOUND=$(printf '%s\n' "$SUMMARY" | sed -n 's/^SE_SUMMARY side_effects=\([0-9][0-9]*\) .*/\1/p')
+if [ -z "$FOUND" ]; then
+  echo "REPORT_MISSING: no side-effect count (${SUMMARY:-no SE_SUMMARY line}); this run shows nothing about side effects" >&2
+  exit 1
+fi
+if [ "$FOUND" -gt 0 ]; then
   echo "SIDE_EFFECTS_FOUND=$FOUND - read the SIDE EFFECTS section before any commit run"
   exit 4
 fi

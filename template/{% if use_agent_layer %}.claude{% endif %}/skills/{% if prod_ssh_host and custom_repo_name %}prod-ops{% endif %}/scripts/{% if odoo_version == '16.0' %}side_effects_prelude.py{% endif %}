@@ -4,6 +4,7 @@
 # records that code the script called changed, ahead of the script's own writes.
 import datetime
 import functools
+import inspect
 import ipaddress
 import linecache
 import os
@@ -46,26 +47,77 @@ def _se_module(path):
     return _se["modules"][folder]
 
 
-def _se_origin(method):
+_se_calls = {}
+
+
+def _se_call(records, payload, code=None):
+    if not isinstance(records, _se_models.BaseModel):
+        return None
+    if isinstance(payload, dict):
+        payload = [payload]
+    vals = [v for v in payload if isinstance(v, dict)] if isinstance(payload, (list, tuple)) else []
+    return {"code": code, "model": records._name, "ids": frozenset(records._ids),
+            "keys": frozenset(k for v in vals for k in v), "left": len(vals)}
+
+
+def _se_calltrace(frame, event, arg):
+    if event == "call" and frame.f_code.co_name in _SE_OPS:
+        caller = frame.f_back
+        if caller is not None and caller.f_code.co_filename == _SE_SCRIPT:
+            code = frame.f_code
+            names = code.co_varnames[:code.co_argcount]
+            local = frame.f_locals
+            payload = local.get(names[1]) if len(names) > 1 else None
+            if payload is None and code.co_flags & inspect.CO_VARARGS:
+                extra = local.get(code.co_varnames[code.co_argcount + code.co_kwonlyargcount]) or ()
+                payload = extra[0] if extra else None
+            _se_calls[id(frame)] = _se_call(local.get(names[0]) if names else None, payload, code)
+    return None
+
+
+def _se_origin(method, records, payload):
     frames, f = [], sys._getframe(2)
     while f is not None:
-        frames.append((f.f_code.co_filename, f.f_lineno, f.f_code.co_name))
+        frames.append(f)
         f = f.f_back
     frames.reverse()
     script, after = [], []
     for frame in frames:
-        if frame[0] == _SE_SCRIPT:
+        if frame.f_code.co_filename == _SE_SCRIPT:
             script.append(frame)
             after = []
         elif script:
             after.append(frame)
     chain = []
-    for path, line, name in after:
+    for frame in after:
+        path = frame.f_code.co_filename
         module = _se_module(path)
         if module:
-            chain.append((module[0], os.path.relpath(path, module[1]), line, name))
-    direct = _se["depth"] == 0 and all(step[3] == method for step in chain)
-    return script, chain, direct
+            owner = frame.f_locals.get("self")
+            chain.append((module[0], os.path.relpath(path, module[1]), frame.f_lineno,
+                          frame.f_code.co_name, getattr(owner, "_name", None)))
+    direct = bool(script) and _se["depth"] == 0
+    own = None
+    if direct:
+        if after:
+            call = _se_calls.get(id(after[0]))
+            if not call or call["code"] is not after[0].f_code:
+                call = None
+        else:
+            call = _se_call(records, payload)
+        if not call or call["model"] != records._name:
+            direct = False
+        elif method == "create":
+            count = len(payload) if isinstance(payload, (list, tuple)) else 1
+            direct = count <= call["left"]
+            if direct:
+                call["left"] -= count
+        else:
+            direct = frozenset(i for i in records._ids if i) <= call["ids"]
+            if direct and method == "write":
+                own = call["keys"]
+    script = [(fr.f_code.co_filename, fr.f_lineno, fr.f_code.co_name) for fr in script]
+    return script, chain, direct, own
 
 
 def _se_names(records):
@@ -88,9 +140,13 @@ def _se_wrap(method):
         if _se["done"]:
             _se["late"] += 1
             return orig(self, *args, **kwargs)
-        script, chain, direct = _se_origin(method)
+        if method == "unlink":
+            payload = None
+        else:
+            payload = args[0] if args else kwargs.get("vals_list" if method == "create" else "vals")
+        script, chain, direct, own = _se_origin(method, self, payload)
         entry = {"op": method, "model": self._name, "script": script, "chain": chain,
-                 "direct": direct, "ids": [], "fields": {}, "names": {}}
+                 "direct": direct, "own": own, "ids": [], "fields": {}, "names": {}}
         if method == "write":
             entry["ids"] = [i for i in self._ids if i]
             entry["fields"] = dict(args[0] if args else kwargs.get("vals") or {})
@@ -162,6 +218,9 @@ def _se_plumbing(name):
 def _se_writer(entry):
     for step in reversed(entry["chain"]):
         if not _se_plumbing(step[3]):
+            return step
+    for step in reversed(entry["chain"]):
+        if step[4] and step[4] != entry["model"]:
             return step
     return None
 
@@ -293,7 +352,7 @@ def _se_report(env):
                             recomputed.append("%s  %s\n        computed from: %s" % (label, change, ", ".join(deps) or "?"))
                         else:
                             sql_only.append("%s  %s  (no create/write recorded: SQL)" % (label, change))
-                    elif writer["direct"]:
+                    elif writer["direct"] and col in (writer["own"] or ()):
                         planned.setdefault(("write", mname), set()).add(rid)
                     else:
                         add(writer, mname, rid, "existing", change)
@@ -305,10 +364,14 @@ def _se_report(env):
         if env[model]._transient:
             continue
         op = entry["op"]
+        fields = list(entry["fields"])
         if entry["direct"]:
             if op != "write":
                 planned.setdefault((op, model), set()).update(entry["ids"])
-            continue
+                continue
+            fields = [f for f in fields if f not in (entry["own"] or ())]
+            if not fields:
+                continue
         if op == "create":
             for rid in entry["ids"]:
                 add(entry, model, rid, "created", None)
@@ -320,7 +383,7 @@ def _se_report(env):
                 if (model, rid) not in created:
                     continue
                 rec = env[model].browse(rid).exists()
-                for fname in entry["fields"]:
+                for fname in fields:
                     if last_write.get((model, rid, fname)) is not entry:
                         continue
                     value = rec[fname] if rec and fname in rec._fields else None
@@ -380,7 +443,7 @@ def _se_report(env):
             print("    what happened: %s called %s() in %s; that call changed %d record(s):" % (
                 _se_caller(script), first[3], first[0], len(block["main"])))
         else:
-            print("    what happened: %s called %s(); inside it, Odoo changed %d other record(s):" % (
+            print("    what happened: %s called %s(); inside it, code beyond what the script passed changed %d record(s):" % (
                 _se_caller(script), first[3] if first else entry["op"], len(block["main"])))
         items = sorted(block["main"].items(),
                        key=lambda kv: (order[kv[1]["kind"]], kv[0][0] == "ir.sequence", kv[0]))
@@ -390,8 +453,13 @@ def _se_report(env):
             by_writer = {}
             for change, writer_entry in rec["changes"]:
                 writer = _se_writer(writer_entry)
-                key = ("%s/%s:%d %s()" % writer if writer else "the ORM itself (inverse, cascade or default)",
-                       _se_path(writer_entry))
+                if writer:
+                    label = "%s/%s:%d %s()" % writer[:4]
+                elif writer_entry["direct"]:
+                    label = "an override on the way, in the script's own %s() (a field the script did not pass)" % writer_entry["op"]
+                else:
+                    label = "the ORM itself (inverse, cascade or default)"
+                key = (label, _se_path(writer_entry))
                 slot = by_writer.setdefault(key, {"ops": [], "changes": []})
                 if writer_entry["op"] not in slot["ops"]:
                     slot["ops"].append(writer_entry["op"])
@@ -786,12 +854,14 @@ _se_failed = None
 try:
     with open(_SE_SCRIPT) as _se_fh:
         _se_code = compile(_se_fh.read(), _SE_SCRIPT, "exec")
+    sys.settrace(_se_calltrace)
     exec(_se_code, globals())
 except BaseException as _se_exc:  # noqa: B036 - SystemExit from the script included
     _se_failed = _se_exc
     if not isinstance(_se_exc, SystemExit) or _se_exc.code not in (None, 0):
         traceback.print_exc()
 finally:
+    sys.settrace(None)
     _se["in_script"] = False
     _se_finish(env)  # noqa: F821
     _se_orig_rollback(_se_cr)
