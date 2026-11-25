@@ -212,19 +212,28 @@ a config whose `db_host` is not local or whose `db_port` is not
 `{{ postgres_port }}`, a database name that is a URI or a `key=value` string,
 and drops `PGHOST`/`PGSERVICE` and the like. The prelude then identifies the
 server it reached, and every connection the script opens: a Unix socket or
-loopback address, port `{{ postgres_port }}`, and a backend PID that is a
-`postgres` process in this machine's `/proc` (so a PostgreSQL in a container
-is refused too). The transaction cannot commit, whatever the script does: a
-temporary deferred constraint trigger that always raises arms every
-transaction before its first statement, so a `COMMIT` however sent fails on
-the server. On top of that, Odoo's `commit()` becomes a rollback, the driver's
-`commit()` and autocommit are refused, `COMMIT`/`BEGIN`/`END` in SQL and any
-`dblink` call are refused, `psycopg2.connect` goes through the same patched
-connection class, and a transaction that ends behind the driver is caught
-before the next statement; each fails the run. A script that runs
-`SET CONSTRAINTS ALL IMMEDIATE` trips the trigger and fails. What it does not
-see: SQL writes inside a savepoint (only in the table counts), and the
-PostgreSQL sequences the run advanced, which do not roll back (it names those).
+loopback address, port `{{ postgres_port }}`, and a backend that is a child of
+a `postgres` server on this machine started when the server says it started
+(read from `/proc`, so a PostgreSQL in a container is refused too). The
+transaction cannot commit, whatever the script does: a temporary deferred
+constraint trigger that always raises arms every transaction before its first
+statement (under `session_replication_role = origin`, so a script's `replica`
+setting does not silence it), and a `COMMIT` however sent fails on the server;
+PostgreSQL itself refuses to disable or drop the trigger while it is pending.
+On top of that, Odoo's `commit()` becomes a rollback, the driver's `commit()`
+and autocommit are refused, `COMMIT`/`BEGIN`/`END`, any `dblink` call and any
+statement naming the guard are refused, `psycopg2.connect` goes through the
+same patched connection class, a transaction that ends behind the driver is
+caught before the next statement, and the report checks the guard is intact;
+each fails the run. A script that runs `SET CONSTRAINTS ALL IMMEDIATE` trips
+the trigger and fails.
+
+These are guards against mistakes, not against a script written to get past
+them: the local role is usually a superuser, so a script that reaches the raw
+driver cursor on purpose, or calls `dblink` through dynamic SQL, can still do
+what it likes on the copy. What it does not see: SQL writes inside a savepoint
+(only in the table counts), and the PostgreSQL sequences the run advanced,
+which do not roll back (it names those).
 
 **The run record: `RUNS.html` beside the scripts.** Every ticket folder whose
 scripts ran anywhere carries a `RUNS.html` answering *what has run, where, and

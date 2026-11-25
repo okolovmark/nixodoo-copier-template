@@ -200,6 +200,9 @@ def _se_report(env):
         print("SIDE-EFFECT REPORT SKIPPED: the error aborted the transaction, nothing to read.")
         print("SE_SUMMARY side_effects=unknown while_reporting=unknown")
         return
+    broken = _se_guard_broken(cr._cnx)
+    if broken:
+        print("SE_GUARD_TAMPERED: %s; a COMMIT in this transaction may have gone through." % broken)
     cr.execute("SELECT pg_current_xact_id()::text")
     if cr.fetchone()[0] != _se["xid"]:
         print("SE_TXN_CHANGED: the transaction this run started in ended under the tracer (a COMMIT or")
@@ -476,24 +479,45 @@ _se_cr = env.cr  # noqa: F821 - odoo shell provides env
 _SE_PG_PORT = os.environ.get("SE_PG_PORT") or ""
 
 
+def _se_proc(pid):
+    """(parent pid, start time in epoch seconds, argv[0]) of a process on this machine, or None."""
+    try:
+        with open("/proc/%d/stat" % pid) as fh:
+            data = fh.read()
+        with open("/proc/%d/cmdline" % pid, "rb") as fh:
+            argv0 = fh.read().split(b"\0")[0]
+        with open("/proc/stat") as fh:
+            btime = next(int(line.split()[1]) for line in fh if line.startswith("btime "))
+    except (OSError, StopIteration, ValueError):
+        return None
+    fields = data[data.rindex(")") + 2:].split()
+    return int(fields[1]), btime + int(fields[19]) / os.sysconf("SC_CLK_TCK"), argv0
+
+
 def _se_not_local(raw_cur):
-    """Why the server behind this cursor is not this machine's project cluster, or ''."""
-    raw_cur.execute("SELECT host(inet_server_addr()), current_setting('port'), pg_backend_pid()")
-    addr, port, pid = raw_cur.fetchone()
+    """Why the server behind this cursor is not this machine's project cluster, or ''.
+
+    Positive identity: the backend serving this connection is a process here whose parent
+    is a postgres server started when the server says it started."""
+    raw_cur.execute("SELECT host(inet_server_addr()), current_setting('port'), pg_backend_pid(), "
+                    "extract(epoch FROM pg_postmaster_start_time())")
+    addr, port, pid, started = raw_cur.fetchone()
     reasons = []
     if addr is not None:
         ip = ipaddress.ip_address(addr)
         if not (getattr(ip, "ipv4_mapped", None) or ip).is_loopback:
             reasons.append("the server answers on %s" % addr)
-    if _SE_PG_PORT and port != _SE_PG_PORT:
+    if not _SE_PG_PORT:
+        reasons.append("SE_PG_PORT is not set (run this through dry-run-side-effects.sh)")
+    elif port != _SE_PG_PORT:
         reasons.append("the server's port is %s, not the project cluster's %s" % (port, _SE_PG_PORT))
-    try:
-        with open("/proc/%d/cmdline" % pid, "rb") as fh:
-            cmdline = fh.read()
-    except OSError:
-        cmdline = b""
-    if not cmdline.startswith(b"postgres"):
-        reasons.append("its backend %d is not a PostgreSQL process on this machine" % pid)
+    backend = _se_proc(pid)
+    postmaster = backend and _se_proc(backend[0])
+    if not (backend and backend[2].startswith(b"postgres") and postmaster
+            and os.path.basename(postmaster[2]).startswith(b"postgres")
+            and abs(postmaster[1] - float(started)) <= 5):
+        reasons.append("backend %d is not a child of a PostgreSQL server started on this machine "
+                       "when the server says it started" % pid)
     return "; ".join(reasons)
 
 
@@ -535,9 +559,40 @@ _se_orig_rollback = _se_sql_db.Cursor.rollback
 def _se_arm(cnx):
     raw = _se_base_cursor(cnx)
     try:
+        # Under session_replication_role = replica the trigger would not be queued at
+        # all; arm under origin, then give the script its own setting back.
+        raw.execute("SELECT current_setting('session_replication_role')")
+        role = raw.fetchone()[0]
+        if role != "origin":
+            raw.execute("SET LOCAL session_replication_role = origin")
         raw.execute(_SE_ARM_SQL)
+        if role in ("replica", "local"):
+            raw.execute("SET LOCAL session_replication_role = %s" % role)
     finally:
         raw.close()
+
+
+def _se_guard_broken(cnx):
+    """'' while this transaction's guard is in place, else what is wrong with it."""
+    raw = _se_base_cursor(cnx)
+    try:
+        raw.execute("SELECT to_regclass('pg_temp.se_never_commit') IS NOT NULL")
+        if not raw.fetchone()[0]:
+            return "the guard table is gone"
+        raw.execute("SELECT (SELECT count(*) FROM pg_temp.se_never_commit), "
+                    "(SELECT string_agg(t.tgenabled::text, '') FROM pg_trigger t "
+                    " WHERE t.tgrelid = 'pg_temp.se_never_commit'::regclass AND t.tgname = 'se_never_commit'), "
+                    "(SELECT p.prosrc FROM pg_proc p WHERE p.oid = to_regprocedure('pg_temp.se_never_commit()'))")
+        rows, enabled, body = raw.fetchone()
+    finally:
+        raw.close()
+    if rows != 1:
+        return "the guard table holds %s rows, not 1" % rows
+    if enabled not in ("O", "A"):
+        return "the guard trigger is %s" % ("missing" if enabled is None else "disabled (%s)" % enabled)
+    if "RAISE EXCEPTION" not in (body or ""):
+        return "the guard function was replaced"
+    return ""
 
 
 def _se_desynced(cnx):
@@ -557,6 +612,7 @@ _SE_TXN_SQL = re.compile(
     re.IGNORECASE)
 _SE_SQL_COMMENT = re.compile(r"--[^\n]*|/\*.*?\*/", re.DOTALL)
 _SE_DBLINK = re.compile(r"\bdblink", re.IGNORECASE)
+_SE_GUARD_NAME = re.compile(r"se_never_commit", re.IGNORECASE)
 
 
 def _se_guard(cur, query):
@@ -574,6 +630,8 @@ def _se_guard(cur, query):
     if isinstance(text, str):
         if _SE_DBLINK.search(text):
             _se_block("dblink opens its own connection, which this dry run cannot hold back")
+        if _SE_GUARD_NAME.search(text):
+            _se_block("the script touched the dry run's own commit guard")
         # An early, readable refusal; the server-side guard is what actually holds.
         if _SE_TXN_SQL.search(_SE_SQL_COMMENT.sub(" ", text)):
             _se_block("transaction control in SQL: %s" % " ".join(text.split())[:100])

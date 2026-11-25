@@ -229,6 +229,15 @@ def _():
     with_run(check)
 
 
+@case("a commit guard the script changed fails the run")
+def _():
+    def check(run):
+        proc = run.run(out="SE_GUARD_TAMPERED: the guard function was replaced\\n" + DONE)
+        expect(proc.returncode == 1, (proc.returncode, proc.stderr))
+        expect("GUARD_TAMPERED" in proc.stderr, proc.stderr)
+    with_run(check)
+
+
 @case("side effects found exit 4 and name the count")
 def _():
     def check(run):

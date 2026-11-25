@@ -61,6 +61,10 @@ set -e
 if grep -q '^SE_REFUSED_NOT_LOCAL' "$LOG"; then
   refuse "the prelude found the connection goes to a server that is not local; nothing ran"
 fi
+if grep -q '^SE_GUARD_TAMPERED' "$LOG"; then
+  echo "GUARD_TAMPERED: the script changed the dry run's commit guard; check the copy, it may hold committed writes" >&2
+  exit 1
+fi
 if grep -q '^SE_TXN_CHANGED' "$LOG"; then
   echo "TRANSACTION_CHANGED: the transaction ended under the tracer; the server-side guard refuses a commit, but the report is incomplete" >&2
   exit 1
