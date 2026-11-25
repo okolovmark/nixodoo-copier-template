@@ -539,10 +539,12 @@ def _se_block(what):
 # On the server, whatever the client does: a deferred constraint trigger that
 # always raises fires at COMMIT, so an armed transaction cannot commit, however
 # the COMMIT is sent. Every transaction is armed before its first statement.
+_SE_GUARD_BODY = "BEGIN RAISE EXCEPTION 'side-effect dry run: this transaction never commits'; END"
+_SE_GUARD_TGTYPE = 5  # ROW | INSERT, AFTER
 _SE_ARM_SQL = (
     "CREATE TEMP TABLE IF NOT EXISTS se_never_commit (x int); "
     "CREATE OR REPLACE FUNCTION pg_temp.se_never_commit() RETURNS trigger LANGUAGE plpgsql AS "
-    "$f$BEGIN RAISE EXCEPTION 'side-effect dry run: this transaction never commits'; END$f$; "
+    "$f$" + _SE_GUARD_BODY + "$f$; "
     "DROP TRIGGER IF EXISTS se_never_commit ON pg_temp.se_never_commit; "
     "CREATE CONSTRAINT TRIGGER se_never_commit AFTER INSERT ON pg_temp.se_never_commit "
     "DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION pg_temp.se_never_commit(); "
@@ -579,19 +581,26 @@ def _se_guard_broken(cnx):
         raw.execute("SELECT to_regclass('pg_temp.se_never_commit') IS NOT NULL")
         if not raw.fetchone()[0]:
             return "the guard table is gone"
-        raw.execute("SELECT (SELECT count(*) FROM pg_temp.se_never_commit), "
-                    "(SELECT string_agg(t.tgenabled::text, '') FROM pg_trigger t "
-                    " WHERE t.tgrelid = 'pg_temp.se_never_commit'::regclass AND t.tgname = 'se_never_commit'), "
-                    "(SELECT p.prosrc FROM pg_proc p WHERE p.oid = to_regprocedure('pg_temp.se_never_commit()'))")
-        rows, enabled, body = raw.fetchone()
+        raw.execute("SELECT count(*) FROM pg_temp.se_never_commit")
+        rows = raw.fetchone()[0]
+        raw.execute("SELECT t.tgenabled::text, t.tgtype, t.tgdeferrable, t.tginitdeferred, t.tgconstraint <> 0, "
+                    "t.tgfoid = to_regprocedure('pg_temp.se_never_commit()'), p.prosrc, l.lanname "
+                    "FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid JOIN pg_language l ON l.oid = p.prolang "
+                    "WHERE t.tgrelid = 'pg_temp.se_never_commit'::regclass")
+        triggers = raw.fetchall()
     finally:
         raw.close()
     if rows != 1:
         return "the guard table holds %s rows, not 1" % rows
+    if len(triggers) != 1:
+        return "the guard table has %d triggers, not 1" % len(triggers)
+    enabled, tgtype, deferrable, deferred, constraint, own_function, body, language = triggers[0]
     if enabled not in ("O", "A"):
-        return "the guard trigger is %s" % ("missing" if enabled is None else "disabled (%s)" % enabled)
-    if "RAISE EXCEPTION" not in (body or ""):
-        return "the guard function was replaced"
+        return "the guard trigger is disabled (%s)" % enabled
+    if (tgtype, deferrable, deferred, constraint) != (_SE_GUARD_TGTYPE, True, True, True):
+        return "the guard trigger is no longer a deferred constraint trigger on insert"
+    if not own_function or language != "plpgsql" or body != _SE_GUARD_BODY:
+        return "the guard trigger no longer calls the guard function as armed"
     return ""
 
 
