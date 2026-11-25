@@ -30,6 +30,13 @@ const WORKTREE = /\/\.worktrees\/(?!_env\/)[A-Za-z0-9][A-Za-z0-9._-]*\//
 // what the documenter writes: never a code change, so it never voids a QC pass
 const DOC_PATH = /\/readme\/|\/README\.(?:rst|md)$|\/static\/description\/|\.puml$/
 const TEST_SUMMARY = /(\d+) failed, (\d+) error\(s\) of (\d+) tests/g
+// an addons source file edited outside .worktrees/ (a worktree of another repository, the main checkout)
+const SOURCE_FILE = /\.(?:py|js|xml|csv|scss|css|sql|po)$/
+const TOOLING_PATH = /\/\.claude\/|\/\.kb\/|\/\.git\/|^\/tmp\/|\/\.worktrees\/_env\//
+// a command that only reads an earlier run's log: its result line is no new run
+const RESULT_LINE = /odoo\.tests\.result: \d+ failed, \d+ error\(s\) of \d+ tests/
+const LOG_READER = /^(?:cat|tail|head|less|more|grep|egrep|fgrep|rg|sed|awk|cut|sort|uniq|wc|jq)\b/
+const ENV_PREFIX = /^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+)+/
 const PR_CREATE = /\bgh\s+pr\s+create\b/
 const PR_URL = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/
 // A task key is one of the ticket prefixes and a number, so prose naming a month column (JAN-2026),
@@ -75,6 +82,17 @@ export function filePathOf(tool: string, input: Record<string, unknown>): string
 
 export function isWorktreeCode(path: string): boolean {
   return WORKTREE.test(path)
+}
+
+// a code change: any file of a session worktree, or an addons source file anywhere but the tooling's own paths
+export function isCodeEdit(path: string): boolean {
+  return isWorktreeCode(path) || (SOURCE_FILE.test(path) && !TOOLING_PATH.test(path))
+}
+
+// an Odoo test run: the command enables the tests, or a wrapper's output carries the result line
+export function isTestRun(command: string, output: string): boolean {
+  if (command.includes('--test-enable')) return true
+  return RESULT_LINE.test(output) && !LOG_READER.test(command.trim().replace(ENV_PREFIX, ''))
 }
 
 export function isDocPath(path: string): boolean {
