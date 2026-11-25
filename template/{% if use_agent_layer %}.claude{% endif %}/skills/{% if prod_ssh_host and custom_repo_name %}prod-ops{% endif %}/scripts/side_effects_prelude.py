@@ -1,0 +1,512 @@
+# Side-effect dry run. dry-run-side-effects.sh pipes this file into `odoo shell`;
+# it runs the ticket script named in SE_SCRIPT, records every ORM create, write
+# and unlink with the call path that made it, and before rolling back prints the
+# records that code the script called changed, ahead of the script's own writes.
+import datetime
+import functools
+import linecache
+import os
+import sys
+import traceback
+
+from odoo import models as _se_models
+from odoo import sql_db as _se_sql_db
+
+_SE_SCRIPT = os.path.realpath(os.environ["SE_SCRIPT"])
+_SE_SHOW = int(os.environ.get("SE_SHOW") or 40)
+_SE_OPS = ("create", "write", "unlink")
+_SE_REPORT_WORDS = ("describe", "report", "show", "print", "summar", "dump")
+_SE_BOOKKEEPING = {
+    "mail.message", "mail.tracking.value", "mail.followers", "mail.notification",
+    "mail.activity", "bus.bus", "ir.logging",
+}
+_SE_SKIP_COLUMNS = {"write_date", "write_uid"}
+_SE_STAT_SQL = (
+    "SELECT relname, n_tup_ins, n_tup_upd, n_tup_del FROM pg_stat_xact_user_tables "
+    "WHERE schemaname = current_schema()"
+)
+_se = {"on": False, "in_script": False, "done": False, "depth": 0, "log": [],
+       "late": 0, "modules": {}, "found": 0, "reporting": 0}
+
+
+def _se_module(path):
+    folder = os.path.dirname(path)
+    if folder not in _se["modules"]:
+        found, cur = None, folder
+        while cur and cur != os.path.dirname(cur):
+            if os.path.isfile(os.path.join(cur, "__manifest__.py")):
+                found = (os.path.basename(cur), cur)
+                break
+            cur = os.path.dirname(cur)
+        _se["modules"][folder] = found
+    return _se["modules"][folder]
+
+
+def _se_origin(method):
+    frames, f = [], sys._getframe(2)
+    while f is not None:
+        frames.append((f.f_code.co_filename, f.f_lineno, f.f_code.co_name))
+        f = f.f_back
+    frames.reverse()
+    script, after = [], []
+    for frame in frames:
+        if frame[0] == _SE_SCRIPT:
+            script.append(frame)
+            after = []
+        elif script:
+            after.append(frame)
+    chain = []
+    for path, line, name in after:
+        module = _se_module(path)
+        if module:
+            chain.append((module[0], os.path.relpath(path, module[1]), line, name))
+    direct = _se["depth"] == 0 and all(step[3] == method for step in chain)
+    return script, chain, direct
+
+
+def _se_names(records):
+    on, _se["on"] = _se["on"], False
+    try:
+        return {r.id: r.display_name for r in records.exists()}
+    except Exception:
+        return {}
+    finally:
+        _se["on"] = on
+
+
+def _se_wrap(method):
+    orig = getattr(_se_models.BaseModel, method)
+
+    @functools.wraps(orig)
+    def wrapper(self, *args, **kwargs):
+        if not _se["on"]:
+            return orig(self, *args, **kwargs)
+        if _se["done"]:
+            _se["late"] += 1
+            return orig(self, *args, **kwargs)
+        script, chain, direct = _se_origin(method)
+        entry = {"op": method, "model": self._name, "script": script, "chain": chain,
+                 "direct": direct, "ids": [], "fields": {}, "names": {}}
+        if method == "write":
+            entry["ids"] = [i for i in self._ids if i]
+            entry["fields"] = dict(args[0] if args else kwargs.get("vals") or {})
+        elif method == "unlink":
+            entry["ids"] = list(self._ids)
+            entry["names"] = _se_names(self)
+        _se["depth"] += 1
+        try:
+            result = orig(self, *args, **kwargs)
+        finally:
+            _se["depth"] -= 1
+        if method == "create":
+            vals_list = args[0] if args else kwargs.get("vals_list") or []
+            if isinstance(vals_list, dict):
+                vals_list = [vals_list]
+            entry["ids"] = list(result._ids)
+            entry["fields"] = {k: v for vals in vals_list for k, v in vals.items()}
+        _se["log"].append(entry)
+        return result
+
+    return wrapper
+
+
+def _se_rows(cr, table, ids):
+    if not ids:
+        return {}
+    cr.execute('SELECT * FROM "%s" WHERE id = ANY(%%s)' % table, [list(ids)])
+    cols = [d[0] for d in cr.description]
+    return {row[cols.index("id")]: dict(zip(cols, row)) for row in cr.fetchall()}
+
+
+def _se_fmt(env, model, col, value):
+    if value is None or value is False:
+        return "(empty)"
+    if hasattr(value, "_name"):
+        return ", ".join("%s (%s %s)" % (r.display_name, r._name, r.id) for r in value) or "(empty)"
+    field = env[model]._fields.get(col)
+    if field is not None and field.type == "many2one" and isinstance(value, int):
+        rec = env[field.comodel_name].browse(value).exists()
+        return "%s (%s %s)" % (rec.display_name if rec else "?", field.comodel_name, value)
+    if isinstance(value, datetime.datetime):
+        text = value.strftime("%Y-%m-%d %H:%M:%S")
+    elif isinstance(value, datetime.date):
+        text = value.isoformat()
+    else:
+        text = value if isinstance(value, str) else repr(value)
+    text = " ".join(text.split())
+    return text if len(text) <= 90 else text[:87] + "..."
+
+
+def _se_reporting(script):
+    for path, line, name in reversed(script):
+        if any(word in name.lower() for word in _SE_REPORT_WORDS):
+            return "%s()" % name
+    for path, line, name in reversed(script):
+        if "print(" in (linecache.getline(path, line) or ""):
+            return "a print() at line %d" % line
+    return None
+
+
+def _se_src(path, line):
+    return (linecache.getline(path, line) or "").strip()
+
+
+def _se_plumbing(name):
+    return any(name == op or name.endswith("_" + op) for op in _SE_OPS)
+
+
+def _se_writer(entry):
+    for step in reversed(entry["chain"]):
+        if not _se_plumbing(step[3]):
+            return step
+    return None
+
+
+def _se_path(entry):
+    steps = []
+    for step in entry["chain"]:
+        if _se_plumbing(step[3]):
+            continue
+        if steps and (steps[-1][0], steps[-1][3]) == (step[0], step[3]):
+            continue
+        steps.append(step)
+    if len(steps) > 6:
+        steps = steps[:2] + [None] + steps[-3:]
+    return " -> ".join("..." if s is None else "%s() [%s]" % (s[3], s[0]) for s in steps)
+
+
+def _se_caller(script):
+    if not script:
+        return "Code outside the script"
+    path, line, name = script[-1]
+    return "Line %d" % line if name == "<module>" else "%s() at line %d" % (name, line)
+
+
+def _se_report(env):
+    cr = env.cr
+    notes = []
+    try:
+        env.flush_all()
+    except Exception as exc:
+        notes.append("(flush failed: %s - the report shows what reached the database)" % exc)
+    try:
+        cr.execute("SELECT 1")
+    except Exception:
+        print("SIDE-EFFECT REPORT SKIPPED: the error aborted the transaction, nothing to read.")
+        print("SE_SUMMARY side_effects=unknown while_reporting=unknown")
+        return
+    now = cr.now()
+    cr.execute(_SE_STAT_SQL)
+    delta = {}
+    for table, ins, upd, dele in cr.fetchall():
+        b = _se["base"].get(table, (0, 0, 0))
+        d = (ins - b[0], upd - b[1], dele - b[2])
+        if any(d):
+            delta[table] = d
+    tables = {}
+    for name in env.registry:
+        model = env.registry[name]
+        if not model._abstract and model._auto:
+            tables.setdefault(model._table, name)
+
+    log = _se["log"]
+    created = {}
+    for entry in log:
+        if entry["op"] == "create":
+            for rid in entry["ids"]:
+                created[(entry["model"], rid)] = entry
+    last_write = {}
+    for entry in log:
+        if entry["op"] == "write":
+            for rid in entry["ids"]:
+                for fname in entry["fields"]:
+                    last_write[(entry["model"], rid, fname)] = entry
+
+    blocks = {}  # one block per script call that led to a side effect
+
+    def add(entry, model, rid, kind, change):
+        script = entry["script"]
+        first = entry["chain"][0] if entry["chain"] else None
+        key = (tuple(script[-1:]), first and (first[0], first[3]))
+        block = blocks.setdefault(key, {"entry": entry, "records": {}})
+        rec = block["records"].setdefault((model, rid), {"kind": kind, "changes": []})
+        if kind == "deleted" or (kind == "created" and rec["kind"] != "deleted"):
+            rec["kind"] = kind
+        rec["changes"].append((change, entry))
+
+    recomputed, sql_only, planned, same = [], [], {}, {}
+    cr.execute("SELECT pg_current_xact_id_if_assigned()::text")
+    top = cr.fetchone()[0]
+    xmin = str(int(top) % 4294967296) if top else "0"
+    old_cr = _se_sql_db.db_connect(cr.dbname).cursor()
+    try:
+        for table, (ins, upd, dele) in sorted(delta.items()):
+            mname = tables.get(table)
+            if not mname:
+                sql_only.append("%s: +%d ~%d -%d rows (no model: a relation table, or SQL)" % (table, ins, upd, dele))
+                continue
+            model = env[mname]
+            if model._transient or not model._log_access:
+                continue
+            unlinked = sum(len(e["ids"]) for e in log if e["op"] == "unlink" and e["model"] == mname)
+            if dele > unlinked:
+                sql_only.append("%s: %d row(s) deleted without unlink() (SQL, or a database ON DELETE CASCADE)"
+                                % (table, dele - unlinked))
+            cr.execute('SELECT id FROM "%s" WHERE write_date = %%s OR xmin::text = %%s' % table, [now, xmin])
+            ids = [r[0] for r in cr.fetchall()]
+            existing = [i for i in ids if (mname, i) not in created]
+            new_rows = _se_rows(cr, table, existing)
+            old_rows = _se_rows(old_cr, table, existing)
+            names = _se_names(model.browse(existing)) if existing else {}
+            for rid in existing:
+                new, old = new_rows.get(rid, {}), old_rows.get(rid)
+                if old is None:
+                    sql_only.append("%s %s %s: row inserted without create() (SQL)" % (mname, rid, names.get(rid, "")))
+                    continue
+                if all(col in _SE_SKIP_COLUMNS or old.get(col) == value for col, value in new.items()):
+                    same.setdefault(table, []).append(rid)
+                    continue
+                for col, value in new.items():
+                    if col in _SE_SKIP_COLUMNS or old.get(col) == value:
+                        continue
+                    change = "%s: %s -> %s" % (col, _se_fmt(env, mname, col, old.get(col)),
+                                               _se_fmt(env, mname, col, value))
+                    writer = last_write.get((mname, rid, col))
+                    field = model._fields.get(col)
+                    label = "%s %s %s" % (mname, rid, names.get(rid, ""))
+                    if writer is None:
+                        if field is not None and field.compute and field.store:
+                            deps = dict.fromkeys(env.registry.field_depends.get(field) or field._depends or ())
+                            recomputed.append("%s  %s\n        computed from: %s" % (label, change, ", ".join(deps) or "?"))
+                        else:
+                            sql_only.append("%s  %s  (no create/write recorded: SQL)" % (label, change))
+                    elif writer["direct"]:
+                        planned.setdefault(("write", mname), set()).add(rid)
+                    else:
+                        add(writer, mname, rid, "existing", change)
+    finally:
+        old_cr.close()
+
+    for entry in log:
+        model = entry["model"]
+        if env[model]._transient:
+            continue
+        op = entry["op"]
+        if entry["direct"]:
+            if op != "write":
+                planned.setdefault((op, model), set()).update(entry["ids"])
+            continue
+        if op == "create":
+            for rid in entry["ids"]:
+                add(entry, model, rid, "created", None)
+        elif op == "unlink":
+            for rid in entry["ids"]:
+                add(entry, model, rid, "deleted", "deleted (was %s)" % (entry["names"].get(rid) or "?"))
+        else:
+            for rid in entry["ids"]:
+                if (model, rid) not in created:
+                    continue
+                rec = env[model].browse(rid).exists()
+                for fname in entry["fields"]:
+                    if last_write.get((model, rid, fname)) is not entry:
+                        continue
+                    value = rec[fname] if rec and fname in rec._fields else None
+                    add(entry, model, rid, "created", "%s: set to %s" % (fname, _se_fmt(env, model, fname, value)))
+
+    def quiet(model):
+        return model in _SE_BOOKKEEPING or model.endswith(".log")
+
+    for block in blocks.values():
+        block["main"] = {k: v for k, v in block["records"].items() if not quiet(k[0])}
+        block["books"] = {k: v for k, v in block["records"].items() if quiet(k[0])}
+        block["reporting"] = _se_reporting(block["entry"]["script"])
+    main = [b for b in blocks.values() if b["main"]]
+    main.sort(key=lambda b: (b["reporting"] is None,
+                             not any(r["kind"] in ("existing", "deleted") for r in b["main"].values())))
+    records = {k for b in main for k in b["main"]}
+    reporting_records = {k for b in main if b["reporting"] for k in b["main"]}
+    _se["found"], _se["reporting"] = len(records), len(reporting_records)
+
+    bar = "=" * 78
+    print()
+    print(bar)
+    if records:
+        print("SIDE EFFECTS: %d record(s) changed by code the script called, not by the script itself"
+              % len(records))
+        if reporting_records:
+            print("!! %d of them while the script was printing its report, which must only read"
+                  % len(reporting_records))
+        print("   Each block below: the script line, what it called, and every record that call")
+        print("   changed, with the function that wrote it.")
+    else:
+        print("SIDE EFFECTS: none - every write came from the script's own create/write/unlink calls")
+    print("   dry run on %s, rolled back after this report" % cr.dbname)
+    print(bar)
+    for note in notes:
+        print(note)
+
+    kind_text = {"existing": "existing record", "created": "created by this call",
+                 "deleted": "deleted by this call"}
+    order = {"existing": 0, "deleted": 1, "created": 2}
+    for n, block in enumerate(main, 1):
+        entry = block["entry"]
+        script = entry["script"]
+        print()
+        if script:
+            path, line, name = script[-1]
+            where = "line %d" % line if name == "<module>" else "line %d in %s()" % (line, name)
+            print("[%d] %s: %s" % (n, where, _se_src(path, line)))
+            if len(script) > 1:
+                print("    reached from line %d: %s" % (script[0][1], _se_src(script[0][0], script[0][1])))
+        else:
+            print("[%d] code outside the script" % n)
+        if block["reporting"]:
+            print("    !! this ran while %s was printing the script's report - a report must only read" % block["reporting"])
+        first = entry["chain"][0] if entry["chain"] else None
+        if first and not _se_plumbing(first[3]):
+            print("    what happened: %s called %s() in %s; that call changed %d record(s):" % (
+                _se_caller(script), first[3], first[0], len(block["main"])))
+        else:
+            print("    what happened: %s called %s(); inside it, Odoo changed %d other record(s):" % (
+                _se_caller(script), first[3] if first else entry["op"], len(block["main"])))
+        items = sorted(block["main"].items(),
+                       key=lambda kv: (order[kv[1]["kind"]], kv[0][0] == "ir.sequence", kv[0]))
+        for (model, rid), rec in items[:_SE_SHOW]:
+            name = _se_names(env[model].browse(rid)).get(rid, "") if rec["kind"] != "deleted" else ""
+            print("    - %s %s %s (%s)" % (model, rid, name, kind_text[rec["kind"]]))
+            by_writer = {}
+            for change, writer_entry in rec["changes"]:
+                writer = _se_writer(writer_entry)
+                key = ("%s/%s:%d %s()" % writer if writer else "the ORM itself (inverse, cascade or default)",
+                       _se_path(writer_entry))
+                slot = by_writer.setdefault(key, {"ops": [], "changes": []})
+                if writer_entry["op"] not in slot["ops"]:
+                    slot["ops"].append(writer_entry["op"])
+                if change:
+                    slot["changes"].append(change)
+            for (writer, path), slot in by_writer.items():
+                for change in slot["changes"]:
+                    print("        %s" % change)
+                verbs = ", ".join({"create": "created", "write": "written", "unlink": "deleted"}[op]
+                                  for op in slot["ops"])
+                print("        %s by %s" % (verbs, writer))
+                if path and " -> " in path:
+                    print("        path: %s" % path)
+            if model == "ir.sequence":
+                print("        note: PostgreSQL sequences do not roll back; this dry run used these numbers up")
+        if len(items) > _SE_SHOW:
+            print("    ... %d more record(s) (SE_SHOW=%d lists them all)" % (len(items) - _SE_SHOW, len(items)))
+        if block["reporting"]:
+            print("    to do: take what the report prints from fields; do not call %s() while printing"
+                  % (first[3] if first else "a method that writes"))
+        else:
+            print("    to do: confirm each change above is intended before the commit run, and make the")
+            print("           script print it as planned; if one is not, avoid the call that makes it")
+
+    if recomputed:
+        print()
+        print("--- Stored computed fields recomputed on existing records: no write() call; Odoo")
+        print("    recomputed them because something they depend on changed")
+        for text in recomputed[:_SE_SHOW]:
+            print("    " + text)
+        if len(recomputed) > _SE_SHOW:
+            print("    ... %d more" % (len(recomputed) - _SE_SHOW))
+    if sql_only:
+        print()
+        print("--- Written below the ORM: no create/write/unlink recorded for these")
+        for text in sql_only:
+            print("    " + text)
+    books = {}
+    for block in blocks.values():
+        for (model, rid), rec in block["books"].items():
+            books.setdefault(model, set()).add(rid)
+    if books:
+        print()
+        print("--- Chatter and bookkeeping written along the way")
+        for model, ids in sorted(books.items()):
+            print("    %s x%d" % (model, len(ids)))
+    print()
+    print("--- The script's own writes (planned)")
+    for (op, model), ids in sorted(planned.items(), key=lambda kv: (kv[0][1], kv[0][0])):
+        ids = sorted(ids)
+        more = " ... %d more" % (len(ids) - 10) if len(ids) > 10 else ""
+        print("    %-7s %s x%d: %s%s" % (op, model, len(ids), ", ".join(map(str, ids[:10])), more))
+    if not planned:
+        print("    none")
+    if same:
+        print()
+        print("--- Rows rewritten with the same values (no change; listed so every table count is explained)")
+        for table, ids in sorted(same.items()):
+            print("    %s: %s" % (table, ", ".join(map(str, sorted(ids)[:10])) + (" ..." if len(ids) > 10 else "")))
+    print()
+    print("--- Every table written in this transaction (+inserted ~updated -deleted)")
+    for table, (ins, upd, dele) in sorted(delta.items()):
+        print("    %-40s +%d ~%d -%d" % (table, ins, upd, dele))
+    if not delta:
+        print("    none")
+    print(bar)
+    print("SE_SUMMARY side_effects=%d while_reporting=%d" % (_se["found"], _se["reporting"]))
+
+
+def _se_finish(env):
+    if _se["done"]:
+        return
+    _se["done"] = True
+    on, _se["on"] = _se["on"], False
+    try:
+        _se_report(env)
+    except Exception:
+        print("SIDE-EFFECT REPORT FAILED:")
+        traceback.print_exc()
+    finally:
+        _se["on"] = on
+
+
+_se_cr = env.cr  # noqa: F821 - odoo shell provides env
+_se_real_rollback = _se_cr.rollback
+_se_class_rollback = _se_sql_db.Cursor.rollback
+
+
+def _se_rollback():
+    _se_finish(env)  # noqa: F821
+    _se_real_rollback()
+
+
+def _se_blocked_commit(self):
+    if self is _se_cr:
+        if _se["in_script"]:
+            print("COMMIT BLOCKED: a side-effect dry run never commits")
+        _se_finish(env)  # noqa: F821
+        return _se_real_rollback()
+    return _se_class_rollback(self)
+
+
+_se_cr.rollback = _se_rollback
+_se_sql_db.Cursor.commit = _se_blocked_commit
+for _se_method in _SE_OPS:
+    setattr(_se_models.BaseModel, _se_method, _se_wrap(_se_method))
+
+os.environ["SCRIPT_MODE"] = "dry"
+for _se_key in [k for k in os.environ if k.endswith("_COMMIT")]:
+    del os.environ[_se_key]
+_se_cr.execute(_SE_STAT_SQL)
+_se["base"] = {r[0]: (r[1], r[2], r[3]) for r in _se_cr.fetchall()}
+_se["on"] = _se["in_script"] = True
+_se_failed = None
+try:
+    with open(_SE_SCRIPT) as _se_fh:
+        _se_code = compile(_se_fh.read(), _SE_SCRIPT, "exec")
+    exec(_se_code, globals())
+except BaseException as _se_exc:  # noqa: B036 - SystemExit from the script included
+    _se_failed = _se_exc
+    if not isinstance(_se_exc, SystemExit) or _se_exc.code not in (None, 0):
+        traceback.print_exc()
+finally:
+    _se["in_script"] = False
+    _se_finish(env)  # noqa: F821
+    _se_real_rollback()
+    if _se["late"]:
+        print("NOTE: %d create/write/unlink call(s) ran after the script rolled back; they were not "
+              "analysed and are rolled back too." % _se["late"])
+if _se_failed is not None and not (isinstance(_se_failed, SystemExit) and _se_failed.code in (None, 0)):
+    print("SCRIPT_FAILED: %s" % _se_failed.__class__.__name__)

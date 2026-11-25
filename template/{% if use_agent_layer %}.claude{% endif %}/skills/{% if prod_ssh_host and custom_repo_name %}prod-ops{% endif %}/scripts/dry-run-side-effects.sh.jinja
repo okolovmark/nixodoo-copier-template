@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Dry-run a ticket script on a LOCAL database and report its side effects: every
+# record written by code the script called rather than by the script itself,
+# with the script line that started it, the code path, and why. Always rolls
+# back; any commit is blocked. Refuses a config whose database is not local.
+#
+# Usage: dry-run-side-effects.sh <odoo.conf> <script.py> [<db>]
+#   SE_SHOW=<n>   records listed per side effect (default 40)
+#   ODOO_BIN=...  the odoo command (default: the project profile's odoo)
+#
+# Exit: 0 no side effects, 4 side effects found (read the report), 1 the
+# script failed or did not print SCRIPT_DONE mode=dry, 2 usage, 3 refused.
+set -euo pipefail
+
+CONF="${1:-}"
+SCRIPT="${2:-}"
+DB="${3:-}"
+usage() { echo "usage: $0 <odoo.conf> <script.py> [<db>]" >&2; exit 2; }
+[ -n "$CONF" ] && [ -f "$CONF" ] || { echo "no such config: $CONF" >&2; usage; }
+[ -n "$SCRIPT" ] && [ -f "$SCRIPT" ] || { echo "no such script: $SCRIPT" >&2; usage; }
+
+HOST=$(sed -n 's/^[[:space:]]*db_host[[:space:]]*=[[:space:]]*//p' "$CONF" | tail -n 1 | tr -d '[:space:]')
+case "$HOST" in
+  ""|False|localhost|127.0.0.1|::1|/*) ;;
+  *) echo "REFUSED: $CONF points at db_host=$HOST. Side-effect dry runs are for a local copy only." >&2; exit 3 ;;
+esac
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ODOO_BIN="${ODOO_BIN:-$HOME/{{ nix_profile_rel }}/bin/odoo}"
+# A commit switch from the caller (FOO_COMMIT=1) never reaches the script.
+while IFS= read -r VAR; do unset "$VAR"; done < <(compgen -v | grep '_COMMIT$' || true)
+LOG="$(mktemp)"
+trap 'rm -f "$LOG"' EXIT
+
+ARGS=(shell -c "$CONF" --no-http --log-level=warn)
+[ -n "$DB" ] && ARGS+=(-d "$DB")
+set +e
+SE_SCRIPT="$(realpath "$SCRIPT")" SCRIPT_MODE=dry "$ODOO_BIN" "${ARGS[@]}" \
+  < "$HERE/side_effects_prelude.py" 2>&1 | tee "$LOG"
+SHELL_EXIT=${PIPESTATUS[0]}
+set -e
+
+if [ "$SHELL_EXIT" -ne 0 ] || grep -q '^SCRIPT_FAILED' "$LOG"; then
+  echo "DRY_RUN_FAILED shell_exit=$SHELL_EXIT" >&2
+  exit 1
+fi
+if grep -q '^COMMIT BLOCKED' "$LOG"; then
+  echo "COMMIT_ATTEMPTED: the script called commit() although SCRIPT_MODE=dry; nothing was committed" >&2
+  exit 1
+fi
+if ! grep -q "SCRIPT_DONE mode=dry" "$LOG"; then
+  echo "MARKER_MISSING: script did not print 'SCRIPT_DONE mode=dry'" >&2
+  exit 1
+fi
+FOUND=$(sed -n 's/^SE_SUMMARY side_effects=\([0-9]*\).*/\1/p' "$LOG" | tail -n 1)
+if [ -n "$FOUND" ] && [ "$FOUND" -gt 0 ]; then
+  echo "SIDE_EFFECTS_FOUND=$FOUND - read the SIDE EFFECTS section before any commit run"
+  exit 4
+fi
+echo "DRY_RUN_OK no side effects"
