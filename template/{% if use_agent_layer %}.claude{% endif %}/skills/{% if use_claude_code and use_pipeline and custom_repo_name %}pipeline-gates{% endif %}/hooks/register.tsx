@@ -26,12 +26,13 @@ import {
   isActive,
   isAwayGrillAnswer,
   isChildArgs,
+  isCodeEdit,
   isDocPath,
   isMotherRunFor,
   isNewRound,
   isOpen,
   isPrCreate,
-  isWorktreeCode,
+  isTestRun,
   mayAskGrill,
   moveTasks,
   newRun,
@@ -465,7 +466,7 @@ export const register: Register = on => {
     const isPr = command !== '' && isPrCreate(command)
     if (isActive(current)) {
       const isDev = tool === 'Agent' && input.subagent_type === 'dev'
-      const isWorktreeEdit = path !== null && isWorktreeCode(path)
+      const isWorktreeEdit = path !== null && isCodeEdit(path)
       if ((isDev || isWorktreeEdit) && closedForDev(current).length > 0) {
         const what = isDev ? 'spawning the dev agent' : `editing ${path}`
         const answer = mayAskGrill(current) ? await waitForGrill($, current, what) : null
@@ -503,7 +504,7 @@ export const register: Register = on => {
     if (!isActive(await read($, run)) || ran.deny !== undefined || ran.isError === true) return ran
 
     const agentId = (e as { agentId?: string }).agentId
-    if (path !== null && isWorktreeCode(path) && !isDocPath(path)) {
+    if (path !== null && isCodeEdit(path) && !isDocPath(path)) {
       const isDocumenter = agentId !== undefined && (await agentType($, agentId)) === 'documenter'
       if (!isDocumenter) {
         await change($, r => {
@@ -512,8 +513,9 @@ export const register: Register = on => {
         })
       }
     }
-    if (command.includes('--test-enable')) {
-      const summary = testSummary(await bashOutput($, ran.result, ran.text))
+    const output = command === '' ? '' : await bashOutput($, ran.result, ran.text)
+    if (command !== '' && isTestRun(command, output)) {
+      const summary = testSummary(output)
       if (summary !== null) {
         await change($, r => {
           const [next2, seq] = bump(r)
