@@ -7,9 +7,11 @@ Run from the repo root: python3 tests/test_dry_run_side_effects.py
 The runner is rendered with a minimal answer set and run against a stub `odoo`
 under a throwaway $HOME that records its arguments, environment and stdin, and
 prints what a case gives it. The cases are the runner's own promises: it
-refuses a database that is not local before Odoo starts, always runs the script
-dry, never passes a commit switch on, and turns the prelude's markers into exit
-codes. The prelude itself needs a live Odoo; here it is only compiled.
+refuses a database that is not local or is given as a connection string before
+Odoo starts, keeps libpq's server variables away from it, always runs the
+script dry, never passes a commit switch on, and turns the prelude's markers
+into exit codes. The prelude itself needs a live Odoo; here it is only
+compiled.
 """
 
 import os
@@ -32,7 +34,7 @@ ANSWERS = dict(nix_profile_rel=".nix-profile")
 
 STUB_ODOO = """#!/usr/bin/env bash
 printf '%s\\n' "$@" > "$HOME/args"
-{ echo "SCRIPT_MODE=$SCRIPT_MODE"; echo "SE_SCRIPT=$SE_SCRIPT"; env | grep '_COMMIT=' ; } > "$HOME/env"
+{ echo "SCRIPT_MODE=$SCRIPT_MODE"; echo "SE_SCRIPT=$SE_SCRIPT"; env | grep -E '_COMMIT=|^PG' ; } > "$HOME/env"
 cat > "$HOME/stdin"
 printf '%b' "${FAKE_OUT:-}"
 exit "${FAKE_EXIT:-0}"
@@ -42,7 +44,7 @@ DONE = "SE_SUMMARY side_effects=0 while_reporting=0\\nSCRIPT_DONE mode=dry\\n"
 
 
 class Run:
-    def __init__(self, db_host="localhost"):
+    def __init__(self, db_host="localhost", db_name="copy"):
         self.tmp = pathlib.Path(tempfile.mkdtemp(prefix="dry-run-se-"))
         self.home = self.tmp / "home"
         stub = self.home / ".nix-profile" / "bin" / "odoo"
@@ -50,7 +52,7 @@ class Run:
         stub.write_text(STUB_ODOO)
         stub.chmod(0o755)
         self.conf = self.tmp / "odoo.conf"
-        self.conf.write_text("[options]\ndb_host = %s\ndb_port = 5432\ndb_name = copy\n" % db_host)
+        self.conf.write_text("[options]\ndb_host = %s\ndb_port = 5432\ndb_name = %s\n" % (db_host, db_name))
         self.script = self.tmp / "fix.py"
         self.script.write_text("print('SCRIPT_DONE mode=dry')\n")
         runner = SCRIPTS / "dry-run-side-effects.sh"
@@ -152,6 +154,56 @@ def _():
         env = run.seen("env")
         expect("_COMMIT=" not in env, env)
         expect("SCRIPT_MODE=dry" in env, env)
+    with_run(check)
+
+
+@case("a database given as a URI or a key=value string is refused before odoo starts")
+def _():
+    for db in ("postgresql://10.1.2.3/odoo", "postgres://prod/odoo", "host=10.1.2.3 dbname=odoo",
+               "dbname=odoo", "copy;drop", "-x"):
+        def check(run):
+            proc = run.run(str(run.conf), str(run.script), db, out=DONE)
+            expect(proc.returncode == 3, (db, proc.returncode, proc.stderr))
+            expect(run.seen("args") is None, (db, "odoo ran"))
+        with_run(check)
+    for name in ("postgresql://10.1.2.3/odoo", "host=10.1.2.3 dbname=odoo"):
+        def check(run):
+            proc = run.run(out=DONE)
+            expect(proc.returncode == 3, (name, proc.returncode, proc.stderr))
+            expect(run.seen("args") is None, (name, "odoo ran"))
+        with_run(check, db_name=name)
+
+
+@case("libpq's server variables never reach odoo")
+def _():
+    def check(run):
+        proc = run.run(out=DONE, PGHOST="10.1.2.3", PGHOSTADDR="10.1.2.3", PGPORT="5433",
+                       PGSERVICE="prod", PGSERVICEFILE="/tmp/x", PGDATABASE="odoo")
+        expect(proc.returncode == 0, (proc.returncode, proc.stderr))
+        env = run.seen("env")
+        for var in ("PGHOST", "PGHOSTADDR", "PGPORT", "PGSERVICE", "PGSERVICEFILE", "PGDATABASE"):
+            expect(var + "=" not in env, (var, env))
+    with_run(check)
+
+
+@case("the prelude finding a server that is not local refuses with exit 3")
+def _():
+    def check(run):
+        proc = run.run(out="SE_REFUSED_NOT_LOCAL: connected to 10.1.2.3\\n", FAKE_EXIT="3")
+        expect(proc.returncode == 3, (proc.returncode, proc.stderr))
+        expect("REFUSED" in proc.stderr, proc.stderr)
+    with_run(check)
+
+
+@case("a blocked transaction end fails the run, a changed transaction says so first")
+def _():
+    def check(run):
+        proc = run.run(out="SE_BLOCKED: connection.commit()\\n" + DONE + "SCRIPT_FAILED: _SeBlocked\\n")
+        expect(proc.returncode == 1, (proc.returncode, proc.stderr))
+        expect("COMMIT_ATTEMPTED" in proc.stderr, proc.stderr)
+        proc = run.run(out="SE_BLOCKED: behind the driver\\nSE_TXN_CHANGED: ended\\n" + DONE)
+        expect(proc.returncode == 1, (proc.returncode, proc.stderr))
+        expect("TRANSACTION_CHANGED" in proc.stderr and "COMMIT_ATTEMPTED" not in proc.stderr, proc.stderr)
     with_run(check)
 
 

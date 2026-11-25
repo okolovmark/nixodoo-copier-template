@@ -2,31 +2,44 @@
 # Dry-run a ticket script on a LOCAL database and report its side effects: every
 # record written by code the script called rather than by the script itself,
 # with the script line that started it, the code path, and why. Always rolls
-# back; any commit is blocked. Refuses a config whose database is not local.
+# back; any commit is blocked. Refuses a database that is not local, here from
+# the config and again in the prelude from the server it actually reached.
 #
 # Usage: dry-run-side-effects.sh <odoo.conf> <script.py> [<db>]
 #   SE_SHOW=<n>   records listed per side effect (default 40)
 #   ODOO_BIN=...  the odoo command (default: the project profile's odoo)
 #
 # Exit: 0 no side effects, 4 side effects found (read the report), 1 the
-# script failed or did not print SCRIPT_DONE mode=dry, 2 usage, 3 refused.
+# script failed, did not print SCRIPT_DONE mode=dry or tried to commit,
+# 2 usage, 3 refused (not a local database).
 set -euo pipefail
 
 CONF="${1:-}"
 SCRIPT="${2:-}"
 DB="${3:-}"
 usage() { echo "usage: $0 <odoo.conf> <script.py> [<db>]" >&2; exit 2; }
+refuse() { echo "REFUSED: $*. Side-effect dry runs are for a local copy only." >&2; exit 3; }
 [ -n "$CONF" ] && [ -f "$CONF" ] || { echo "no such config: $CONF" >&2; usage; }
 [ -n "$SCRIPT" ] && [ -f "$SCRIPT" ] || { echo "no such script: $SCRIPT" >&2; usage; }
 
-HOST=$(sed -n 's/^[[:space:]]*db_host[[:space:]]*=[[:space:]]*//p' "$CONF" | tail -n 1 | tr -d '[:space:]')
+conf_value() { sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" "$CONF" | tail -n 1 | tr -d '[:space:]'; }
+HOST=$(conf_value db_host)
 case "$HOST" in
   ""|False|localhost|127.0.0.1|::1|/*) ;;
-  *) echo "REFUSED: $CONF points at db_host=$HOST. Side-effect dry runs are for a local copy only." >&2; exit 3 ;;
+  *) refuse "$CONF points at db_host=$HOST" ;;
 esac
+# A database "name" can also be a URI or a key=value connection string that
+# names another server; only a plain name passes.
+NAME=$(conf_value db_name)
+case "$NAME" in *://*|*=*) refuse "$CONF has db_name=$NAME, a connection string" ;; esac
+if [ -n "$DB" ] && ! [[ "$DB" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*$ ]]; then
+  refuse "the database argument '$DB' is not a plain name"
+fi
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ODOO_BIN="${ODOO_BIN:-$HOME/{{ nix_profile_rel }}/bin/odoo}"
+# libpq takes the server from these when the config names none.
+unset PGHOST PGHOSTADDR PGPORT PGSERVICE PGSERVICEFILE PGSYSCONFDIR PGDATABASE
 # A commit switch from the caller (FOO_COMMIT=1) never reaches the script.
 while IFS= read -r VAR; do unset "$VAR"; done < <(compgen -v | grep '_COMMIT$' || true)
 LOG="$(mktemp)"
@@ -40,6 +53,17 @@ SE_SCRIPT="$(realpath "$SCRIPT")" SCRIPT_MODE=dry "$ODOO_BIN" "${ARGS[@]}" \
 SHELL_EXIT=${PIPESTATUS[0]}
 set -e
 
+if grep -q '^SE_REFUSED_NOT_LOCAL' "$LOG"; then
+  refuse "the prelude found the connection goes to a server that is not local; nothing ran"
+fi
+if grep -q '^SE_TXN_CHANGED' "$LOG"; then
+  echo "TRANSACTION_CHANGED: the transaction ended under the tracer; part of the run may be committed - check the copy" >&2
+  exit 1
+fi
+if grep -q '^SE_BLOCKED' "$LOG"; then
+  echo "COMMIT_ATTEMPTED: the script tried to end the transaction (see SE_BLOCKED); nothing was committed" >&2
+  exit 1
+fi
 if [ "$SHELL_EXIT" -ne 0 ] || grep -q '^SCRIPT_FAILED' "$LOG"; then
   echo "DRY_RUN_FAILED shell_exit=$SHELL_EXIT" >&2
   exit 1

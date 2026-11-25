@@ -4,11 +4,14 @@
 # records that code the script called changed, ahead of the script's own writes.
 import datetime
 import functools
+import ipaddress
 import linecache
 import os
+import re
 import sys
 import traceback
 
+import psycopg2.extensions as _se_pgext
 from odoo import models as _se_models
 from odoo import sql_db as _se_sql_db
 
@@ -195,6 +198,11 @@ def _se_report(env):
         print("SIDE-EFFECT REPORT SKIPPED: the error aborted the transaction, nothing to read.")
         print("SE_SUMMARY side_effects=unknown while_reporting=unknown")
         return
+    cr.execute("SELECT pg_current_xact_id()::text")
+    if cr.fetchone()[0] != _se["xid"]:
+        print("SE_TXN_CHANGED: the transaction this run started in ended under the tracer (a COMMIT or")
+        print("ROLLBACK that bypassed the cursor). What the script wrote before it may be COMMITTED on")
+        print("%s; the report below covers only what came after." % cr.dbname)
     now = cr.now()
     cr.execute(_SE_STAT_SQL)
     delta = {}
@@ -463,8 +471,29 @@ def _se_finish(env):
 
 
 _se_cr = env.cr  # noqa: F821 - odoo shell provides env
+
+# The config says local; check the server this shell actually reached. NULL is
+# a Unix socket, which is on this machine.
+_se_cr.execute("SELECT host(inet_server_addr())")
+_se_addr = _se_cr.fetchone()[0]
+if _se_addr is not None:
+    _se_ip = ipaddress.ip_address(_se_addr)
+    if not (getattr(_se_ip, "ipv4_mapped", None) or _se_ip).is_loopback:
+        print("SE_REFUSED_NOT_LOCAL: this shell is connected to PostgreSQL at %s, which is not on this "
+              "machine; nothing ran." % _se_addr)
+        raise SystemExit(3)
+
 _se_real_rollback = _se_cr.rollback
 _se_class_rollback = _se_sql_db.Cursor.rollback
+
+
+class _SeBlocked(Exception):
+    pass
+
+
+def _se_block(what):
+    print("SE_BLOCKED: %s - a side-effect dry run never ends its transaction" % what)
+    raise _SeBlocked(what) from None
 
 
 def _se_rollback():
@@ -481,14 +510,126 @@ def _se_blocked_commit(self):
     return _se_class_rollback(self)
 
 
+_SE_TXN_SQL = re.compile(
+    r"(?:^|;)\s*(?:commit|end|abort|rollback(?!\s+to\b)|begin|start\s+transaction|prepare\s+transaction)\b",
+    re.IGNORECASE)
+_SE_SQL_COMMENT = re.compile(r"--[^\n]*|/\*.*?\*/", re.DOTALL)
+
+
+_se_base_rollback = _se_pgext.connection.rollback
+
+
+def _se_guard(cur, query):
+    cnx = cur.connection
+    if cnx.status == _se_pgext.STATUS_BEGIN and \
+            cnx.info.transaction_status == _se_pgext.TRANSACTION_STATUS_IDLE:
+        # psycopg2 thinks a transaction is open, the server says none is: something
+        # ended it behind the driver, and every statement from here would commit alone.
+        _se_base_rollback(cnx)
+        _se_block("the transaction was ended behind the driver")
+    text = query
+    if hasattr(query, "as_string"):
+        try:
+            text = query.as_string(cur)
+        except Exception:
+            text = ""
+    elif isinstance(query, bytes):
+        text = query.decode("utf-8", "replace")
+    if isinstance(text, str) and _SE_TXN_SQL.search(_SE_SQL_COMMENT.sub(" ", text)):
+        _se_block("transaction control in SQL: %s" % " ".join(text.split())[:100])
+
+
+class _SeCursor:
+    """Every psycopg2 cursor of this process, so no statement reaches the server unchecked."""
+
+    __slots__ = ("_se_cur",)
+
+    def __init__(self, cur):
+        object.__setattr__(self, "_se_cur", cur)
+
+    def __getattr__(self, name):
+        return getattr(self._se_cur, name)
+
+    def __setattr__(self, name, value):
+        setattr(self._se_cur, name, value)
+
+    def __iter__(self):
+        return iter(self._se_cur)
+
+    def __enter__(self):
+        self._se_cur.__enter__()
+        return self
+
+    def __exit__(self, *exc):
+        return self._se_cur.__exit__(*exc)
+
+    def execute(self, query, vars=None):
+        _se_guard(self._se_cur, query)
+        return self._se_cur.execute(query, vars)
+
+    def executemany(self, query, vars_list):
+        _se_guard(self._se_cur, query)
+        return self._se_cur.executemany(query, vars_list)
+
+    def callproc(self, procname, *args, **kwargs):
+        _se_guard(self._se_cur, "")
+        return self._se_cur.callproc(procname, *args, **kwargs)
+
+    def copy_expert(self, sql, file, *args, **kwargs):
+        _se_guard(self._se_cur, sql)
+        return self._se_cur.copy_expert(sql, file, *args, **kwargs)
+
+
+_se_base_cursor = _se_pgext.connection.cursor
+
+
+def _se_cnx_cursor(self, *args, **kwargs):
+    return _SeCursor(_se_base_cursor(self, *args, **kwargs))
+
+
+_se_base_autocommit = _se_pgext.connection.autocommit
+_se_base_isolation = _se_pgext.connection.set_isolation_level
+_se_base_session = _se_pgext.connection.set_session
+
+
+def _se_cnx_commit(self):
+    _se_block("connection.commit()")
+
+
+def _se_cnx_autocommit(self, value):
+    if value:
+        _se_block("connection.autocommit = True")
+    _se_base_autocommit.__set__(self, value)
+
+
+def _se_cnx_isolation(self, level):
+    if level == _se_pgext.ISOLATION_LEVEL_AUTOCOMMIT:
+        _se_block("connection.set_isolation_level(AUTOCOMMIT)")
+    return _se_base_isolation(self, level)
+
+
+def _se_cnx_session(self, *args, **kwargs):
+    if kwargs.get("autocommit") or (len(args) > 3 and args[3]):
+        _se_block("connection.set_session(autocommit=True)")
+    return _se_base_session(self, *args, **kwargs)
+
+
 _se_cr.rollback = _se_rollback
 _se_sql_db.Cursor.commit = _se_blocked_commit
+_se_cr._obj = _SeCursor(_se_cr._obj)
+_se_sql_db.PsycoConnection.cursor = _se_cnx_cursor
+_se_sql_db.PsycoConnection.commit = _se_cnx_commit
+_se_sql_db.PsycoConnection.autocommit = property(_se_base_autocommit.__get__, _se_cnx_autocommit)
+_se_sql_db.PsycoConnection.set_isolation_level = _se_cnx_isolation
+_se_sql_db.PsycoConnection.set_session = _se_cnx_session
 for _se_method in _SE_OPS:
     setattr(_se_models.BaseModel, _se_method, _se_wrap(_se_method))
 
 os.environ["SCRIPT_MODE"] = "dry"
 for _se_key in [k for k in os.environ if k.endswith("_COMMIT")]:
     del os.environ[_se_key]
+_se_cr.execute("SELECT pg_current_xact_id()::text")
+_se["xid"] = _se_cr.fetchone()[0]
 _se_cr.execute(_SE_STAT_SQL)
 _se["base"] = {r[0]: (r[1], r[2], r[3]) for r in _se_cr.fetchall()}
 _se["on"] = _se["in_script"] = True
