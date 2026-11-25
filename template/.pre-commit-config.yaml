@@ -1,0 +1,13 @@
+# This project's own scripts (scripts/<TICKET>/), linted with the [tool.ruff] settings of
+# pyproject.toml. The addons repo under src/ has its own config and hook; wt-bootstrap.sh installs
+# both hooks. rev = the ruff of nixos-26.05, the dev-server profile's, so a hand run of `ruff`
+# agrees with the hook (a project on nixos-25.05, Python 3.10, has an older one).
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.14
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+        files: ^scripts/
+      - id: ruff-format
+        files: ^scripts/
