@@ -94,7 +94,8 @@ churn lines around the real change.
 ## pre-commit at commit time
 
 The addons repo runs its `.pre-commit-config.yaml` hooks (the commit stage) on every
-commit; `wt-bootstrap.sh` installs the git hook. A fixer that rewrote a staged file
+commit, and this project's repo runs ruff on `scripts/` with the `[tool.ruff]` settings of
+`pyproject.toml`; `wt-bootstrap.sh` installs both git hooks. A fixer that rewrote a staged file
 fails the commit: read what it changed, `git add` it, commit again. A check that
 fails is fixed, not skipped: `--no-verify` only on the user's word. Hooks in stage
 `manual` run only on `pre-commit run --hook-stage manual`.

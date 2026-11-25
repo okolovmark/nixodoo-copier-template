@@ -4,7 +4,8 @@
 #     the phone session);
 #   - the cwd .worktrees/_env/<slug>/browser/, where the CLI keeps its page snapshots and
 #     console logs (.playwright-cli/) and a demo's files land; removed with the env;
-#   - requests held to the env's own origin (the CLI's network.allowedOrigins).
+#   - requests held to the env's own origin and Google Fonts (the CLI's network.allowedOrigins):
+#     the website editor's stylesheet imports Google Fonts and fails to load without them.
 # Commands go to playwright-cli as given (`playwright-cli --help`), except:
 #   - open: Chrome, headless, this env's config; without a URL it opens <URL>/web. A session
 #     that is open already is kept (playwright-cli would restart it, and the login is in
@@ -147,7 +148,10 @@ cat > "$CONFIG" <<EOF
     "launchOptions": { "channel": "chrome", "headless": true }
   },
   "network": {
-    "allowedOrigins": ["$URL", "http://$DB.*.$WT_HOST_SUFFIX:$PORT"]
+    "allowedOrigins": [
+      "$URL", "http://$DB.*.$WT_HOST_SUFFIX:$PORT",
+      "https://fonts.googleapis.com", "https://fonts.gstatic.com"
+    ]
   }
 }
 EOF

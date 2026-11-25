@@ -211,8 +211,9 @@ bash "$B" <slug> close
   lands there. The folder goes with the env (`wt-stop.sh` also closes its sessions).
 - **Held to the env.** A URL argument on another host is refused (exit 2); the allowed
   hosts are `<DB>.localhost:<PORT>` and `<DB>.<label>.localhost:<PORT>`. The browser itself
-  requests nothing else either (the CLI's `allowedOrigins`): fonts, analytics and other
-  outside resources of the prod copy's pages show in `console` as
+  requests nothing else but Google Fonts (the CLI's `allowedOrigins`; the website editor's
+  stylesheet imports them and fails to load without): analytics and other outside resources
+  of the prod copy's pages show in `console` as
   `net::ERR_BLOCKED_BY_CLIENT` and are no defect, nor is a `500` on `/web/image/...`
   (attachments are not seeded). Neither check is a sandbox: code given to `run-code`
   navigates where it likes. `attach`, `install-browser`, `kill-all`, `-s` and `open`'s
