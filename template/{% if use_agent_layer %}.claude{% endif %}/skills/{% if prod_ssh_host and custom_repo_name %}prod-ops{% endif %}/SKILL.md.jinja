@@ -207,19 +207,24 @@ called `commit()`, 3 refused. Read every block before the commit run: a side
 effect that is intended goes into what the script prints as planned, one that
 is not means changing the call that makes it.
 
-It is for a copy, never prod. It refuses a config whose `db_host` is not
-local, a database name that is a URI or a `key=value` string, and drops
-`PGHOST`/`PGSERVICE` and the like; then the prelude asks the server it reached
-(`inet_server_addr()`) and stops unless that is a Unix socket or loopback. An
-SSH tunnel that makes a remote server answer on loopback passes that check, so
-never point a worktree env at one. It never ends the transaction: Odoo's
-`commit()` becomes a rollback, and `COMMIT`/`END`/`BEGIN` in SQL, the driver's
-own `commit()` and autocommit are blocked on every cursor; each fails the run.
-If the transaction still changes under it, it says so and fails the run, since
-what came before may be committed. What it does not see: writes through
-another connection (rolled back, not analysed), SQL writes inside a savepoint
-(only in the table counts), and the PostgreSQL sequences the run advanced,
-which do not roll back (it names those).
+It is for a copy on the project's own cluster, never prod. The runner refuses
+a config whose `db_host` is not local or whose `db_port` is not
+`{{ postgres_port }}`, a database name that is a URI or a `key=value` string,
+and drops `PGHOST`/`PGSERVICE` and the like. The prelude then identifies the
+server it reached, and every connection the script opens: a Unix socket or
+loopback address, port `{{ postgres_port }}`, and a backend PID that is a
+`postgres` process in this machine's `/proc` (so a PostgreSQL in a container
+is refused too). The transaction cannot commit, whatever the script does: a
+temporary deferred constraint trigger that always raises arms every
+transaction before its first statement, so a `COMMIT` however sent fails on
+the server. On top of that, Odoo's `commit()` becomes a rollback, the driver's
+`commit()` and autocommit are refused, `COMMIT`/`BEGIN`/`END` in SQL and any
+`dblink` call are refused, `psycopg2.connect` goes through the same patched
+connection class, and a transaction that ends behind the driver is caught
+before the next statement; each fails the run. A script that runs
+`SET CONSTRAINTS ALL IMMEDIATE` trips the trigger and fails. What it does not
+see: SQL writes inside a savepoint (only in the table counts), and the
+PostgreSQL sequences the run advanced, which do not roll back (it names those).
 
 **The run record: `RUNS.html` beside the scripts.** Every ticket folder whose
 scripts ran anywhere carries a `RUNS.html` answering *what has run, where, and

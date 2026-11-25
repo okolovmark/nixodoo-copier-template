@@ -2,8 +2,9 @@
 # Dry-run a ticket script on a LOCAL database and report its side effects: every
 # record written by code the script called rather than by the script itself,
 # with the script line that started it, the code path, and why. Always rolls
-# back; any commit is blocked. Refuses a database that is not local, here from
-# the config and again in the prelude from the server it actually reached.
+# back; the server refuses a commit. Refuses a database that is not the project's
+# local cluster, here from the config and again in the prelude from the server
+# it actually reached.
 #
 # Usage: dry-run-side-effects.sh <odoo.conf> <script.py> [<db>]
 #   SE_SHOW=<n>   records listed per side effect (default 40)
@@ -30,6 +31,10 @@ case "$HOST" in
 esac
 # A database "name" can also be a URI or a key=value connection string that
 # names another server; only a plain name passes.
+# The project's own cluster listens on {{ postgres_port }}; nothing else is a local copy.
+PORT=$(conf_value db_port)
+case "$PORT" in ""|False) PORT=5432 ;; esac
+[ "$PORT" = "{{ postgres_port }}" ] || refuse "$CONF has db_port=$PORT, not the project cluster's {{ postgres_port }}"
 NAME=$(conf_value db_name)
 case "$NAME" in *://*|*=*) refuse "$CONF has db_name=$NAME, a connection string" ;; esac
 if [ -n "$DB" ] && ! [[ "$DB" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*$ ]]; then
@@ -48,7 +53,7 @@ trap 'rm -f "$LOG"' EXIT
 ARGS=(shell -c "$CONF" --no-http --log-level=warn)
 [ -n "$DB" ] && ARGS+=(-d "$DB")
 set +e
-SE_SCRIPT="$(realpath "$SCRIPT")" SCRIPT_MODE=dry "$ODOO_BIN" "${ARGS[@]}" \
+SE_SCRIPT="$(realpath "$SCRIPT")" SE_PG_PORT="{{ postgres_port }}" SCRIPT_MODE=dry "$ODOO_BIN" "${ARGS[@]}" \
   < "$HERE/side_effects_prelude.py" 2>&1 | tee "$LOG"
 SHELL_EXIT=${PIPESTATUS[0]}
 set -e
@@ -57,7 +62,7 @@ if grep -q '^SE_REFUSED_NOT_LOCAL' "$LOG"; then
   refuse "the prelude found the connection goes to a server that is not local; nothing ran"
 fi
 if grep -q '^SE_TXN_CHANGED' "$LOG"; then
-  echo "TRANSACTION_CHANGED: the transaction ended under the tracer; part of the run may be committed - check the copy" >&2
+  echo "TRANSACTION_CHANGED: the transaction ended under the tracer; the server-side guard refuses a commit, but the report is incomplete" >&2
   exit 1
 fi
 if grep -q '^SE_BLOCKED' "$LOG"; then

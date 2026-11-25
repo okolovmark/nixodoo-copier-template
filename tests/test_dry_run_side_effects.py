@@ -7,8 +7,8 @@ Run from the repo root: python3 tests/test_dry_run_side_effects.py
 The runner is rendered with a minimal answer set and run against a stub `odoo`
 under a throwaway $HOME that records its arguments, environment and stdin, and
 prints what a case gives it. The cases are the runner's own promises: it
-refuses a database that is not local or is given as a connection string before
-Odoo starts, keeps libpq's server variables away from it, always runs the
+refuses a database that is not the project cluster (host, port) or is given as
+a connection string before Odoo starts, hands the cluster's port to the prelude, keeps libpq's server variables away from it, always runs the
 script dry, never passes a commit switch on, and turns the prelude's markers
 into exit codes. The prelude itself needs a live Odoo; here it is only
 compiled.
@@ -30,11 +30,12 @@ SCRIPTS = pathlib.Path(
 RUNNER = SCRIPTS / "dry-run-side-effects.sh.jinja"
 PRELUDE = SCRIPTS / "side_effects_prelude.py"
 
-ANSWERS = dict(nix_profile_rel=".nix-profile")
+ANSWERS = dict(nix_profile_rel=".nix-profile", postgres_port=16432)
 
 STUB_ODOO = """#!/usr/bin/env bash
 printf '%s\\n' "$@" > "$HOME/args"
-{ echo "SCRIPT_MODE=$SCRIPT_MODE"; echo "SE_SCRIPT=$SE_SCRIPT"; env | grep -E '_COMMIT=|^PG' ; } > "$HOME/env"
+{ echo "SCRIPT_MODE=$SCRIPT_MODE"; echo "SE_SCRIPT=$SE_SCRIPT"; echo "SE_PG_PORT=$SE_PG_PORT"
+  env | grep -E '_COMMIT=|^PG' ; } > "$HOME/env"
 cat > "$HOME/stdin"
 printf '%b' "${FAKE_OUT:-}"
 exit "${FAKE_EXIT:-0}"
@@ -44,7 +45,7 @@ DONE = "SE_SUMMARY side_effects=0 while_reporting=0\\nSCRIPT_DONE mode=dry\\n"
 
 
 class Run:
-    def __init__(self, db_host="localhost", db_name="copy"):
+    def __init__(self, db_host="localhost", db_name="copy", db_port="16432"):
         self.tmp = pathlib.Path(tempfile.mkdtemp(prefix="dry-run-se-"))
         self.home = self.tmp / "home"
         stub = self.home / ".nix-profile" / "bin" / "odoo"
@@ -52,7 +53,8 @@ class Run:
         stub.write_text(STUB_ODOO)
         stub.chmod(0o755)
         self.conf = self.tmp / "odoo.conf"
-        self.conf.write_text("[options]\ndb_host = %s\ndb_port = 5432\ndb_name = %s\n" % (db_host, db_name))
+        port_line = "db_port = %s\n" % db_port if db_port is not None else ""
+        self.conf.write_text("[options]\ndb_host = %s\n%sdb_name = %s\n" % (db_host, port_line, db_name))
         self.script = self.tmp / "fix.py"
         self.script.write_text("print('SCRIPT_DONE mode=dry')\n")
         runner = SCRIPTS / "dry-run-side-effects.sh"
@@ -172,6 +174,26 @@ def _():
             expect(proc.returncode == 3, (name, proc.returncode, proc.stderr))
             expect(run.seen("args") is None, (name, "odoo ran"))
         with_run(check, db_name=name)
+
+
+@case("a db_port other than the project cluster's is refused, and so is a missing one")
+def _():
+    for port in ("5432", "15432", None, "False"):
+        def check(run):
+            proc = run.run(out=DONE)
+            expect(proc.returncode == 3, (port, proc.returncode, proc.stderr))
+            expect("16432" in proc.stderr, proc.stderr)
+            expect(run.seen("args") is None, (port, "odoo ran"))
+        with_run(check, db_port=port)
+
+
+@case("the project cluster's port reaches the prelude, which checks the server against it")
+def _():
+    def check(run):
+        proc = run.run(out=DONE)
+        expect(proc.returncode == 0, (proc.returncode, proc.stderr))
+        expect("SE_PG_PORT=16432" in run.seen("env"), run.seen("env"))
+    with_run(check)
 
 
 @case("libpq's server variables never reach odoo")

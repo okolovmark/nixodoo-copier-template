@@ -11,6 +11,7 @@ import re
 import sys
 import traceback
 
+import psycopg2 as _se_pg
 import psycopg2.extensions as _se_pgext
 from odoo import models as _se_models
 from odoo import sql_db as _se_sql_db
@@ -188,6 +189,7 @@ def _se_caller(script):
 def _se_report(env):
     cr = env.cr
     notes = []
+    _se_desynced(cr._cnx)
     try:
         env.flush_all()
     except Exception as exc:
@@ -471,20 +473,34 @@ def _se_finish(env):
 
 
 _se_cr = env.cr  # noqa: F821 - odoo shell provides env
+_SE_PG_PORT = os.environ.get("SE_PG_PORT") or ""
 
-# The config says local; check the server this shell actually reached. NULL is
-# a Unix socket, which is on this machine.
-_se_cr.execute("SELECT host(inet_server_addr())")
-_se_addr = _se_cr.fetchone()[0]
-if _se_addr is not None:
-    _se_ip = ipaddress.ip_address(_se_addr)
-    if not (getattr(_se_ip, "ipv4_mapped", None) or _se_ip).is_loopback:
-        print("SE_REFUSED_NOT_LOCAL: this shell is connected to PostgreSQL at %s, which is not on this "
-              "machine; nothing ran." % _se_addr)
-        raise SystemExit(3)
 
-_se_real_rollback = _se_cr.rollback
-_se_class_rollback = _se_sql_db.Cursor.rollback
+def _se_not_local(raw_cur):
+    """Why the server behind this cursor is not this machine's project cluster, or ''."""
+    raw_cur.execute("SELECT host(inet_server_addr()), current_setting('port'), pg_backend_pid()")
+    addr, port, pid = raw_cur.fetchone()
+    reasons = []
+    if addr is not None:
+        ip = ipaddress.ip_address(addr)
+        if not (getattr(ip, "ipv4_mapped", None) or ip).is_loopback:
+            reasons.append("the server answers on %s" % addr)
+    if _SE_PG_PORT and port != _SE_PG_PORT:
+        reasons.append("the server's port is %s, not the project cluster's %s" % (port, _SE_PG_PORT))
+    try:
+        with open("/proc/%d/cmdline" % pid, "rb") as fh:
+            cmdline = fh.read()
+    except OSError:
+        cmdline = b""
+    if not cmdline.startswith(b"postgres"):
+        reasons.append("its backend %d is not a PostgreSQL process on this machine" % pid)
+    return "; ".join(reasons)
+
+
+_se_why = _se_not_local(_se_cr._obj)
+if _se_why:
+    print("SE_REFUSED_NOT_LOCAL: %s; nothing ran." % _se_why)
+    raise SystemExit(3)
 
 
 class _SeBlocked(Exception):
@@ -496,36 +512,56 @@ def _se_block(what):
     raise _SeBlocked(what) from None
 
 
-def _se_rollback():
-    _se_finish(env)  # noqa: F821
-    _se_real_rollback()
+# On the server, whatever the client does: a deferred constraint trigger that
+# always raises fires at COMMIT, so an armed transaction cannot commit, however
+# the COMMIT is sent. Every transaction is armed before its first statement.
+_SE_ARM_SQL = (
+    "CREATE TEMP TABLE IF NOT EXISTS se_never_commit (x int); "
+    "CREATE OR REPLACE FUNCTION pg_temp.se_never_commit() RETURNS trigger LANGUAGE plpgsql AS "
+    "$f$BEGIN RAISE EXCEPTION 'side-effect dry run: this transaction never commits'; END$f$; "
+    "DROP TRIGGER IF EXISTS se_never_commit ON pg_temp.se_never_commit; "
+    "CREATE CONSTRAINT TRIGGER se_never_commit AFTER INSERT ON pg_temp.se_never_commit "
+    "DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION pg_temp.se_never_commit(); "
+    "INSERT INTO pg_temp.se_never_commit VALUES (1)"
+)
+_se_base_cursor = _se_pgext.connection.cursor
+_se_base_rollback = _se_pgext.connection.rollback
+_se_base_autocommit = _se_pgext.connection.autocommit
+_se_base_isolation = _se_pgext.connection.set_isolation_level
+_se_base_session = _se_pgext.connection.set_session
+_se_orig_rollback = _se_sql_db.Cursor.rollback
 
 
-def _se_blocked_commit(self):
-    if self is _se_cr:
-        if _se["in_script"]:
-            print("COMMIT BLOCKED: a side-effect dry run never commits")
-        _se_finish(env)  # noqa: F821
-        return _se_real_rollback()
-    return _se_class_rollback(self)
+def _se_arm(cnx):
+    raw = _se_base_cursor(cnx)
+    try:
+        raw.execute(_SE_ARM_SQL)
+    finally:
+        raw.close()
+
+
+def _se_desynced(cnx):
+    """psycopg2 believes a transaction is open, the server says none is: something ended it
+    behind the driver, and from here every statement would run on its own. Resync and say so."""
+    if cnx.status == _se_pgext.STATUS_BEGIN and \
+            cnx.info.transaction_status == _se_pgext.TRANSACTION_STATUS_IDLE:
+        print("SE_TXN_CHANGED: the transaction ended behind the driver; the server-side guard "
+              "refuses a COMMIT, but the run's analysis is incomplete.")
+        _se_base_rollback(cnx)
+        return True
+    return False
 
 
 _SE_TXN_SQL = re.compile(
     r"(?:^|;)\s*(?:commit|end|abort|rollback(?!\s+to\b)|begin|start\s+transaction|prepare\s+transaction)\b",
     re.IGNORECASE)
 _SE_SQL_COMMENT = re.compile(r"--[^\n]*|/\*.*?\*/", re.DOTALL)
-
-
-_se_base_rollback = _se_pgext.connection.rollback
+_SE_DBLINK = re.compile(r"\bdblink", re.IGNORECASE)
 
 
 def _se_guard(cur, query):
     cnx = cur.connection
-    if cnx.status == _se_pgext.STATUS_BEGIN and \
-            cnx.info.transaction_status == _se_pgext.TRANSACTION_STATUS_IDLE:
-        # psycopg2 thinks a transaction is open, the server says none is: something
-        # ended it behind the driver, and every statement from here would commit alone.
-        _se_base_rollback(cnx)
+    if _se_desynced(cnx):
         _se_block("the transaction was ended behind the driver")
     text = query
     if hasattr(query, "as_string"):
@@ -535,8 +571,19 @@ def _se_guard(cur, query):
             text = ""
     elif isinstance(query, bytes):
         text = query.decode("utf-8", "replace")
-    if isinstance(text, str) and _SE_TXN_SQL.search(_SE_SQL_COMMENT.sub(" ", text)):
-        _se_block("transaction control in SQL: %s" % " ".join(text.split())[:100])
+    if isinstance(text, str):
+        if _SE_DBLINK.search(text):
+            _se_block("dblink opens its own connection, which this dry run cannot hold back")
+        # An early, readable refusal; the server-side guard is what actually holds.
+        if _SE_TXN_SQL.search(_SE_SQL_COMMENT.sub(" ", text)):
+            _se_block("transaction control in SQL: %s" % " ".join(text.split())[:100])
+    if cnx.status == _se_pgext.STATUS_READY and not _se_base_autocommit.__get__(cnx):
+        _se_arm(cnx)
+
+
+def _se_after(cur):
+    if _se_desynced(cur.connection):
+        _se_block("a statement ended the transaction")
 
 
 class _SeCursor:
@@ -563,33 +610,31 @@ class _SeCursor:
     def __exit__(self, *exc):
         return self._se_cur.__exit__(*exc)
 
-    def execute(self, query, vars=None):
+    def _run(self, query, method, *args, **kwargs):
         _se_guard(self._se_cur, query)
-        return self._se_cur.execute(query, vars)
+        try:
+            result = method(*args, **kwargs)
+        except BaseException:
+            _se_desynced(self._se_cur.connection)
+            raise
+        _se_after(self._se_cur)
+        return result
+
+    def execute(self, query, vars=None):
+        return self._run(query, self._se_cur.execute, query, vars)
 
     def executemany(self, query, vars_list):
-        _se_guard(self._se_cur, query)
-        return self._se_cur.executemany(query, vars_list)
+        return self._run(query, self._se_cur.executemany, query, vars_list)
 
     def callproc(self, procname, *args, **kwargs):
-        _se_guard(self._se_cur, "")
-        return self._se_cur.callproc(procname, *args, **kwargs)
+        return self._run(procname, self._se_cur.callproc, procname, *args, **kwargs)
 
     def copy_expert(self, sql, file, *args, **kwargs):
-        _se_guard(self._se_cur, sql)
-        return self._se_cur.copy_expert(sql, file, *args, **kwargs)
-
-
-_se_base_cursor = _se_pgext.connection.cursor
+        return self._run(sql, self._se_cur.copy_expert, sql, file, *args, **kwargs)
 
 
 def _se_cnx_cursor(self, *args, **kwargs):
     return _SeCursor(_se_base_cursor(self, *args, **kwargs))
-
-
-_se_base_autocommit = _se_pgext.connection.autocommit
-_se_base_isolation = _se_pgext.connection.set_isolation_level
-_se_base_session = _se_pgext.connection.set_session
 
 
 def _se_cnx_commit(self):
@@ -614,9 +659,46 @@ def _se_cnx_session(self, *args, **kwargs):
     return _se_base_session(self, *args, **kwargs)
 
 
+_se_base_connect = _se_pg.connect
+
+
+def _se_connect(*args, **kwargs):
+    factory = kwargs.get("connection_factory")
+    if factory is None:
+        kwargs["connection_factory"] = _se_sql_db.PsycoConnection
+    elif not issubclass(factory, _se_sql_db.PsycoConnection):
+        _se_block("a database connection outside Odoo's connection class")
+    cnx = _se_base_connect(*args, **kwargs)
+    raw = _se_base_cursor(cnx)
+    try:
+        why = _se_not_local(raw)
+    finally:
+        raw.close()
+    _se_base_rollback(cnx)
+    if why:
+        cnx.close()
+        _se_block("a connection to a server that is not local (%s)" % why)
+    return cnx
+
+
+def _se_rollback():
+    _se_finish(env)  # noqa: F821
+    _se_orig_rollback(_se_cr)
+
+
+def _se_blocked_commit(self):
+    if self is _se_cr:
+        if _se["in_script"]:
+            print("COMMIT BLOCKED: a side-effect dry run never commits")
+        _se_finish(env)  # noqa: F821
+    return _se_orig_rollback(self)
+
+
+_se_arm(_se_cr._cnx)
 _se_cr.rollback = _se_rollback
 _se_sql_db.Cursor.commit = _se_blocked_commit
 _se_cr._obj = _SeCursor(_se_cr._obj)
+_se_pg.connect = _se_connect
 _se_sql_db.PsycoConnection.cursor = _se_cnx_cursor
 _se_sql_db.PsycoConnection.commit = _se_cnx_commit
 _se_sql_db.PsycoConnection.autocommit = property(_se_base_autocommit.__get__, _se_cnx_autocommit)
@@ -645,7 +727,7 @@ except BaseException as _se_exc:  # noqa: B036 - SystemExit from the script incl
 finally:
     _se["in_script"] = False
     _se_finish(env)  # noqa: F821
-    _se_real_rollback()
+    _se_orig_rollback(_se_cr)
     if _se["late"]:
         print("NOTE: %d create/write/unlink call(s) ran after the script rolled back; they were not "
               "analysed and are rolled back too." % _se["late"])
