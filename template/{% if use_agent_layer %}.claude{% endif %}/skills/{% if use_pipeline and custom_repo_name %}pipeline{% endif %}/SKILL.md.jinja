@@ -229,7 +229,8 @@ text:
 - Call `mcp__pipeline-gates__phase` at the start of every phase, with `task` once Phase 1 knows the
   key. It refuses Phase 2 and later while {% if status_mcp == 'teams' %}the Teams status or {% endif %}the grill gate is closed, and Phase 6
   and later until the QC verdict passed; the refusal says what is missing.
-- The `dev` agent and every edit under `.worktrees/` are refused until {% if status_mcp == 'teams' %}the Teams status was sent and
+- The `dev` agent and every code edit (a file under `.worktrees/`, or an addons source file in any
+  other checkout, the tooling's own `.claude/` and `/tmp/` aside) are refused until {% if status_mcp == 'teams' %}the Teams status was sent and
   {%+ endif %}the user pressed **confirm** (or **mechanical**): in the pipeline pane, or in the dialog the
   mod opens, with a push to their phone, when a step waits on the grill gate. `gh pr create` is refused
   until `mcp__pipeline-gates__qc_verdict` recorded a pass, which it accepts only after a `review`
@@ -982,8 +983,9 @@ returns no closing block. The fix brief waits for every verdict.
    … of N tests`).
    Run it in the **foreground**: the Bash call itself with `timeout` 600000, never
    `run_in_background`. With the pipeline-gates mod a test run counts only when its result line is
-   in the Bash tool's own output; a run in the background, read later from its log or its
-   notification, never counts, and `qc_verdict` `pass` is refused. A call that passes 10 minutes
+   in the Bash tool's own output, from a command that enables the tests or a wrapper that runs them;
+   a command that only reads a log (`cat`, `tail`, `grep`, …), a run in the background, read later
+   from its log or its notification, never counts, and `qc_verdict` `pass` is refused. A call that passes 10 minutes
    is moved to the background at the limit and does not count either. So when the suite takes
    longer: the gate gets a foreground run of the test classes the change touches
    (`--test-tags /<MODULE_NAME>:<TestClass>,/<MODULE_NAME>:<OtherClass>`, without `-u` once the

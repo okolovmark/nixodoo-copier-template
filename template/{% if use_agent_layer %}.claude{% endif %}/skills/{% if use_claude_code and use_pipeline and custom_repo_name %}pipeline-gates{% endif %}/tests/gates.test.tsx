@@ -11,10 +11,12 @@ import {
   closesOn,
   enterPhase,
   isChildArgs,
+  isCodeEdit,
   isDocPath,
   isMotherRunFor,
   isNewRound,
   isPrCreate,
+  isTestRun,
   isWorktreeCode,
   moveTasks,
   newRun,
@@ -96,7 +98,9 @@ function engine(
     if (e.tool === 'Bash' && String(e.command).includes('gh pr create')) {
       return { result: { stdout: `${PR_URL}\n`, stderr: '', interrupted: false } }
     }
-    return e.tool === 'Bash' && String(e.command).includes('--test-enable')
+    // a run, a wrapper that runs one, or a read of a log an earlier run wrote: each prints the result line
+    const command = e.tool === 'Bash' ? String(e.command) : ''
+    return /--test-enable|run-tests\.sh|^cat /.test(command)
       ? { result: { stdout: GREEN, stderr: '', interrupted: false } }
       : { result: { ok: true } }
   })
@@ -116,6 +120,32 @@ describe('rules', () => {
     expect(isWorktreeCode('/p/.worktrees/_env/proj-9-x/odoo.conf')).toBe(false)
     expect(isWorktreeCode('/p/src/odoo-addons-16/a.py')).toBe(false)
     expect(isDocPath(`${WT}/m/readme/DESCRIPTION.md`)).toBe(true)
+  })
+
+  test('a code edit is any session worktree file, or an addons source file outside the tooling', () => {
+    expect(isCodeEdit(`${WT}/m/static/src/a.ts`)).toBe(true)
+    for (const path of ['/home/u/addons-wt/20.0-x/m/models/a.py', '/p/src/odoo-addons-16/m/views/v.xml', '/w/m/i18n/fr.po']) {
+      expect(isCodeEdit(path)).toBe(true)
+    }
+    for (const path of [
+      '/p/.claude/skills/find-code/lsp.py',
+      '/home/u/.kb/x.py',
+      '/tmp/claude-1/scratchpad/probe.py',
+      '/p/.worktrees/_env/proj-9-x/odoo.conf',
+      '/home/u/addons-wt/20.0-x/m/notes.txt',
+    ]) {
+      expect(isCodeEdit(path)).toBe(false)
+    }
+  })
+
+  test('a test run: the command enables the tests, or prints the result line without only reading a log', () => {
+    expect(isTestRun('odoo -c x -u m --test-enable --test-tags /m', '')).toBe(true)
+    expect(isTestRun('bash run-tests.sh db /m:TestX', GREEN)).toBe(true)
+    expect(isTestRun('T20_LOG=/tmp/a.log /p/run-tests.sh db /m', GREEN)).toBe(true)
+    expect(isTestRun('bash run-tests.sh db /m:TestX', 'nothing ran')).toBe(false)
+    for (const command of ['cat /tmp/a.log', 'tail -n 5 /tmp/a.log', 'grep -E result /tmp/a.log', 'X=1 cat /tmp/a.log']) {
+      expect(isTestRun(command, GREEN)).toBe(false)
+    }
     expect(taskKeyIn(`run the pipeline for ${K}-1834 please`)).toBe(`${K}-1834`)
   })
 
@@ -335,6 +365,35 @@ test('gh pr create waits for a QC pass that rests on a review and green tests af
   expect((await $.tool.call({ tool: 'Bash', command: 'gh pr create --fill' })).deny).toBeUndefined()
   await $.tool.call({ tool: 'Edit', file_path: `${WT}/models/a.py`, old_string: 'b', new_string: 'c' })
   expect((await $.tool.call({ tool: 'Bash', command: 'gh pr create --fill' })).deny).toContain('QC gate passes')
+})
+
+test('an edit in a worktree of another repository voids the pass; a wrapper run restores it, a log read does not', async ($, on) => {
+  engine(on, [{ id: 'a-review', type: 'review' }])
+  await $.session.start({ cwd: '/p', surface: 'terminal', isInteractive: true })
+  await $.command.run({ command: 'pipeline-gate', args: `start ${K}-9`, ...TYPED })
+  await $.command.run({ command: 'pipeline-gate', args: 'open status teams is down', ...TYPED })
+  await $.command.run({ command: 'pipeline-gate', args: 'open grill agreed in chat', ...TYPED })
+  const pr = { tool: 'Bash', command: 'gh pr create --fill' }
+  const other = '/home/u/addons-wt/20.0-x/m/models/a.py'
+
+  await $.turn.complete({ answer: 'review done', durationMs: 1, isAborted: false, turnId: 't1', agentId: 'a-review', reason: 'answer' })
+  await $.tool.call({ tool: 'Bash', command: 'bash run-tests.sh db /m:TestX' })
+  expect(String((await $.tool.call({ tool: 'mcp__pipeline-gates__qc_verdict', verdict: 'pass', summary: 'QC' })).result)).toContain(
+    'PR allowed: yes',
+  )
+
+  await $.tool.call({ tool: 'Edit', file_path: other, old_string: 'a', new_string: 'b' })
+  expect((await $.tool.call(pr)).deny).toContain('QC gate passes')
+  await $.turn.complete({ answer: 'review done', durationMs: 1, isAborted: false, turnId: 't2', agentId: 'a-review', reason: 'answer' })
+  await $.tool.call({ tool: 'Bash', command: 'cat /tmp/an-earlier-run.log' })
+  expect(String((await $.tool.call({ tool: 'mcp__pipeline-gates__qc_verdict', verdict: 'pass', summary: 'QC' })).result)).toContain(
+    'the pass is refused',
+  )
+  await $.tool.call({ tool: 'Bash', command: 'T20_LOG=/tmp/x.log bash run-tests.sh db /m:TestX' })
+  expect(String((await $.tool.call({ tool: 'mcp__pipeline-gates__qc_verdict', verdict: 'pass', summary: 'QC' })).result)).toContain(
+    'PR allowed: yes',
+  )
+  expect((await $.tool.call(pr)).deny).toBeUndefined()
 })
 
 test('only the person opens a gate by hand', async ($, on) => {
