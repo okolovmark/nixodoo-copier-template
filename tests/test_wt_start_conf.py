@@ -2635,7 +2635,11 @@ def a_browser_command_runs_in_the_envs_session_and_browser_dir():
         assert call["browsers"] == str(root / ".nix-profile/share/ms-playwright") and call["no_update"] == "1", call
         config = json.loads((browser_dir / ".playwright/cli.config.json").read_text())
         assert config["browser"]["launchOptions"] == {"channel": "chrome", "headless": True}, config
-        assert config["network"]["allowedOrigins"] == [BROWSER_URL, "http://wt_x_110526.*.localhost:2701"], config
+        # the env, its labelled hosts, and Google Fonts, which the website editor's stylesheet imports
+        assert config["network"]["allowedOrigins"] == [
+            BROWSER_URL, "http://wt_x_110526.*.localhost:2701",
+            "https://fonts.googleapis.com", "https://fonts.gstatic.com",
+        ], config
 
 
 @case
