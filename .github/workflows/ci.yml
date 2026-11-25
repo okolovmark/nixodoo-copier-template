@@ -89,6 +89,18 @@ jobs:
       - name: tests/test_download_backup.py (psql, pg_restore and odoo stubbed)
         run: uv run --no-project --with jinja2 python tests/test_download_backup.py
 
+  # Renders the side-effect dry-run runner itself and runs it against a stub odoo, so once per push.
+  dry-run-side-effects:
+    name: side-effect dry run corpus
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: false
+      - name: tests/test_dry_run_side_effects.py (odoo stubbed; the prelude is compiled only)
+        run: uv run --no-project --with jinja2 python tests/test_dry_run_side_effects.py
+
   generate:
     runs-on: ubuntu-latest
     env:

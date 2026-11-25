@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# Dry-run a ticket script on a LOCAL database and report its side effects: every
+# record written by code the script called rather than by the script itself,
+# with the script line that started it, the code path, and why. Always rolls
+# back; the server refuses a commit. Refuses a database that is not the project's
+# local cluster, here from the config and again in the prelude from the server
+# it actually reached.
+#
+# Usage: dry-run-side-effects.sh <odoo.conf> <script.py> [<db>]
+#   SE_SHOW=<n>   records listed per side effect (default 40)
+#   ODOO_BIN=...  the odoo command (default: the project profile's odoo)
+#
+# Exit: 0 no side effects, 4 side effects found (read the report), 1 the
+# script failed, did not print SCRIPT_DONE mode=dry or tried to commit, or the
+# report failed or gave no count, 2 usage, 3 refused (not a local database).
+set -euo pipefail
+
+CONF="${1:-}"
+SCRIPT="${2:-}"
+DB="${3:-}"
+usage() { echo "usage: $0 <odoo.conf> <script.py> [<db>]" >&2; exit 2; }
+refuse() { echo "REFUSED: $*. Side-effect dry runs are for a local copy only." >&2; exit 3; }
+[ -n "$CONF" ] && [ -f "$CONF" ] || { echo "no such config: $CONF" >&2; usage; }
+[ -n "$SCRIPT" ] && [ -f "$SCRIPT" ] || { echo "no such script: $SCRIPT" >&2; usage; }
+
+conf_value() { sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" "$CONF" | tail -n 1 | tr -d '[:space:]'; }
+HOST=$(conf_value db_host)
+case "$HOST" in
+  ""|False|localhost|127.0.0.1|::1|/*) ;;
+  *) refuse "$CONF points at db_host=$HOST" ;;
+esac
+# A database "name" can also be a URI or a key=value connection string that
+# names another server; only a plain name passes.
+# The project's own cluster listens on {{ postgres_port }}; nothing else is a local copy.
+PORT=$(conf_value db_port)
+case "$PORT" in ""|False) PORT=5432 ;; esac
+[ "$PORT" = "{{ postgres_port }}" ] || refuse "$CONF has db_port=$PORT, not the project cluster's {{ postgres_port }}"
+NAME=$(conf_value db_name)
+case "$NAME" in *://*|*=*) refuse "$CONF has db_name=$NAME, a connection string" ;; esac
+if [ -n "$DB" ] && ! [[ "$DB" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]*$ ]]; then
+  refuse "the database argument '$DB' is not a plain name"
+fi
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ODOO_BIN="${ODOO_BIN:-$HOME/{{ nix_profile_rel }}/bin/odoo}"
+# libpq takes the server from these when the config names none.
+unset PGHOST PGHOSTADDR PGPORT PGSERVICE PGSERVICEFILE PGSYSCONFDIR PGDATABASE
+# A commit switch from the caller (FOO_COMMIT=1) never reaches the script.
+while IFS= read -r VAR; do unset "$VAR"; done < <(compgen -v | grep '_COMMIT$' || true)
+LOG="$(mktemp)"
+trap 'rm -f "$LOG"' EXIT
+
+ARGS=(shell -c "$CONF" --no-http --log-level=warn --logfile=)
+[ -n "$DB" ] && ARGS+=(-d "$DB")
+set +e
+SE_SCRIPT="$(realpath "$SCRIPT")" SE_PG_PORT="{{ postgres_port }}" SCRIPT_MODE=dry "$ODOO_BIN" "${ARGS[@]}" \
+  < "$HERE/side_effects_prelude.py" 2>&1 | tee "$LOG"
+SHELL_EXIT=${PIPESTATUS[0]}
+set -e
+
+if grep -q '^SE_REFUSED_NOT_LOCAL' "$LOG"; then
+  refuse "the prelude found the connection goes to a server that is not local; nothing ran"
+fi
+if grep -q '^SE_GUARD_TAMPERED' "$LOG"; then
+  echo "GUARD_TAMPERED: the script changed the dry run's commit guard; check the copy, it may hold committed writes" >&2
+  exit 1
+fi
+if grep -q '^SE_TXN_CHANGED' "$LOG"; then
+  echo "TRANSACTION_CHANGED: the transaction ended under the tracer; the server-side guard refuses a commit, but the report is incomplete" >&2
+  exit 1
+fi
+if grep -q '^SE_BLOCKED' "$LOG"; then
+  echo "COMMIT_ATTEMPTED: the script tried to end the transaction (see SE_BLOCKED); nothing was committed" >&2
+  exit 1
+fi
+if [ "$SHELL_EXIT" -ne 0 ] || grep -q '^SCRIPT_FAILED' "$LOG"; then
+  echo "DRY_RUN_FAILED shell_exit=$SHELL_EXIT" >&2
+  exit 1
+fi
+if grep -q '^COMMIT BLOCKED' "$LOG"; then
+  echo "COMMIT_ATTEMPTED: the script called commit() although SCRIPT_MODE=dry; nothing was committed" >&2
+  exit 1
+fi
+if ! grep -q "SCRIPT_DONE mode=dry" "$LOG"; then
+  echo "MARKER_MISSING: script did not print 'SCRIPT_DONE mode=dry'" >&2
+  exit 1
+fi
+if grep -q '^SIDE-EFFECT REPORT FAILED' "$LOG"; then
+  echo "REPORT_FAILED: the side-effect report raised (traceback above); this run shows nothing about side effects" >&2
+  exit 1
+fi
+SUMMARY=$(grep '^SE_SUMMARY ' "$LOG" | tail -n 1 || true)
+FOUND=$(printf '%s\n' "$SUMMARY" | sed -n 's/^SE_SUMMARY side_effects=\([0-9][0-9]*\) .*/\1/p')
+if [ -z "$FOUND" ]; then
+  echo "REPORT_MISSING: no side-effect count (${SUMMARY:-no SE_SUMMARY line}); this run shows nothing about side effects" >&2
+  exit 1
+fi
+if [ "$FOUND" -gt 0 ]; then
+  echo "SIDE_EFFECTS_FOUND=$FOUND - read the SIDE EFFECTS section before any commit run"
+  exit 4
+fi
+echo "DRY_RUN_OK no side effects"

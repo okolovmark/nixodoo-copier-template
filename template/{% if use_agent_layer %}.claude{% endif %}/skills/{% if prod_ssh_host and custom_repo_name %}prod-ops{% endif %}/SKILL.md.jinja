@@ -104,7 +104,9 @@ print("SCRIPT_DONE mode=%s" % MODE)
 
 The ladder, in order, no skipping:
 
-1. **dry on a worktree env's DB** (a prod-dump restore: `{{ odoo_cmd }} shell -c .worktrees/_env/<slug>/odoo.conf`) — logic and counts;
+1. **dry on a worktree env's DB** (a prod-dump restore: `{{ odoo_cmd }} shell -c .worktrees/_env/<slug>/odoo.conf`) — logic and counts{% if odoo_version == '16.0' %},
+   and once through `dry-run-side-effects.sh` for what else the run writes
+   (see "Side effects" below){% endif %};
 2. **dry on prod** — same counts expected; a surprise here is a data drift
    worth understanding before writing;
 3. **commit on prod** — after showing the dry output and getting an explicit
@@ -179,7 +181,37 @@ Idempotent: <yes/no, and what a re-run prints>.
 
 Print the planned changes (ids, old -> new, counts) in both modes, refuse with
 an itemised reason instead of writing half, and keep the script contract above.
+The report only reads: what the script prints comes from fields, never from a
+button or UI method (`action_*`, an onchange), because a module's override of
+it may write, and a commit then keeps a write that no output shows.
 
+{% if odoo_version == '16.0' %}
+**Side effects: the dry run that shows them.** Before the prod ladder, run the
+script once on a worktree env's copy through the side-effect runner:
+
+```bash
+bash "${{ project_dir_var }}/.claude/skills/prod-ops/scripts/dry-run-side-effects.sh" .worktrees/_env/<slug>/odoo.conf scripts/<TICKET>/<name>.py
+```
+
+The report opens with **SIDE EFFECTS**: every record changed by code the script
+called rather than by its own create/write/unlink, fields an override added to
+the script's own write included, one block per script line. Each record shows
+old -> new values and the function that wrote it; each block says what to do. A
+write made while the script was printing is marked `!!`. Recomputed fields,
+writes below the ORM, the script's own writes and every table written follow.
+Read every block before the commit run: an intended side effect goes into what
+the script prints as planned, any other means changing the call that makes it.
+
+Exit codes: 0 no side effects, 4 side effects found, 1 the script failed, missed
+`SCRIPT_DONE`, tried to commit, or the report failed or gave no count, 3 refused
+(the database is not a copy on the project's own cluster). It always rolls back
+and never runs against prod.
+
+Limits: it guards against mistakes, not against a script written to get past it.
+SQL writes inside a savepoint show only in the table counts, and the
+PostgreSQL sequences the run advanced do not roll back (it names them).
+
+{% endif %}
 **The run record: `RUNS.html` beside the scripts.** Every ticket folder whose
 scripts ran anywhere carries a `RUNS.html` answering *what has run, where, and
 what has not*. A folder of scripts without one cannot be acted on safely,
