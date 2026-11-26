@@ -1,5 +1,7 @@
 {% set hours = 'planned_hours' if odoo_version == '16.0' else 'allocated_hours' %}
 {% set deadline_type = 'date' if odoo_version == '16.0' else 'datetime' %}
+{% set ai_estimate = task_ai_driven and odoo_version == '16.0' %}
+{% set actual = ', "actual_hours": <focused hours>' if ai_estimate else '' %}
 ---
 name: odoo-tickets
 description: "How to create, read, update and close prod Odoo tasks over the Odoo connector (claude.ai, your own account): field conventions, internal notes, {% if task_ai_driven %}checklist, {% endif %}test cases, {% if task_ai_driven %}pull request records and the resolution a task closes with, {% endif %}attachments (incl. every prod shell / bulk-data script you run), stage moves, start-work flow, handover note, revising title and description before Delivered. Use when creating a ticket, handing a ticket to someone else, taking a ticket into work ('let's start {{ ticket_prefix }}-xxx'), posting progress notes, marking test cases, attaching a script you ran against prod, or closing tickets. Single source of truth for prod task plumbing — pipeline and the memory mirror reference it."
@@ -111,6 +113,10 @@ writes that follow need no second read.
 | `tag_ids` | **Always set.** `[[6, 0, [ids]]]` on create. ≥1 **area** tag + a **feature/topic** tag for any multi-ticket effort so siblings group. Reuse existing tags — never a near-duplicate. See [Tags](#tags-projecttags). |
 {% if task_ai_driven %}
 | `{{ hours }}` | The estimate, in hours: take it from the **`estimate` skill** and write it here. Above zero before the task enters a stage of the type and estimate rule (under this table). `tshirt_estimate` (Size) is never written: Odoo computes it from these hours (≤2h `xs`, ≤6h `s`, ≤12h `m`, ≤32h `l`, ≤60h `xl`, above that `xxl`; no hours → empty) and ignores a value sent for it. |
+{% if ai_estimate %}
+| `estimate_coefficient` | Written with `{{ hours }}`, in the same write, by the `estimate` skill: the written hours / the anchor price they came from (default 1.0; 1.0 for a number the user gives). A re-estimate writes both again. Not on the form. |
+| `actual_hours` | Never on create. The focused hours the task took to done, waits excluded (the `estimate` skill's Calibration loop), written in the closing write. Above zero before the task enters a stage of the Actual Hours rule (under this table); never negative. |
+{% endif %}
 | `priority_level` | `"4"` Highest … `"0"` Lowest; default `"1"`. |
 {% else %}
 | `{{ hours }}` | The estimate in hours (`estimate` skill). |
@@ -136,6 +142,14 @@ project lists under "Stages Requiring a Type and an Estimate" only with a `task_
 `{{ hours }}` above zero. It is checked on a create into such a stage, on a change of
 stage and on a change of project that moves the stage; a write that fails it is refused.
 A task in a stage outside that list may have neither.
+{% if ai_estimate %}
+
+**The Actual Hours rule.** In a project flagged AI-driven, a task enters a stage the
+project lists under "Stages Requiring Actual Hours" only with `actual_hours` above zero:
+timesheet hours do not count. Checked at the same moments as the type and estimate rule;
+a task already in the stage keeps every other edit, and clearing its `actual_hours` there
+is allowed.
+{% endif %}
 
 Tabs on the form map to: Description → `description`, Technical Solution →
 question rows `project.task.question` (`question_ids`) above `solution` (Html),
@@ -484,7 +498,8 @@ write `child_ids` from the parent):
 create(model="project.task", values={"name": "<slice>", "parent_id": <current_id>,
 {% if task_ai_driven %}
   "project_id": <proj>, "user_ids": [[6, 0, [<uid>]]], "task_type": "...",
-  "tag_ids": [[6, 0, [<ids>]]], "{{ hours }}": <n>,
+  "tag_ids": [[6, 0, [<ids>]]], "{{ hours }}": <n>,{% if ai_estimate %} "estimate_coefficient": <k>,{% endif %}
+
 {% else %}
   "project_id": <proj>, "user_ids": [[6, 0, [<uid>]]],
   "tag_ids": [[6, 0, [<ids>]]], "{{ hours }}": <n>,
@@ -641,7 +656,7 @@ Delivered write (revising earlier, once the real problem is clear, is fine):
 {% if task_ai_driven %}
      before it the task has a `task_type` and `{{ hours }}` above zero (`read` both),
      or this same write sets the missing one (`task_type`: the honest pick,
-     `{{ hours }}`: the `estimate` skill). A stage under
+     `{{ hours }}`: the `estimate` skill{% if ai_estimate %}, with its `estimate_coefficient`{% endif %}). A stage under
      [the type and estimate rule](#creating-a-task--field-conventions) refuses the
      move without both;
 {% endif %}
@@ -706,11 +721,17 @@ Delivered write (revising earlier, once the real problem is clear, is fine):
   to what the work found, then the closing write (`<quiet>` + `tracking_disable`).
   Before closing a task that ran prod shell / bulk-data scripts, confirm each is
   attached (see Attachments).
-  - **With a pull request** → `{"stage_id": <Delivered>}`. Its link went into `pr_uri`
+{% if ai_estimate %}
+  - **Actual Hours go in the closing write**, in every case below: the focused hours
+    the `estimate` skill's Calibration loop counts. A stage under
+    [the Actual Hours rule](#creating-a-task--field-conventions) refuses the move
+    without them.
+{% endif %}
+  - **With a pull request** → `{"stage_id": <Delivered>{{ actual }}}`. Its link went into `pr_uri`
     when the pull request was opened; a pull request missing from the task's
     `pull_request_ids` gets its link written first. The closing rule sets `resolution`
     to `code` there. A task whose pull request carries only the script of a data fix
-    closes with `{"stage_id": <Delivered>, "resolution": "data"}`: the pull request stays
+    closes with `{"stage_id": <Delivered>, "resolution": "data"{{ actual }}}`: the pull request stays
     on the task, and the resolution says what resolved it.
   - **A pull request of the task still `open`** → before the closing write, bring its
     record in line with the pull request (`gh pr view <url> --json state,mergedAt`), with
@@ -720,7 +741,7 @@ Delivered write (revising earlier, once the real problem is clear, is fine):
     The `deploy` skill has stamped the ones it landed; this is for a pull request merged
     outside a deploy, in this project's own repo or another one.
 {% endif %}
-  - **Without a pull request** → `{"stage_id": <Delivered>, "resolution": "<key>"}`, one
+  - **Without a pull request** → `{"stage_id": <Delivered>, "resolution": "<key>"{{ actual }}}`, one
     write. `data`: the fix was a data change (a script or records edited).
     `configuration`: settings changed, no code. `no_change`: nothing changed (answered,
     duplicate, not reproducible, declined).
@@ -730,7 +751,8 @@ Delivered write (revising earlier, once the real problem is clear, is fine):
   `Progress` note.
 - **Close as no longer relevant** → `{"stage_id": <Canceled>}` (`<quiet>` +
   `tracking_disable`). Where the project lists that stage under "Stages Requiring a
-  Resolution", the same write carries `"resolution": "no_change"`.
+  Resolution", the same write carries `"resolution": "no_change"`{% if ai_estimate %}; where it lists it
+  under "Stages Requiring Actual Hours", `"actual_hours": <focused hours so far>`{% endif %}.
 {% elif task_pr_uri %}
 - **Close as done** → [revise the title and description](#revise-title-and-description-before-delivered)
   to what the work found, then `write {"pr_uri": "<PR URL, or memory://journal/<date>#<ID>>"}`,

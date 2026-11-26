@@ -2,7 +2,8 @@
 {% set v16 = odoo_version == '16.0' %}
 {% set hours = 'planned_hours' if v16 else 'allocated_hours' %}
 {% set open_domain = '["is_closed", "=", false]' if v16 else '["state", "not in", ["1_done", "1_canceled"]]' %}
-{% set written = (['planned_date_start', 'planned_date_end'] if task_timeline else []) + ['date_deadline', hours] %}
+{% set ai_estimate = tickets_mcp == 'odoo' and task_ai_driven and v16 %}
+{% set written = (['planned_date_start', 'planned_date_end'] if task_timeline else []) + ['date_deadline', hours] + (['estimate_coefficient'] if ai_estimate else []) %}
 {% set written_fields = '`' ~ written | join('` / `') ~ '`' %}
 ---
 name: my-status
@@ -197,7 +198,13 @@ guard (step 8).
      or fill a missing one; never force an **earlier** deadline unless the user
      asks.
 {% endif %}
-{% if task_ai_driven %}
+{% if ai_estimate %}
+   - estimate: a task with no `{{ hours }}`, or one whose scope grew, is priced
+     by the `estimate` skill, which writes `{{ hours }}` and its
+     `estimate_coefficient` in the same write; the remaining-effort figure of
+     step 4 schedules the windows and is never written. `tshirt_estimate` (Size)
+     is never written: Odoo computes it from `{{ hours }}`.
+{% elif task_ai_driven %}
    - estimate: if a task has no `{{ hours }}`, set it to the computed
      estimate; if scope was added to an existing task, bump its estimate to
      match. `tshirt_estimate` (Size) is never written: Odoo computes it from

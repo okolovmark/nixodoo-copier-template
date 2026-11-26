@@ -56,7 +56,10 @@ The full inventory behind the summary in [the README](../README.md#what-it-gener
   colliding with it — merge, one named write script per prod step, T+0/T+60
   invariant checks, release the lock — with the announcement and ticket-note
   beats gated on your `status_mcp`/`tickets_mcp` answers) and **estimate** (effort estimates priced from a calibration table of
-  your own closed tickets, not from gut feel)
+  your own closed tickets, not from gut feel; with `task_ai_driven` on 16.0 the anchor price is multiplied by
+  the coefficient Odoo measures on similar closed tasks from their Actual Hours, and nothing is written back to
+  the table; an existing project's `calibration.md` is its own and keeps its rows on an update: drop them by hand
+  once their actuals are on the tasks)
 - **Claude Code mods** (function-hook plugins under `.claude/skills/<name>/`, loaded in a
   trusted workspace): **odoo-env-band**, a row above the prompt with the checkouts this
   session works in (env repo, addons, its worktree env: branch, changes, ahead/behind as `✓ ±N ↑N
