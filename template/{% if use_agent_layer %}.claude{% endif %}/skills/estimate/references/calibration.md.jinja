@@ -1,14 +1,30 @@
+{% set ai_estimate = tickets_mcp == 'odoo' and task_ai_driven and odoo_version == '16.0' -%}
 # Calibration table — estimate vs actual
 
 **This file is project-owned.** It ships as a seed prior and is meant to be
 overwritten by your own measurements; `copier update` will not touch it once it
 exists. `SKILL.md` holds the method, this file holds the numbers.
 
+{% if ai_estimate -%}
+Actual = focused time to done, review-wait excluded: the task's Actual Hours in
+Odoo. The anchors below are the price before the correction; Odoo measures the
+correction on the closed tasks (the Estimate Coefficient, `SKILL.md` step 4), so
+no task gets a row here.
+{%- else -%}
 Actual = focused time to done (journal sessions; fallback ticket-create →
 PR-created, both UTC), review-wait excluded. Ratio = estimate / actual.
+{%- endif %}
+
 
 ## Unit anchors
 
+{% if ai_estimate %}
+The ranges below are a **prior** carried over from the Odoo project this skill
+came from (Claude-assisted delivery, small custom-module changes on a live ERP),
+measured there as the spread of the actuals behind each one. They stay as they
+are: the Estimate Coefficient Odoo measures on this project's closed tasks is
+what fits them to *your* work.
+{% else %}
 Every range should be the measured spread of the actuals behind it, so a shape
 with one data point is marked — treat those as provisional, not as precision.
 
@@ -17,6 +33,7 @@ over from the Odoo project this skill came from (Claude-assisted delivery, small
 custom-module changes on a live ERP). They are a starting bet, not a
 measurement of *your* work: replace each one with your own spread, and its
 `Behind it` cell with your own ticket keys, as the table below fills up.
+{% endif %}
 
 | Shape | Focused hours | Behind it |
 |---|---|---|
@@ -32,6 +49,7 @@ measurement of *your* work: replace each one with your own spread, and its
 
 Fixed adder to measure for yourself and record here: the constant tail of every
 delivery — deploy, announcement, post-deploy invariant check.
+{% if not ai_estimate %}
 
 ## Rows
 
@@ -52,3 +70,4 @@ One row per missed estimate (ratio below 0.65 or above 1.35), same columns,
 Evidence starting with the done date; a hit goes on the Hits line instead. Keep
 newest at the bottom; prune to the ~20 most representative rows when the table
 outgrows one screen.
+{% endif %}
