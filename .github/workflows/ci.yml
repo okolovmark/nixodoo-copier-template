@@ -118,6 +118,7 @@ jobs:
               -d project_name=ci-dashboard -d odoo_version=20.0
               -d status_mcp=teams -d tickets_mcp=odoo
               -d task_ai_driven=true -d use_team_dashboard=true -d use_support_request=true
+          # task_key_route with use_kb: the pipeline-gates pane test checks a kb task gets no Odoo link
           - name: full-16
             args: >-
               -d project_name=ci-full -d odoo_version=16.0 -d use_queue_job=true
@@ -128,6 +129,7 @@ jobs:
               -d odoo_prod_url=https://odoo.example.com -d use_pipeline=true -d use_entire=true
               -d use_release_notes=true -d task_ai_driven=true -d project_member_access=true
               -d use_team_dashboard=true -d use_support_request=true -d use_timesheet_systray=true
+              -d task_keys=true -d task_key_route=true -d use_kb=true
               -d backup_s3_bucket=acme-backups -d editor=vscode
               -d prod_ssh_host=203.0.113.1 -d prod_web_url=https://odoo.example.com
               -d prod_local_ssh_host=10.0.0.5
@@ -136,6 +138,7 @@ jobs:
             args: >-
               -d project_name=ci-plain -d odoo_version=18.0
               -d use_claude_code=false
+          # no kb and no tracker: the pipeline-gates mod takes TASK-<n> keys alone (full-16 keeps kb)
           - name: repo-no-s3-17
             args: >-
               -d project_name=ci-repo -d odoo_version=17.0

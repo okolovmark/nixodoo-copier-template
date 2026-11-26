@@ -181,6 +181,10 @@ decides on, one by one, in Phase 7{% else %}that become standalone Backlog tasks
 
 No ticket tracker configured — record decisions and progress in the session
 report and the Phase-7 memory closure ({% if use_kb %}kb{% else %}journal + state.md{% endif %}).
+{% if use_kb %}
+A kb task the pipeline takes is keyed `KB-<its id>` (kb task 1874 is `KB-1874`){% if use_claude_code %}: the
+pipeline-gates mod takes that key besides `{{ ticket_prefix }}-<n>`{% endif %}.
+{% endif %}
 {% endif %}
 
 ---
