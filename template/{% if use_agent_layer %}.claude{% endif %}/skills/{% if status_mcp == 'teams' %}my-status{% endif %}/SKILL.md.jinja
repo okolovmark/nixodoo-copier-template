@@ -201,8 +201,9 @@ guard (step 8).
 {% if ai_estimate %}
    - estimate: a task with no `{{ hours }}`, or one whose scope grew, is priced
      by the `estimate` skill, which writes `{{ hours }}` and its
-     `estimate_coefficient` in the same write; the remaining-effort figure of
-     step 4 schedules the windows and is never written. `tshirt_estimate` (Size)
+     `estimate_coefficient` in the same write (a new `{{ hours }}` written alone
+     clears the coefficient); the remaining-effort figure of step 4 schedules the
+     windows and is never written. `tshirt_estimate` (Size)
      is never written: Odoo computes it from `{{ hours }}`.
 {% elif task_ai_driven %}
    - estimate: if a task has no `{{ hours }}`, set it to the computed
