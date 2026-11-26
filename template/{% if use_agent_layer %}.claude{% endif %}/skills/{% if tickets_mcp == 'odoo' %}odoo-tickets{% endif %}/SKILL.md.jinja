@@ -74,8 +74,8 @@ reference. Reference → record: drop the prefix, then `read [<id>]` fields
 
 `project.task` `brief` (`project_ai_driven` 16.0.2.14.0 or later) is the whole task as Markdown in
 one read, computed for you: `read` `project.task` `[<id>]` `["brief"]`. In order: the header ({% if task_keys %}key{% else %}`#<id>`{% endif %},
-title, project, stage and since when, type, estimate and size, priority, planned window, deadline,
-hours spent, assignees, UAT users where the field exists, author, Resolution, modules on a task of
+title, project, stage and since when, type, estimate{% if ai_estimate %}, size and Estimate Coefficient{% else %} and size{% endif %}, priority, planned window, deadline,
+{% if ai_estimate %}Actual Hours, timesheet hours{% else %}hours spent{% endif %}, assignees, UAT users where the field exists, author, Resolution, modules on a task of
 the project that develops this Odoo, tags, the form link), related tasks (parent,
 sub-tasks, blocked by, blocking), pull requests, description, question rows, solution, checklist with
 its progress, test cases with their results, sessions, the last 10 internal notes and the
@@ -114,7 +114,7 @@ writes that follow need no second read.
 {% if task_ai_driven %}
 | `{{ hours }}` | The estimate, in hours: take it from the **`estimate` skill** and write it here. Above zero before the task enters a stage of the type and estimate rule (under this table). `tshirt_estimate` (Size) is never written: Odoo computes it from these hours (≤2h `xs`, ≤6h `s`, ≤12h `m`, ≤32h `l`, ≤60h `xl`, above that `xxl`; no hours → empty) and ignores a value sent for it. |
 {% if ai_estimate %}
-| `estimate_coefficient` | Written with `{{ hours }}`, in the same write, by the `estimate` skill: the written hours / the anchor price they came from (default 1.0; 1.0 for a number the user gives). A re-estimate writes both again. Not on the form. |
+| `estimate_coefficient` | Written with `{{ hours }}`, in the same write, by the `estimate` skill: the written hours / the anchor price they came from. A write that changes `{{ hours }}` without it empties it (the same value keeps it): an estimate not priced from the anchors (a number someone gives, a hand edit of the Estimate) has none, and the coefficient's median skips the task. A re-estimate writes both again. Not on the form. |
 | `actual_hours` | Never on create. The focused hours the task took to done, waits excluded (the `estimate` skill's Calibration loop), written in the closing write. Above zero before the task enters a stage of the Actual Hours rule (under this table); never negative. |
 {% endif %}
 | `priority_level` | `"4"` Highest … `"0"` Lowest; default `"1"`. |

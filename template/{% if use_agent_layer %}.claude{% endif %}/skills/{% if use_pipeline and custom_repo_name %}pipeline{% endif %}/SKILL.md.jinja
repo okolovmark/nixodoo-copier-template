@@ -1367,7 +1367,8 @@ ported to yet) skips this step.
   draft), then `write {"stage_id": <Delivered>{{ actual }}}`.{% if ai_estimate %} `actual_hours` is the run's
   focused hours, mother and child sessions together, overlaps counted once, waits
   excluded, split over the block's tasks by their anchor prices (`{{ hours }}` /
-  `estimate_coefficient`; `estimate` → Calibration loop).{% endif %} No `pr_uri` write here: Phase 6
+  `estimate_coefficient`, or `{{ hours }}` where the coefficient is empty; `estimate` →
+  Calibration loop).{% endif %} No `pr_uri` write here: Phase 6
   recorded the pull request on the task, and the closing rule sets Resolution `code`
   for a task that has one. A task of the block that ends without a pull request closes
   with its `resolution` (`odoo-tickets` → Lifecycle){% elif task_pr_uri %}
@@ -1427,7 +1428,8 @@ Read `$STATE`, find the line with `[WIP_ID]` created in Phase 0 (it carries ` [o
   draft), then `write {"stage_id": <Delivered>{{ actual }}}`.{% if ai_estimate %} `actual_hours` is the run's
   focused hours, mother and child sessions together, overlaps counted once, waits
   excluded, split over the block's tasks by their anchor prices (`{{ hours }}` /
-  `estimate_coefficient`; `estimate` → Calibration loop).{% endif %} No `pr_uri` write here: Phase 6
+  `estimate_coefficient`, or `{{ hours }}` where the coefficient is empty; `estimate` →
+  Calibration loop).{% endif %} No `pr_uri` write here: Phase 6
   recorded the pull request on the task, and the closing rule sets Resolution `code`
   for a task that has one. A task of the block that ends without a pull request closes
   with its `resolution` (`odoo-tickets` → Lifecycle)

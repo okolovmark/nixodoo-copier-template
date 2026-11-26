@@ -61,7 +61,8 @@ several deliverables, not a signal that this one is hard.
    the people who will do it (a list of ids; a task without an assignee yet:
    yours). It returns `coefficient`, `count`, `level` and `task_keys`: the median
    of Actual Hours × Estimate Coefficient / estimate over their 30 most recently closed
-   tasks with both hours above zero, taken from the first level with at least 5
+   tasks with both hours and a coefficient, Resolution No change left out, taken
+   from the first level with at least 5
    of them: (1) every tag of the task and its type, (2) at least one of its tags
    and its type, (3) its type, (4) all. `level` `false`: fewer than 5 in all, coefficient
    1.0. The estimate = the reconciled anchor price × `coefficient`.
@@ -100,8 +101,9 @@ judgement call.
 - `estimate_coefficient` = the written hours / the reconciled anchor price, in
   the same write: the coefficient applied after rounding, so a rounded estimate
   is measured against its own price. A re-estimate (scope grew, a rebalance)
-  prices the whole task from the anchors again and writes both with a fresh call;
-  an estimate made without the anchors (a number the user gives) writes 1.0.
+  prices the whole task from the anchors again and writes both with a fresh call.
+  An estimate not priced from the anchors (a number someone gives) writes the hours
+  alone: Odoo then leaves the coefficient empty, and the median skips the task.
 {% endif %}
 {% if task_ai_driven %}
 - `tshirt_estimate` (Size) is not written: Odoo computes it from that number
@@ -126,11 +128,13 @@ On done: Actual Hours = focused hours from taking the task into work to done:
 journal session time on the task, sessions that overlap counted once, waits on
 other people excluded (fallback ticket create → PR created, review-wait
 excluded). A run that closes several tasks splits its hours over them by their
-anchor prices (estimate / Estimate Coefficient). The closing write carries it with the move:
+anchor prices (estimate / Estimate Coefficient; the estimate itself where the
+coefficient is empty). The closing write carries it with the move:
 `{"stage_id": <closing stage>, "actual_hours": <hours>}`. A project that lists the
 stage under "Stages Requiring Actual Hours" refuses the move without it.
 
-The next `get_estimate_coefficient` counts the task: it enters the median as
+The next `get_estimate_coefficient` counts the task when it has a coefficient: it
+enters the median as
 Actual Hours × Estimate Coefficient / estimate, the real work over the anchor
 price before the correction, so an estimate the coefficient made right does not
 pull the coefficient back to 1. The anchors stay frozen: the drift shows in the
