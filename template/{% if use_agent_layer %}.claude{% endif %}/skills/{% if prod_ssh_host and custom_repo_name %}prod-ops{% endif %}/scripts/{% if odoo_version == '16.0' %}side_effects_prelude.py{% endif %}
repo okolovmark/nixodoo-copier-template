@@ -14,12 +14,14 @@ import traceback
 
 import psycopg2 as _se_pg
 import psycopg2.extensions as _se_pgext
+from odoo import fields as _se_fields
 from odoo import models as _se_models
 from odoo import sql_db as _se_sql_db
 
 _SE_SCRIPT = os.path.realpath(os.environ["SE_SCRIPT"])
 _SE_SHOW = int(os.environ.get("SE_SHOW") or 40)
 _SE_OPS = ("create", "write", "unlink")
+_SE_SETTERS = ("__set__", "__setitem__", "update")
 _SE_REPORT_WORDS = ("describe", "report", "show", "print", "summar", "dump")
 _SE_BOOKKEEPING = {
     "mail.message", "mail.tracking.value", "mail.followers", "mail.notification",
@@ -60,18 +62,41 @@ def _se_call(records, payload, code=None):
             "keys": frozenset(k for v in vals for k in v), "left": len(vals)}
 
 
+def _se_setter(frame):
+    local, name = frame.f_locals, frame.f_code.co_name
+    if name == "__set__":
+        field = local.get("self")
+        if not isinstance(field, _se_fields.Field):
+            return None
+        call = _se_call(local.get("records"), {field.name: None}, frame.f_code)
+    elif name == "__setitem__":
+        call = _se_call(local.get("self"), {local.get("key"): None}, frame.f_code)
+    else:
+        call = _se_call(local.get("self"), local.get("values"), frame.f_code)
+    if call:
+        call["left"] = 0
+    return call
+
+
 def _se_calltrace(frame, event, arg):
-    if event == "call" and frame.f_code.co_name in _SE_OPS:
-        caller = frame.f_back
-        if caller is not None and caller.f_code.co_filename == _SE_SCRIPT:
-            code = frame.f_code
-            names = code.co_varnames[:code.co_argcount]
-            local = frame.f_locals
-            payload = local.get(names[1]) if len(names) > 1 else None
-            if payload is None and code.co_flags & inspect.CO_VARARGS:
-                extra = local.get(code.co_varnames[code.co_argcount + code.co_kwonlyargcount]) or ()
-                payload = extra[0] if extra else None
-            _se_calls[id(frame)] = _se_call(local.get(names[0]) if names else None, payload, code)
+    if event != "call":
+        return None
+    code = frame.f_code
+    if code.co_name not in _SE_OPS and code.co_name not in _SE_SETTERS:
+        return None
+    caller = frame.f_back
+    if caller is None or caller.f_code.co_filename != _SE_SCRIPT:
+        return None
+    if code.co_name in _SE_SETTERS:
+        _se_calls[id(frame)] = _se_setter(frame)
+        return None
+    names = code.co_varnames[:code.co_argcount]
+    local = frame.f_locals
+    payload = local.get(names[1]) if len(names) > 1 else None
+    if payload is None and code.co_flags & inspect.CO_VARARGS:
+        extra = local.get(code.co_varnames[code.co_argcount + code.co_kwonlyargcount]) or ()
+        payload = extra[0] if extra else None
+    _se_calls[id(frame)] = _se_call(local.get(names[0]) if names else None, payload, code)
     return None
 
 
