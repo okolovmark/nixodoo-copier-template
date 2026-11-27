@@ -1210,7 +1210,7 @@ def the_browser_origin_shim_is_generated_for_odoo_16_alone():
     for version in ("16.0", "17.0", "18.0", "19.0", "20.0"):
         text = render_script(TEST_SRC, odoo_version=version, odoo_major=version.removesuffix(".0"))
         is_16 = version == "16.0"
-        assert ("wt_test_browser_origin" in text, "test-addons" in text, "TEST_FILE" in text) == (is_16,) * 3, version
+        assert ("wt_test_browser_origin" in text, "test-addons" in text) == (is_16,) * 2, version
         # copier skips a path segment that renders empty
         assert jinja2.Template(SHIM_ROOT.name).render(odoo_version=version) == ("test-addons" if is_16 else ""), version
 
@@ -1253,6 +1253,68 @@ print(json.dumps([ChromeBrowser()._websocket_request(m, params=p, timeout=3) for
         ["Page.navigate", {"url": "127.0.0.1"}, 3],
         {"origin": "127.0.0.1", "storageTypes": "local_storage, session_storage"},
     ], proc.stdout
+
+
+LAUNCHER_SRC = pathlib.Path("template/nix/scripts/odoo.sh.jinja")
+
+
+def launch(dev_flags, skip=None, args=("-c", "odoo.conf")):
+    """Run the rendered Odoo launcher with ODOO_PYTHON stubbed; returns the argv Odoo got."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        launcher, python = root / "odoo.sh", root / "python"
+        launcher.write_text(render_script(LAUNCHER_SRC))
+        python.write_text('#!/usr/bin/env bash\nprintf "%s\\n" "$@"\n')
+        python.chmod(0o755)
+        env = {k: v for k, v in os.environ.items() if k != "ODOO_DEV_SKIP"}
+        env |= {"ODOO_PYTHON": str(python), "ODOO_DEV_FLAGS": dev_flags, "WT_TEST_PROJECT_DIR": str(root)}
+        if skip is not None:
+            env["ODOO_DEV_SKIP"] = skip
+        proc = subprocess.run(["bash", str(launcher), *args], capture_output=True, text=True, env=env)
+        assert proc.returncode == 0, proc.stderr
+        argv = proc.stdout.splitlines()
+        assert argv[0] == f"{root}/src/odoo/odoo-bin", argv
+        return argv[1:]
+
+
+@case
+def the_launcher_leaves_the_skipped_dev_modes_out_and_keeps_the_rest():
+    dev = "--dev=reload,qweb,werkzeug,xml"
+    for skip, flags in ((None, [dev]), ("", [dev]), ("xml", ["--dev=reload,qweb,werkzeug"]),
+                        ("reload,xml", ["--dev=qweb,werkzeug"]), ("qweb", ["--dev=reload,werkzeug,xml"]),
+                        ("xm", [dev]), ("xml,xml", ["--dev=reload,qweb,werkzeug"]),
+                        ("reload,qweb,werkzeug,xml", [])):
+        assert launch(dev, skip) == ["-c", "odoo.conf", *flags], (skip, launch(dev, skip))
+    # the production launcher has no dev flags to skip from
+    assert launch("", "xml") == ["-c", "odoo.conf"]
+    assert launch(dev, "xml", args=("shell", "-d", "db")) == ["shell", "-d", "db", "--dev=reload,qweb,werkzeug"]
+
+
+def dev_skip_of_run(args, major="16", skip=None):
+    """The ODOO_DEV_SKIP the odoo stub saw for a wt-test.sh run with `args` (None: unset)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        seen = root / "dev_skip"
+        body = (f'printf "%s" "${{ODOO_DEV_SKIP-<unset>}}" > {seen}\n'
+                f'printf "%s\\n" {shlex.quote(RESULT.format(0, 1))} >&2\n')
+        cmd, env = wt_test_project(root, body, major=major)
+        env.pop("ODOO_DEV_SKIP", None)
+        if skip is not None:
+            env["ODOO_DEV_SKIP"] = skip
+        proc = subprocess.run([*cmd, *args], capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL)
+        assert proc.returncode == 0, proc.stdout + proc.stderr
+        value = seen.read_text()
+        return None if value == "<unset>" else value
+
+
+@case
+def a_test_run_skips_the_xml_dev_mode_and_any_other_run_keeps_it():
+    for major in ("16", "19"):
+        assert dev_skip_of_run(["--test-tags", "/acme_mod"], major) == "xml", major
+        assert dev_skip_of_run(["-u", "acme_mod", "--test-enable"], major) == "xml", major
+        assert dev_skip_of_run(["--test-file", "acme_mod/tests/test_x.py"], major) == "xml", major
+        assert dev_skip_of_run(["-u", "all"], major) is None, major
+    assert dev_skip_of_run(["--test-tags", "/acme_mod"], skip="reload") == "reload,xml"
 
 
 @case
