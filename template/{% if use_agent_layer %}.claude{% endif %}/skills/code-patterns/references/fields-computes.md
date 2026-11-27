@@ -18,6 +18,7 @@ Facts verified on Odoo 16 source; re-verify on later majors where marked.
 - A LIST `_inherit` needs an explicit `_name`
 - Multi-company scoping: a different mechanism per field kind
 - An untouched Integer column is NULL, so `SET col = col + n` counts nothing
+- A stat button count computed under `sudo()` shows the button to readers who cannot open the records
 
 ## Non-stored compute without `@api.depends` is frozen inside the form
 
@@ -369,3 +370,20 @@ A `unique` constraint over the counter's key needs the same care: two writers
 both finding no row and both inserting is normal, and an `IntegrityError` is not
 retried by most job runners, so use `INSERT ... ON CONFLICT ... DO UPDATE` rather
 than a read-then-create.
+
+## A stat button count computed under `sudo()` shows the button to readers who cannot open the records
+
+The count decides whether the button shows (`invisible` on `count = 0`); the
+action it opens searches as the reader. A count under `sudo()` also counts the
+records the reader's ACL or record rules hide, the multi-company rule over the
+companies selected in the switcher included: the button reads `3` and opens an
+empty list, or raises `AccessError` without a read ACL. Count as the reader,
+after the ACL check:
+
+```python
+def _compute_order_count(self):
+    Order = self.env["sale.order"]
+    readable = Order.check_access_rights("read", raise_exception=False)
+    for partner in self:
+        partner.order_count = Order.search_count([("partner_id", "=", partner.id)]) if readable else 0
+```

@@ -309,6 +309,7 @@ read it before debugging a failing, flaky or suspiciously green test:
 - Restored-prod-dump traps: currency-factor diffs, portal 404 without `authenticate(None, None)`, lagging sequences, reused live records, fiscal-year locks
 - Believing a run: test COUNT ≠ 0, grep for `skipped`, `Address already in use`
 - Browser tests: silent skip without websocket-client, boolean `_wait_ready`, `--test-tags /module:Class` selector
+- `get_view()` removes group-gated nodes for the superuser too: read `_get_combined_arch()` or the arch as a user holding the group
 
 ## Running Tests
 
