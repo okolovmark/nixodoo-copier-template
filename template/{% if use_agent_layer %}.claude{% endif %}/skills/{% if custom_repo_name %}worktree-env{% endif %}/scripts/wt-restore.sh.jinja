@@ -48,9 +48,11 @@ take_start_lock "$SLUG" "restoring $DB" || LOCK_RC=$?
 
 # Reuse only a COMPLETE restore: database.is_neutralized is missing on a DB
 # left by an interrupted run of the pre-staging script (the old bare-existence
-# check kept reusing such broken DBs).
+# check kept reusing such broken DBs). Compared case-insensitively: Odoo 16's
+# neutralize.sql stores 'true', Odoo 20's 'True'.
 if db_exists "$DB"; then
-    if [ "$($PSQL -d "$DB" -tAc "SELECT value FROM ir_config_parameter WHERE key='database.is_neutralized'" 2>/dev/null)" = "true" ]; then
+    NEUTRALIZED="$($PSQL -d "$DB" -tAc "SELECT value FROM ir_config_parameter WHERE key='database.is_neutralized'" 2>/dev/null || true)"
+    if [ "${NEUTRALIZED,,}" = "true" ]; then
         echo "STATUS: db-reused ($DB)"; exit 0
     fi
     echo "STATUS: db-incomplete ($DB) — previous restore never finished; recreating …"

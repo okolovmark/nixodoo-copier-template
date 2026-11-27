@@ -765,7 +765,7 @@ def a_caller_holding_the_env_lock_does_not_deadlock_wt_stop_or_the_restore():
         assert run.returncode == 0 and "running under its lock" in out and "STATUS: removed" in out, out
     with tempfile.TemporaryDirectory() as tmp:
         root = pathlib.Path(tmp)
-        cmd, env, _calls = wt_restore_project(root, exists="1", neutralized=False)
+        cmd, env, _calls = wt_restore_project(root, exists="1", neutralized="")
         run = start_bg(["flock", str(root / ".worktrees/_env/x/test.lock"), *cmd], env, root / "out")
         finish_bg([run], timeout=20)
         out = (root / "out").read_text()
@@ -1892,13 +1892,14 @@ sys.exit(int(sys.argv[2]))
 
 
 def wt_restore_project(root, dump=DUMP, installed=INSTALLED, installed_after=None, update_rc=0, shell_rc=0,
-                       exists="", neutralized=True, tz="UTC", filestore=(), update_log_dir=False, versions=None,
+                       exists="", neutralized="True", tz="UTC", filestore=(), update_log_dir=False, versions=None,
                        **history):
     """Lay out a project at `root` with the rendered wt-restore.sh for slug `x` on an acme_history worktree.
 
     psql, pg_restore and the profile's odoo are stubs logging their argv, in call
     order, to one file; an odoo on PATH logs as PATH-odoo and fails. psql finds
-    wt_x when `exists` is "1" (neutralized unless `neutralized` is false) and
+    wt_x when `exists` is "1", its database.is_neutralized holding `neutralized`
+    (Odoo 20's 'True' by default, '' for none, None: the query fails), and
     answers the installed-module query with `installed`, after a `-u` with
     `installed_after` when given; odoo on a `-u` files an attachment in the
     staging DB's filestore and exits `update_rc`, and `odoo shell` runs its stdin
@@ -1930,9 +1931,11 @@ def wt_restore_project(root, dump=DUMP, installed=INSTALLED, installed_after=Non
             (root / FARM / module / "__manifest__.py").write_text(f"{{'name': 'M', 'version': {on_disk!r}}}\n")
     attachment, updated = root / FILESTORE / "wt_x_restoring/ab/ab12", root / "updated"
     after = shlex.join(installed if installed_after is None else installed_after)
+    flag_answer = ('echo "ERROR:  relation \\"ir_config_parameter\\" does not exist" >&2; exit 1'
+                   if neutralized is None else f"echo {shlex.quote(neutralized)}")
     stubs = {
         bin_dir / "psql": f'case "$*" in\n  *pg_database*) printf "%s" {shlex.quote(exists)} ;;\n'
-                          f'  *is_neutralized*) echo {"true" if neutralized else ""} ;;\n'
+                          f'  *is_neutralized*) {flag_answer} ;;\n'
                           '  *"FROM res_users"*) echo 1 ;;\n'
                           '  *"FROM ir_attachment"*) echo 7 ;;\n'
                           f'  *latest_version*) printf "%s\\n" {shlex.join(version_rows)} | sed "/^$/d" ;;\n'
@@ -2158,6 +2161,20 @@ def a_reused_db_is_not_updated():
 
 
 @case
+def a_db_neutralized_by_odoo_16_or_20_is_reused_on_a_rerun():
+    for value in ("true", "True"):
+        rc, out, calls, _files = run_wt_restore(exists="1", neutralized=value)
+        assert rc == 0 and "db-reused (wt_x)" in out, (value, rc, out)
+        assert call_index(calls, "pg_restore") is None and not any("DROP DATABASE" in line for line in calls), (
+            value, calls)
+    # anything else, a failed query of the flag included, is an unfinished restore, made again
+    for value in ("", "False", None):
+        rc, out, calls, _files = run_wt_restore(exists="1", neutralized=value)
+        assert rc == 0 and "db-incomplete (wt_x)" in out and call_index(calls, "pg_restore") is not None, (
+            value, rc, out)
+
+
+@case
 def a_module_the_update_installs_gets_its_neutralization_before_the_rename():
     # `odoo neutralize` ran before the update, so a dependency the update installed missed it
     rc, out, calls, _files = run_wt_restore(installed_after=(*INSTALLED, "acme_dep"))
@@ -2192,7 +2209,7 @@ def a_failed_neutralization_of_new_modules_drops_the_copy():
 def the_restore_waits_for_a_test_run_before_replacing_the_db():
     with tempfile.TemporaryDirectory() as tmp:
         root = pathlib.Path(tmp)
-        cmd, env, calls = wt_restore_project(root, exists="1", neutralized=False)
+        cmd, env, calls = wt_restore_project(root, exists="1", neutralized="")
         held, release = root / "held", root / "release"
         procs = [hold_lock(root / ".worktrees/_env/x/test.lock", env, root / "holder.out", held, release)]
         try:
@@ -2218,7 +2235,7 @@ def a_restore_whose_env_is_stopped_during_its_wait_drops_the_copy_and_says_why()
         with tempfile.TemporaryDirectory() as tmp:
             root = pathlib.Path(tmp)
             env_dir = root / ".worktrees/_env/x"
-            cmd, env, calls = wt_restore_project(root, exists="1", neutralized=False)
+            cmd, env, calls = wt_restore_project(root, exists="1", neutralized="")
             held, release = root / "held", root / "release"
             procs = [hold_lock(env_dir / "test.lock", env, root / "holder.out", held, release,
                                then.format(env=shlex.quote(str(env_dir))))]
@@ -2241,7 +2258,7 @@ def a_restore_whose_env_is_stopped_during_its_wait_drops_the_copy_and_says_why()
 def a_restore_that_cannot_take_the_env_lock_drops_the_copy_and_says_why():
     with tempfile.TemporaryDirectory() as tmp:
         root = pathlib.Path(tmp)
-        cmd, env, calls = wt_restore_project(root, exists="1", neutralized=False)
+        cmd, env, calls = wt_restore_project(root, exists="1", neutralized="")
         (root / ".worktrees/_env/x/test.lock").mkdir()
         run = start_bg(cmd, env, root / "out")
         finish_bg([run], timeout=20)
