@@ -43,7 +43,10 @@ const PR_URL = /https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/
 // a standard (ISO-9001) or a project the prefixes do not name stays out of the block; without a
 // prefix, any word-dash-number. Task keys number a project's tasks from an unpadded sequence, so a
 // key's number never starts with 0: product codes are zero-padded (RAW-000123, ASM-004567). A
-// project that keeps kb takes a kb task as KB-<its id>, unless KB is one of its ticket prefixes.
+// project that keeps kb takes a kb task as KB-<its id>, unless KB is one of its ticket prefixes. A key
+// followed by a file extension or a path separator names a task's files (scripts/KB-1890/check.py,
+// KB-1890.md), not a task, so it is none; a separator before another key or number (KB-1/KB-2,
+// KB-1/2) still parts two keys, and a key that ends a link (/tasks/KB-1) is one.
 const ARE_KB_KEYS_KB_TASKS = KB_TASKS && !TICKET_PREFIXES.includes('KB')
 export const TASK_PREFIXES: readonly string[] =
   TICKET_PREFIXES.length > 0 && ARE_KB_KEYS_KB_TASKS ? [...TICKET_PREFIXES, 'KB'] : TICKET_PREFIXES
@@ -51,7 +54,9 @@ const KEY_PREFIX =
   TASK_PREFIXES.length === 0
     ? '[A-Z][A-Z0-9]{1,9}'
     : `(?:${TASK_PREFIXES.map(prefix => prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`
-const TASK_KEY = new RegExp(`\\b${KEY_PREFIX}-[1-9]\\d*\\b`)
+const TASK_KEY = new RegExp(
+  `\\b${KEY_PREFIX}-[1-9]\\d*\\b(?!\\.[A-Za-z]|[/\\\\](?!(?:${KEY_PREFIX}-)?[1-9]\\d*\\b))`,
+)
 
 // a kb task has no record in Odoo: its key opens nothing at TASK_URL_BASE
 export function isKbKey(key: string): boolean {

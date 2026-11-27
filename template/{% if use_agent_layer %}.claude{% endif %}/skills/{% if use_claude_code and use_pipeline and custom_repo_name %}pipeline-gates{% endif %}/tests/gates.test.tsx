@@ -170,6 +170,20 @@ describe('rules', () => {
     expect(taskKeysIn(prose)).toEqual(HAS_PREFIX ? [`${K}-1909`] : [`${K}-1909`, 'JAN-2026', 'ISO-9001', 'BP-33'])
   })
 
+  test("a key in a path or a file name names a task's files, not a task", () => {
+    const prose = `${K}-12 FIXES SCRIPTS/${K}-90/CHECK.PY, ${K}-91.MD, ${K}-94/X AND C:\\${K}-92\\X; SEE ${K}-13.`
+    expect(taskKeysIn(prose)).toEqual([`${K}-12`, `${K}-13`])
+    expect(taskKeyIn(`SCRIPTS/${K}-90/CHECK.PY`)).toBe('')
+    // a link that ends in a key, and keys parted by a slash, stay keys
+    expect(taskKeysIn(`HTTPS://ODOO.EXAMPLE.COM/TASKS/${K}-21 ${K}-1844/${K}-1845 ${K}-30/31 ${K}-12.1`)).toEqual([
+      `${K}-21`,
+      `${K}-1844`,
+      `${K}-1845`,
+      `${K}-30`,
+      `${K}-12`,
+    ])
+  })
+
   test('a task of each project the prefixes name is a task key', () => {
     const other = TICKET_PREFIXES[1]
     if (other === undefined) return
@@ -847,4 +861,16 @@ test("without a QC pass or a PR for its tasks anywhere, the mother's Phase 7 wai
   const refused = String((await $.tool.call({ tool: 'mcp__pipeline-gates__phase', phase: 7 })).result)
   expect(refused).toContain(`Phase 7 is refused until the QC gate passes in this run, or a run for ${K}-9 in another session recorded a QC pass or a PR`)
   expect(String((await $.tool.call({ tool: 'mcp__pipeline-gates__gates' })).result)).toContain('phase 1 Task reading')
+})
+
+test("a task named in a path of the pipeline's args stays out of its block and its Phase 7", async ($, on) => {
+  engine(on, [], undefined, { 'run:sid-other': childRun(`${K}-8`, PR_URL) })
+  await $.session.start({ cwd: '/p', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'Skill', skill: 'pipeline', args: `${K}-9 the check of scripts/${K}-8/check.py` })
+  await $.command.run({ command: 'pipeline-gate', args: 'open status teams is down', ...TYPED })
+  await $.command.run({ command: 'pipeline-gate', args: 'open grill agreed in chat', ...TYPED })
+  await $.tool.call({ tool: 'mcp__pipeline-gates__phase', phase: 1, task: `${K}-9` })
+  const refused = String((await $.tool.call({ tool: 'mcp__pipeline-gates__phase', phase: 7 })).result)
+  // the refusal names the block's keys: K-9 alone
+  expect(refused).toContain(`Phase 7 is refused until the QC gate passes in this run, or a run for ${K}-9 in another session`)
 })
