@@ -1,0 +1,15 @@
+-- The project's own dev fixups for a freshly restored prod copy: worktree-env's
+-- wt-restore.sh and `nix run .#download-backup` run this file right after
+-- nix/scripts/dev-fixup.sql. Project-owned: copier writes it once and never updates
+-- it. For what this project's modules need on a copy and must not get from their
+-- own data/neutralize.sql, e.g. prod configuration a test run on the copy pays for.
+-- Runs WITHOUT ON_ERROR_STOP. Guard each statement on its table, so a dump without
+-- the module restores without an error:
+--
+-- DO $$
+-- BEGIN
+--     IF to_regclass('public.some_table') IS NOT NULL THEN
+--         UPDATE some_table SET active = false WHERE active;
+--     END IF;
+-- END
+-- $$;

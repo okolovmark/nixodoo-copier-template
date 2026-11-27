@@ -8,7 +8,8 @@
 # both steps run under a staging name; the database takes its real name only
 # once neutralized.
 # Requires on PATH: aws, psql, pg_ctl, pg_restore, odoo; DEV_FIXUP_SQL - path
-# to dev-fixup.sql (all injected by flake.nix).
+# to dev-fixup.sql; DEV_FIXUP_PROJECT_SQL - path to the project's
+# dev-fixup-project.sql, empty when it has none (all injected by flake.nix).
 set -e
 
 # Where the nightly dump lands; S3_BUCKET in the environment reads another one.
@@ -181,6 +182,9 @@ if [ -n "$DUMP" ]; then
     fi
     echo "Applying dev fixups..."
     env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d "$STAGING_DB" -f "$DEV_FIXUP_SQL" || true
+    if [ -n "${DEV_FIXUP_PROJECT_SQL:-}" ]; then
+        env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d "$STAGING_DB" -f "$DEV_FIXUP_PROJECT_SQL" || true
+    fi
     echo "Replacing '$PGDATABASE' with '$STAGING_DB'..."
     env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d postgres -c "DROP DATABASE IF EXISTS $PGDATABASE WITH (FORCE);"
     env PGUSER="$PGUSER" PGHOST="$PG_CONN_HOST" PGPORT="$PGPORT" psql -d postgres -c "ALTER DATABASE $STAGING_DB RENAME TO $PGDATABASE;"

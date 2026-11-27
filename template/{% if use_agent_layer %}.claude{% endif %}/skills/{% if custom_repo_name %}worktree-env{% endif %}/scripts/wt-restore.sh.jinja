@@ -5,7 +5,8 @@
 # run Odoo's native neutralization (`odoo neutralize` — every installed module's
 # data/neutralize.sql: mail blocked, crons off, O2O backend deactivated, banner
 # on), then the shared $PROJ/nix/scripts/dev-fixup.sql (admin/admin, requeue
-# stuck queue jobs, bump the document sequences past the dump's imported names).
+# stuck queue jobs, bump the document sequences past the dump's imported names) and
+# the project's own nix/scripts/dev-fixup-project.sql when it has one.
 # Between the two, the schema catches up with the worktree's code: one `odoo -u`
 # of the installed custom modules whose files differ between the worktree and the
 # last origin/{{ odoo_version }} commit before the dump's day, read from its name
@@ -242,8 +243,11 @@ else
     fi
 fi
 
-# Dev fixups (psql continues past any table this dump lacks).
+# Dev fixups, the template's then the project's (psql continues past any table this dump lacks).
 $PSQL -d "$STAGING_DB" -f "$PROJ/nix/scripts/dev-fixup.sql" || true
+if [ -f "$PROJ/nix/scripts/dev-fixup-project.sql" ]; then
+    $PSQL -d "$STAGING_DB" -f "$PROJ/nix/scripts/dev-fixup-project.sql" || true
+fi
 
 # drop_db ends every connection to an existing $DB (db-incomplete): a wt-test run on it is
 # waited for, not killed. Taken before the filestore move, which a running test writes beside.

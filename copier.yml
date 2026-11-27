@@ -20,6 +20,7 @@ _skip_if_exists:
   - .claude/skills/estimate/references/calibration.md
   - .claude/skills/deploy-checks/tests/test_invariant_local.py
   - .kb/tags.toml
+  - nix/scripts/dev-fixup-project.sql
 
 _tasks:
   - "[ -d .git ] || git init -q"

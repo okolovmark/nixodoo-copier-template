@@ -2,6 +2,18 @@
 # Odoo launcher (supports subcommands: server, shell, scaffold, etc.).
 # Requires: ODOO_PYTHON - python of the app env; ODOO_DEV_FLAGS - optional
 # --dev flags (both injected by flake.nix); runtime tools are already on PATH.
+# ODOO_DEV_SKIP - optional, comma-separated --dev modes this run leaves out of
+# ODOO_DEV_FLAGS (a test run: xml). The flags go last: a --dev of the caller's own loses.
 if [ -z "${{ project_dir_var }}" ]; then {{ project_dir_var }}="$(pwd)"; fi
+dev_flags="$ODOO_DEV_FLAGS"
+if [ -n "${ODOO_DEV_SKIP:-}" ] && [ -n "$dev_flags" ]; then
+    modes=",${dev_flags#--dev=},"
+    for mode in ${ODOO_DEV_SKIP//,/ }; do
+        modes="${modes//,$mode,/,}"
+    done
+    modes="${modes#,}"
+    modes="${modes%,}"
+    dev_flags="${modes:+--dev=$modes}"
+fi
 # shellcheck disable=SC2086
-exec "$ODOO_PYTHON" "${{ project_dir_var }}/src/odoo/odoo-bin" "$@" $ODOO_DEV_FLAGS
+exec "$ODOO_PYTHON" "${{ project_dir_var }}/src/odoo/odoo-bin" "$@" $dev_flags

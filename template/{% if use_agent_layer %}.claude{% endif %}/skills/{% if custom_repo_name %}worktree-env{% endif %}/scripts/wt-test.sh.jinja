@@ -88,14 +88,9 @@ tests = bool(getattr(opts, "test_enable", None)) or getattr(opts, "test_tags", N
 print("UPDATE=" + shlex.quote(opts.update or ""))
 print("INIT=" + shlex.quote(getattr(opts, "init", None) or ""))
 print("TESTS=" + str(int(tests)))
-{% if odoo_version == '16.0' %}
 print("TEST_FILE=" + str(int(bool(getattr(opts, "test_file", None)))))
-{% endif %}
 '
-UPDATE="" INIT="" TESTS=0 SCAN_ERROR=""
-{% if odoo_version == '16.0' %}
-TEST_FILE=0
-{% endif %}
+UPDATE="" INIT="" TESTS=0 TEST_FILE=0 SCAN_ERROR=""
 HELP="$("$ODOO_BIN" server --help 2>/dev/null)" || HELP=""
 SCANNED="$(python3 -c "$SCAN" "$HELP" "$@")" || SCANNED="SCAN_ERROR='the scan itself failed'"
 eval "$SCANNED"
@@ -149,7 +144,8 @@ ODOO=("$ODOO_BIN" -c "$CONF" --workers 0 --stop-after-init --logfile=
 {% if odoo_version == '16.0' %}
 
 # Odoo 16's test browser clears storage for the origin 127.0.0.1, which Chrome 158 rejects as no
-# URL, failing every browser test: a test run or a test file loads a shim adding scheme and port.
+# URL, failing every browser test: a test run or a test file loads a shim adding scheme and port
+# (its __init__.py says when it goes).
 conf_option() {  # <option> <Odoo's value when the conf has none>
     python3 -c 'import configparser, sys
 conf = configparser.RawConfigParser()
@@ -162,6 +158,13 @@ if [ "$TESTS" -eq 1 ] || [ "$TEST_FILE" -eq 1 ]; then
            --load "$(conf_option server_wide_modules base,web),wt_test_browser_origin")
 fi
 {% endif %}
+
+# A test run leaves the xml dev mode out (the launcher's ODOO_DEV_SKIP): it reads each view from
+# its file and turns off Odoo's caches of views, QWeb templates, assets and record rules. A view
+# change then reaches a test run through -u of its module.
+if [ "$TESTS" -eq 1 ] || [ "$TEST_FILE" -eq 1 ]; then
+    export ODOO_DEV_SKIP="${ODOO_DEV_SKIP:+$ODOO_DEV_SKIP,}xml"
+fi
 
 [ "$TESTS" -eq 1 ] || exec "${ODOO[@]}" "$@"
 

@@ -13,6 +13,7 @@ Each entry is a measured failure mode, not a style preference.
 - Restored-prod-dump fixture traps
 - Believing a test run (count, skips, busy port)
 - Browser tests: silent skip, `_wait_ready`, selector syntax
+- `get_view()` removes group-gated nodes for the superuser too
 
 ## `cr.savepoint()` around `assertRaises` — only when SQL was already emitted
 
@@ -154,3 +155,14 @@ On a database restored from a production dump:
 - Test selector for one class: `--test-tags /module_name:TestClass`
   (`tag/module:class.method`). A file name silently matches nothing and runs
   `0 tests`.
+
+## `get_view()` removes group-gated nodes for the superuser too
+
+- `get_view()` drops every node whose `groups=` the acting user (`env.user`) is
+  not in (`ir.ui.view._postprocess_access_rights`); `sudo()` does not bypass it.
+  Under `TransactionCase` that user is OdooBot, so for a group OdooBot is not in,
+  an "X is absent" assertion passes whether the change removed the node or not.
+- Assert on the arch before postprocessing, `view._get_combined_arch()`, or on
+  `get_view()` as a user holding the group (`with_user(user)`), where the node's
+  presence is checked first. The attribute side (`groups` consumed, `attrs`
+  rewritten): the code-patterns skill, references/views.md.
