@@ -156,10 +156,13 @@ jobs:
               -d project_name=ci-repo -d odoo_version=17.0
               -d custom_repo_pattern=git@github.com:acme/{}.git
               -d custom_repo_name=acme-addons
+          # no ticket prefix: the pipeline-gates mod takes any word-dash-number as a task key
           - name: py314-19
             args: >-
               -d project_name=ci-nineteen -d odoo_version=19.0
               -d python_version=3.14 -d postgres_version=18 -d use_queue_job=true
+              -d custom_repo_pattern=git@github.com:acme/{}.git
+              -d custom_repo_name=acme-addons -d ticket_prefix=
     name: ${{ matrix.name }}
     steps:
       - uses: actions/checkout@v4
