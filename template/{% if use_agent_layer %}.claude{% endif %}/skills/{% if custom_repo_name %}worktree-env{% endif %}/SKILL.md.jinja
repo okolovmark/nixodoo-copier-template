@@ -285,7 +285,10 @@ video in one image: Read it to check the take), and a `WARNING:` past 90 s.
   visible banner), then the shared `nix/scripts/dev-fixup.sql` (admin → `admin`/`admin`,
   requeue stuck queue jobs, bump the document sequences past the names the dump
   already carries — imported picking/MO names sit above the sequence, so the Nth
-  create would collide on `stock_picking_name_uniq`).
+  create would collide on `stock_picking_name_uniq`), then the project's own
+  `nix/scripts/dev-fixup-project.sql` (copier writes it once and never updates it): what
+  the project's modules need on a copy, each statement guarded on its table. A change to it
+  reaches only the envs restored after it.
 - **A dump older than the code:** a module that gained a field after the dump was
   taken makes the registry load fail on the missing column (`column res_users.<field>
   does not exist`). So between `odoo neutralize` and the dev fixups, `wt-restore.sh`

@@ -227,6 +227,10 @@
                     download-backup = mkScript "download-backup" {
                         deps = [ postgresql pkgs.awscli2 odooWrapper ];
                         vars.DEV_FIXUP_SQL = "${./nix/scripts/dev-fixup.sql}";
+                        # project-owned, so it may be gone: empty then
+                        vars.DEV_FIXUP_PROJECT_SQL = lib.optionalString
+                            (builtins.pathExists ./nix/scripts/dev-fixup-project.sql)
+                            "${./nix/scripts/dev-fixup-project.sql}";
                     };
                     setup-test = mkScript "setup-test" {
                         deps = [ setup-prod create-nginx-config create-nginx-service create-aws-config ];

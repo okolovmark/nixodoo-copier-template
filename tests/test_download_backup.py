@@ -58,7 +58,7 @@ def stub_bin(root):
     return bin_dir
 
 
-def run(root, files=(), backup_dir=True):
+def run(root, files=(), backup_dir=True, extra_env=None):
     script = root / "download-backup.sh"
     script.write_text(jinja2.Environment(keep_trailing_newline=True).from_string(SRC.read_text()).render(**ANSWERS))
     project = root / "project"
@@ -69,7 +69,7 @@ def run(root, files=(), backup_dir=True):
     for name in files:
         (project / name).touch()
     env = {**os.environ, "STUB_LOG": str(root / "calls.log"), "DEV_FIXUP_SQL": "/dev/null",
-           "PATH": f"{stub_bin(root)}:{os.environ['PATH']}"}
+           "PATH": f"{stub_bin(root)}:{os.environ['PATH']}", **(extra_env or {})}
     proc = subprocess.run(["bash", str(script), "odoo", "--skip-download"], cwd=project, env=env,
                           capture_output=True, text=True, timeout=60)
     assert proc.returncode == 0, proc.stdout + proc.stderr
@@ -103,6 +103,21 @@ def one_dump_is_restored_neutralized_and_renamed_into_place():
             calls(root, "odoo")
         assert any("ALTER DATABASE odoo_restoring RENAME TO odoo" in c for c in calls(root, "psql")), \
             calls(root, "psql")
+
+
+@case
+def the_projects_own_dev_fixups_run_after_the_templates_when_it_has_them():
+    for project_sql, expected in (("/p/dev-fixup-project.sql", ["/dev/null", "/p/dev-fixup-project.sql"]),
+                                  ("", ["/dev/null"]), (None, ["/dev/null"])):
+        with scratch() as tmp:
+            root = pathlib.Path(tmp)
+            run(root, files=(NEW,), extra_env=None if project_sql is None else {"DEV_FIXUP_PROJECT_SQL": project_sql})
+            psql = calls(root, "psql")
+            fixups = [c.split(" -f ")[1] for c in psql if " -f " in c]
+            assert fixups == expected, (project_sql, psql)
+            assert all("-d odoo_restoring" in c for c in psql if " -f " in c), psql
+            rename = next(i for i, c in enumerate(psql) if "RENAME TO odoo" in c)
+            assert max(i for i, c in enumerate(psql) if " -f " in c) < rename, psql
 
 
 @case

@@ -2197,6 +2197,26 @@ def nothing_changed_since_the_dump_skips_the_update():
 
 
 @case
+def the_projects_own_dev_fixups_run_after_the_templates_when_it_has_them():
+    for has_own in (True, False):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = pathlib.Path(tmp)
+            cmd, env, calls_file = wt_restore_project(root)
+            if has_own:
+                (root / "nix/scripts").mkdir(parents=True)
+                (root / "nix/scripts/dev-fixup-project.sql").write_text("SELECT 1;\n")
+            proc = subprocess.run(cmd, capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL)
+            calls = calls_file.read_text().splitlines()
+            assert proc.returncode == 0, (has_own, proc.stdout + proc.stderr)
+            fixups = [i for i, line in enumerate(calls) if line.startswith("psql") and " -f " in line]
+            files = [calls[i].split(" -f ")[1] for i in fixups]
+            assert files == [f"{root}/nix/scripts/dev-fixup.sql",
+                             *([f"{root}/nix/scripts/dev-fixup-project.sql"] if has_own else [])], (has_own, calls)
+            assert all("-d wt_x_restoring" in calls[i] for i in fixups), calls
+            assert fixups[-1] < call_index(calls, "psql", "RENAME"), calls
+
+
+@case
 def a_failed_update_drops_the_copy_and_fails_the_restore():
     rc, out, calls, files = run_wt_restore(update_rc=1)
     update = call_index(calls, "odoo", "-u")
