@@ -200,7 +200,10 @@
                     update-repos = mkScript "update-repos" { deps = [ pkgs.git pkgs.yq-go ]; };
                     bootstrap-deps = mkScript "bootstrap-deps" { deps = [ pkgs.uv python pkgs.git ]; };
                     create-odoo-config = mkScript "create-odoo-config" { };
+                    # {{ project_dir_var }} in ~/.bashrc (Claude Code sessions take it from .claude/settings.local.json)
+                    set-project-dir = mkScript "set-project-dir" { };
                     create-systemd-service = mkScript "create-systemd-service" {
+                        deps = [ set-project-dir ];
                         vars.LOGROTATE_BIN = "${pkgs.logrotate}/sbin/logrotate";
                     };
                     setup-prod = mkScript "setup-prod" {
@@ -256,6 +259,7 @@
                         deps = [
 {% if dev_in_worktrees %}
                             create-env
+                            set-project-dir
                             update-repos
                             setup-postgres
 {% if backup_s3_bucket %}

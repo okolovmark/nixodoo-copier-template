@@ -1,0 +1,29 @@
+# shellcheck shell=bash
+# Export {{ project_dir_var }} (this checkout, the current directory) from ~/.bashrc, so a shell
+# finds the project root the generated scripts, aliases and Claude Code hooks are called through.
+# A desktop app reads no ~/.bashrc: Claude Code sessions take the variable from
+# .claude/settings.local.json env instead (the settings-sync skill's baseline sets it).
+set -e
+PROJECT_DIR="$PWD"
+
+# Add or update {{ project_dir_var }} in ~/.bashrc when there is a writable one
+# (-w as well as -f: a read-only rc file must not abort the whole setup under set -e).
+if [ -f "$HOME/.bashrc" ] && [ -w "$HOME/.bashrc" ]; then
+    if grep -q "export {{ project_dir_var }}=" "$HOME/.bashrc"; then
+        echo "Updating {{ project_dir_var }} in ~/.bashrc..."
+        sed -i "s|export {{ project_dir_var }}=.*|export {{ project_dir_var }}=$PROJECT_DIR|g" "$HOME/.bashrc"
+        echo "  Updated {{ project_dir_var }} in ~/.bashrc"
+    else
+        echo "Adding {{ project_dir_var }} to ~/.bashrc..."
+        {
+            echo ""
+            echo "# Odoo project directory"
+            echo "export {{ project_dir_var }}=$PROJECT_DIR"
+            echo ""
+        } >> "$HOME/.bashrc"
+        echo "  Added {{ project_dir_var }} to ~/.bashrc"
+    fi
+else
+    echo "NOTE: ~/.bashrc is missing or not writable. Export this yourself in your shell's rc file:"
+    echo "        export {{ project_dir_var }}=$PROJECT_DIR"
+fi
