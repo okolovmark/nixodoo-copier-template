@@ -170,7 +170,7 @@ module_prefix:
 
 ticket_prefix:
   type: str
-  help: Ticket key prefix (e.g. PROJ for PROJ-123), for commit/PR conventions and the task keys the pipeline takes into its block (with extra_ticket_prefixes, the only ones)
+  help: Ticket key prefix (e.g. PROJ for PROJ-123), for commit/PR conventions and the task keys the pipeline takes into its block (with extra_ticket_prefixes, and KB for a kb task when use_kb, the only ones)
   default: "TASK"
   when: "{{ use_agent_layer }}"
 
@@ -290,7 +290,7 @@ use_release_notes:
 
 use_kb:
   type: bool
-  help: SessionStart hook printing the kb knowledge-base index and standup into every Claude Code session (needs `kb` from okolovmark/kb installed; silent otherwise)?
+  help: SessionStart hook printing the kb knowledge-base index and standup into every Claude Code session (needs `kb` from okolovmark/kb installed; silent otherwise), and the pipeline taking a kb task as KB-<id>?
   default: false
   when: "{{ use_agent_layer }}"
 

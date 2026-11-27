@@ -3,7 +3,7 @@ import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import type { BlockTask } from '../types'
-import { HAS_STATUS_GATE, ODOO_WEB_URL, RELEASE_NOTES_DIR, TASK_URL_BASE, TICKET_PREFIXES } from '../hooks/config'
+import { HAS_STATUS_GATE, KB_TASKS, ODOO_WEB_URL, RELEASE_NOTES_DIR, TASK_URL_BASE, TICKET_PREFIXES } from '../hooks/config'
 import {
   addTasks,
   blockLine,
@@ -13,6 +13,7 @@ import {
   isChildArgs,
   isCodeEdit,
   isDocPath,
+  isKbKey,
   isMotherRunFor,
   isNewRound,
   isPrCreate,
@@ -27,6 +28,7 @@ import {
   runKeys,
   startRound,
   takeGates,
+  TASK_PREFIXES,
   taskKeyIn,
   taskKeysIn,
   taskUrlIn,
@@ -168,11 +170,37 @@ describe('rules', () => {
     expect(taskKeysIn(prose)).toEqual(HAS_PREFIX ? [`${K}-1909`] : [`${K}-1909`, 'JAN-2026', 'ISO-9001', 'BP-33'])
   })
 
+  test("a key in a path or a file name names a task's files, not a task", () => {
+    const prose = `${K}-12 FIXES SCRIPTS/${K}-90/CHECK.PY, ${K}-91.MD, ${K}-94/X AND C:\\${K}-92\\X; SEE ${K}-13.`
+    expect(taskKeysIn(prose)).toEqual([`${K}-12`, `${K}-13`])
+    expect(taskKeyIn(`SCRIPTS/${K}-90/CHECK.PY`)).toBe('')
+    // a link that ends in a key, and keys parted by a slash, stay keys
+    expect(taskKeysIn(`HTTPS://ODOO.EXAMPLE.COM/TASKS/${K}-21 ${K}-1844/${K}-1845 ${K}-30/31 ${K}-12.1`)).toEqual([
+      `${K}-21`,
+      `${K}-1844`,
+      `${K}-1845`,
+      `${K}-30`,
+      `${K}-12`,
+    ])
+  })
+
   test('a task of each project the prefixes name is a task key', () => {
     const other = TICKET_PREFIXES[1]
     if (other === undefined) return
     expect(taskKeysIn(`${K}-1909 and ${other}-21, not JAN-2026`)).toEqual([`${K}-1909`, `${other}-21`])
     expect(taskKeyIn(`${other.toLowerCase()}-21 admin lists`.toUpperCase())).toBe(`${other}-21`)
+  })
+
+  test('a project that keeps kb takes a kb task as KB-<id>; one without kb does not', () => {
+    expect(TASK_PREFIXES.filter(prefix => prefix === 'KB').length).toBeLessThanOrEqual(1)
+    // where KB is a ticket prefix, KB-1 is an Odoo task, kb kept or not
+    if (TICKET_PREFIXES.includes('KB')) expect(isKbKey('KB-1')).toBe(false)
+    if (!HAS_PREFIX || TICKET_PREFIXES.includes('KB')) return
+    const block = `KB-1881 KB-1885 ${K}-1909, NOT JAN-2026`
+    expect(taskKeysIn(block)).toEqual(KB_TASKS ? ['KB-1881', 'KB-1885', `${K}-1909`] : [`${K}-1909`])
+    expect(taskKeyIn('kb-1874 theme trial'.toUpperCase())).toBe(KB_TASKS ? 'KB-1874' : '')
+    // a kb task has no record in Odoo to open by its key
+    expect([isKbKey('KB-1881'), isKbKey(`${K}-1909`)]).toEqual([KB_TASKS, false])
   })
 
   test('the PR guard reads the command the shell runs, not the text it carries', () => {
@@ -681,14 +709,19 @@ test('a block task given its record URL gets an open link in the pane', async ($
   engine(on)
   await $.session.start({ cwd: '/p', surface: 'desktop', isInteractive: true })
   const record = `${ODOO_WEB_URL}#id=1&model=project.task&view_type=form`
-  await $.tool.call({ tool: 'mcp__pipeline-gates__tasks', add: [`${K}-1 first ${record}`, `${K}-2 second`] })
+  await $.tool.call({ tool: 'mcp__pipeline-gates__tasks', add: [`${K}-1 first ${record}`, `${K}-2 second`, 'KB-3 third'] })
+  // KB-3 joins the block where it is a key; it is an Odoo task, with a link, unless the project keeps kb
+  // and has no KB ticket prefix: then it is a kb task, with no record in Odoo
+  const isKbKeyed = taskKeyIn('KB-3') !== ''
+  const isOdooKb = isKbKeyed && !(KB_TASKS && !TICKET_PREFIXES.includes('KB'))
   for (const surface of ['desktop', 'mobile'] as const) {
     const pane = await $.ui.mount({ ...PANE, surface })
     const links = await pane.findAll({ type: 'Link' })
     // the record URL where one was given, else the key's route where the project has it
-    const byKey = TASK_URL_BASE === '' ? [] : [`${TASK_URL_BASE}${K}-2`]
+    const byKey = TASK_URL_BASE === '' ? [] : [`${TASK_URL_BASE}${K}-2`, ...(isOdooKb ? [`${TASK_URL_BASE}KB-3`] : [])]
     expect(links.map(link => link.props.href)).toEqual([...(ODOO_WEB_URL === '' ? [] : [record]), ...byKey])
     expect(await pane.find({ text: 'second' })).toBeDefined()
+    if (isKbKeyed) expect(await pane.find({ text: 'third' })).toBeDefined()
     await pane.unmount()
   }
 })
@@ -805,6 +838,22 @@ test("a mother closes Phase 7 on its child's PR and names the run it closed on",
   expect(closed).toContain(`closed on the PR ${PR_URL} of the ${K}-9 run of session sid-chil`)
 })
 
+test("a mother of a block of kb tasks has their keys and closes Phase 7 on its child's QC pass", async ($, on) => {
+  if (!KB_TASKS || !HAS_PREFIX) return
+  const child = openGate(childRun('KB-1885'), 'qc', 'pass: QC gate: PASS', 7)
+  engine(on, [], undefined, { 'run:sid-child': child })
+  await $.session.start({ cwd: '/p', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'Skill', skill: 'pipeline', args: 'KB-1881 KB-1885' })
+  await $.command.run({ command: 'pipeline-gate', args: 'open status teams is down', ...TYPED })
+  await $.command.run({ command: 'pipeline-gate', args: 'open grill agreed in chat', ...TYPED })
+  const entered = String((await $.tool.call({ tool: 'mcp__pipeline-gates__phase', phase: 1, task: 'KB-1881' })).result)
+  expect(entered).toContain('pipeline KB-1881 · phase 1')
+  expect(entered).not.toContain('task not set')
+  const closed = String((await $.tool.call({ tool: 'mcp__pipeline-gates__phase', phase: 7 })).result)
+  expect(closed).toContain('the pipeline run for KB-1881 ended at Phase 7 Memory closure')
+  expect(closed).toContain('closed on the QC pass: QC gate: PASS of the KB-1885 run of session sid-chil')
+})
+
 test("without a QC pass or a PR for its tasks anywhere, the mother's Phase 7 waits", async ($, on) => {
   engine(on, [], undefined, { 'run:sid-child': childRun(`${K}-9`), 'run:sid-other': childRun(`${K}-8`, PR_URL) })
   await $.session.start({ cwd: '/p', surface: 'desktop', isInteractive: true })
@@ -812,4 +861,16 @@ test("without a QC pass or a PR for its tasks anywhere, the mother's Phase 7 wai
   const refused = String((await $.tool.call({ tool: 'mcp__pipeline-gates__phase', phase: 7 })).result)
   expect(refused).toContain(`Phase 7 is refused until the QC gate passes in this run, or a run for ${K}-9 in another session recorded a QC pass or a PR`)
   expect(String((await $.tool.call({ tool: 'mcp__pipeline-gates__gates' })).result)).toContain('phase 1 Task reading')
+})
+
+test("a task named in a path of the pipeline's args stays out of its block and its Phase 7", async ($, on) => {
+  engine(on, [], undefined, { 'run:sid-other': childRun(`${K}-8`, PR_URL) })
+  await $.session.start({ cwd: '/p', surface: 'desktop', isInteractive: true })
+  await $.tool.call({ tool: 'Skill', skill: 'pipeline', args: `${K}-9 the check of scripts/${K}-8/check.py` })
+  await $.command.run({ command: 'pipeline-gate', args: 'open status teams is down', ...TYPED })
+  await $.command.run({ command: 'pipeline-gate', args: 'open grill agreed in chat', ...TYPED })
+  await $.tool.call({ tool: 'mcp__pipeline-gates__phase', phase: 1, task: `${K}-9` })
+  const refused = String((await $.tool.call({ tool: 'mcp__pipeline-gates__phase', phase: 7 })).result)
+  // the refusal names the block's keys: K-9 alone
+  expect(refused).toContain(`Phase 7 is refused until the QC gate passes in this run, or a run for ${K}-9 in another session`)
 })

@@ -28,6 +28,7 @@ import {
   isChildArgs,
   isCodeEdit,
   isDocPath,
+  isKbKey,
   isMotherRunFor,
   isNewRound,
   isOpen,
@@ -186,9 +187,10 @@ async function confirmGrill($: EngineInterface, how: string): Promise<void> {
 }
 
 // a block task's link: the record URL it was given, else its key's /tasks/<key> where the project has one
+// (a kb task has none)
 function taskLink(task: BlockTask): string {
   if (task.url !== undefined && task.url !== '') return task.url
-  return TASK_URL_BASE === '' ? '' : `${TASK_URL_BASE}${task.key}`
+  return TASK_URL_BASE === '' || isKbKey(task.key) ? '' : `${TASK_URL_BASE}${task.key}`
 }
 
 // one grill dialog at a time: a call blocked while it is open waits for the same answer
