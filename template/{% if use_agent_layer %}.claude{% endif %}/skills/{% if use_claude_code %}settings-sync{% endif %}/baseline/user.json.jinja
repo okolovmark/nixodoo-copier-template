@@ -42,14 +42,5 @@
   "preferredNotifChannel": "terminal_bell",
   "teammateMode": "in-process",
   "inputNeededNotifEnabled": true,
-  "agentPushNotifEnabled": true,
-  "autoMode": {
-    "allow": [
-      "$defaults",
-      "Bash(systemctl --user start:*) Bash(systemctl --user stop:*) Bash(systemctl --user restart:*) Bash(systemctl --user status:*) for odoo{{ service_suffix }}.service/postgres{{ service_suffix }}.service/nginx{{ service_suffix }}.service in this repo",
-      "Bash(psql:*) read/local-dev queries against the local `{{ db_name }}` database on localhost:{{ postgres_port }}",
-      "Bash(ruff:*) and Bash(uvx:*) invocations scoped to this repo (lint/format/doc generation)",
-      "Bash(nix run .#update-repos) in this repo"
-    ]
-  }
+  "agentPushNotifEnabled": true
 }

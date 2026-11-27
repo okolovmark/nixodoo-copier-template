@@ -41,6 +41,8 @@ jobs:
           enable-cache: false
       - name: tests/test_prod_deploy_lock.py (ssh, git, python and systemctl stubbed)
         run: uv run --no-project --with jinja2 python tests/test_prod_deploy_lock.py
+      - name: tests/test_db_per_host.py (ssh stubbed; the database each box's scripts name)
+        run: uv run --no-project --with jinja2 python tests/test_db_per_host.py
 
   # Builds its own bare origin and clones (plain git, nothing rendered), so once per push.
   adr-number:

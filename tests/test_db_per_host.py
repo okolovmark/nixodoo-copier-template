@@ -29,6 +29,16 @@ SCRIPTS = {
     "prod-requeue-jobs.sh": (DEPLOY / "{% if use_queue_job %}prod-requeue-jobs.sh{% endif %}.jinja", ()),
     "prod-run-odoo-script.sh": (OPS / "prod-run-odoo-script.sh.jinja", ("SCRIPT", "dry")),
 }
+# files a script reads from beside itself, rendered next to it
+HELPERS = {
+    "deploy-phase.sh": DEPLOY / "deploy-phase.sh.jinja",
+}
+# How the database reaches the box: on the odoo-bin line of the ssh command, except where the
+# remote part comes through stdin and the database rides as its first argument (`bash -s -- '<db>'`).
+DB_SENT = {
+    "prod-deploy-modules.sh": r"bash -s -- '([^']*)'",
+}
+ODOO_BIN_DB = r"odoo-bin[^\n]* -d (\S+) "  # not the `[ -d <lock> ]` test
 
 ANSWERS = dict(
     prod_local_ssh_host="10.0.0.9", test_ssh_hosts={"t1.lan": "10.0.0.1", "t2": "10.0.0.2"},
@@ -36,7 +46,7 @@ ANSWERS = dict(
     odoo_version="16.0", module_prefix="foo", nix_profile_rel=".nix-profile",
     custom_repo_name="addons", prod_remote_odoo_conf="~/proj/odoo.conf",
     prod_db_name="odoo", test_db_name="{short}", prod_link_addons_cmd="true",
-    service_suffix="",
+    service_suffix="", deploy_status_file="",
 )
 
 FAKE_SSH = """#!/usr/bin/env bash
@@ -69,6 +79,8 @@ class Run:
             out.write_text(env.from_string(src.read_text()).render(**{**ANSWERS, **answers}))
             out.chmod(0o755)
             self.rendered[name] = out
+        for name, src in HELPERS.items():
+            (self.tmp / name).write_text(env.from_string(src.read_text()).render(**{**ANSWERS, **answers}))
         self.env = dict(os.environ, PATH=f"{fakebin}:{os.environ['PATH']}",
                         TEST_PROJECT_DIR=str(project), FAKE_SSH_LOG=str(self.log))
 
@@ -82,7 +94,7 @@ class Run:
         if proc.returncode != 0 or not sent:
             raise AssertionError((name, host, proc.returncode, proc.stdout + proc.stderr))
         expect(sent.split()[0] == host, (name, "wrong host", sent))
-        m = re.search(r"odoo-bin[^\n]* -d (\S+) ", sent)  # not the `[ -d <lock> ]` test
+        m = re.search(DB_SENT.get(name, ODOO_BIN_DB), sent)
         return m.group(1) if m else None
 
     def cleanup(self):
