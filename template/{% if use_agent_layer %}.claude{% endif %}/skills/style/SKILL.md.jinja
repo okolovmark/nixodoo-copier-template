@@ -21,9 +21,23 @@ description: "Odoo {{ odoo_version }} code style and conventions for {{ project_
   Matches Odoo core (`odoo/models.py`); mixing forms breaks greps.
 - **Import order** (alphabetically within each group, blank line between groups):
   1. Python stdlib
-  2. Odoo core (`from odoo import Command, _, api, fields, models`)
-  3. Odoo addons (`from odoo.addons.web.controllers...`)
-  4. Other {{ project_name }} modules (`from odoo.addons.{{ module_prefix }}_<module>...`)
+  2. Third-party libraries (`import requests`)
+  3. Odoo core (`from odoo import Command, _, api, fields, models`)
+  4. Odoo addons (`from odoo.addons.web.controllers...`)
+  5. Other {{ project_name }} modules (`from odoo.addons.{{ module_prefix }}_<module>...`)
+  6. The module's own, relative (`from .common import ...`)
+
+  Ruff's isort keeps these groups with this in the addons repo's `ruff.toml` (the env repo's
+  `pyproject.toml` has the same under `[tool.ruff.lint.isort]`):
+  ```toml
+  [lint.isort]
+  section-order = ["future", "standard-library", "third-party", "odoo", "odoo-addons", "{{ module_prefix }}-addons", "first-party", "local-folder"]
+
+  [lint.isort.sections]
+  "odoo" = ["odoo"]
+  "odoo-addons" = ["odoo.addons"]
+  "{{ module_prefix }}-addons" = ["odoo.addons.{{ module_prefix }}_*"]
+  ```
 - **`cls` is reserved for `@classmethod` first arg only**. For locals holding a model's
   Python class (e.g. `self.env.registry["res.partner"]`), name it `model_cls`.
   Within a file `cls` should mean exactly one thing.

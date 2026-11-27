@@ -51,6 +51,18 @@ jobs:
       - name: tests/test_adr_number.py (a local bare origin, real git)
         run: python3 tests/test_adr_number.py
 
+  # Renders the ruff configs itself, so once per push.
+  isort-groups:
+    name: ruff import groups corpus
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: false
+      - name: tests/test_isort_groups.py (ruff sorts a module of every group)
+        run: uv run --no-project --with jinja2 --with ruff==0.15.14 python tests/test_isort_groups.py
+
   # Renders setup-ssh-access itself and runs it in scratch projects, so once per push.
   ssh-config:
     name: setup-ssh-access corpus
