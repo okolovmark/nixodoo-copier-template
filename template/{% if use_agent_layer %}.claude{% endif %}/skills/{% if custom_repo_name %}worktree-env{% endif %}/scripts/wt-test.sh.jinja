@@ -144,7 +144,8 @@ ODOO=("$ODOO_BIN" -c "$CONF" --workers 0 --stop-after-init --logfile=
 {% if odoo_version == '16.0' %}
 
 # Odoo 16's test browser clears storage for the origin 127.0.0.1, which Chrome 158 rejects as no
-# URL, failing every browser test: a test run or a test file loads a shim adding scheme and port.
+# URL, failing every browser test: a test run or a test file loads a shim adding scheme and port
+# (its __init__.py says when it goes).
 conf_option() {  # <option> <Odoo's value when the conf has none>
     python3 -c 'import configparser, sys
 conf = configparser.RawConfigParser()
