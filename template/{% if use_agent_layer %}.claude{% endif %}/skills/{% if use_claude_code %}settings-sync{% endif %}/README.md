@@ -28,6 +28,10 @@ Each holds `user.json` (for `~/.claude/settings.json`), `local.json` (for `.clau
 `files/` (a hook's script under `~/.claude/hooks/`) and `connectors.json`. The project layer also holds
 `maintainer`, the git email whose `save` writes it.
 
+`~/.claude/settings.json` applies in every project on the machine, so `user.json` holds preferences
+only. Anything that names this project (its services, databases, hosts, `autoMode` rules, the
+project root variable in `env`) goes into `local.json`.
+
 ## What it does
 
 - **Shows first.** The layers sit in a repository the whole team can change, so read them before

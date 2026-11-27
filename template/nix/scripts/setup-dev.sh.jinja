@@ -9,6 +9,10 @@ set -e
 echo "=== Running create-env ==="
 create-env
 echo
+echo "=== Running set-project-dir ==="
+# with no main Odoo, create-systemd-service (which also calls it) never runs here
+set-project-dir
+echo
 echo "=== Running update-repos ==="
 update-repos
 echo

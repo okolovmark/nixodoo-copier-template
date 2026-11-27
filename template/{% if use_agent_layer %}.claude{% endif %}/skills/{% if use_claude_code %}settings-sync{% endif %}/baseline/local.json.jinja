@@ -1,4 +1,7 @@
 {
+  "env": {
+    "{{ project_dir_var }}": "@PROJECT@"
+  },
   "permissions": {
     "allow": [
       "WebFetch(domain:www.odoo.com)",
@@ -23,7 +26,16 @@
   "autoMode": {
     "allow": [
       "$defaults",
-      "Read-only shell commands are approved without asking anywhere under the project root @PROJECT@ (including src/, .worktrees/ and .claude/), under the Claude memory directory @HOME@/.claude/projects/@PROJECT_SLUG@/memory, and under /tmp: cat, head, tail, sed -n, grep, rg, ls, find, wc, diff, stat, file, jq, awk/python3 that only print, git log/show/diff/status/blame/rev-parse/for-each-ref. This holds when the command first changes directory into one of those trees (cd /abs/dir && cmd, cd /abs/dir; cmd, or (cd /abs/dir && cmd)) and then names files relatively: resolve the relative names against the cd target, which is always an absolute path in this project.{% if use_entire %} The one read exclusion is any path containing .entire/metadata/ (session transcripts); a command naming that path is not covered.{% endif %}"
+      "Read-only shell commands are approved without asking anywhere under the project root @PROJECT@ (including src/, .worktrees/ and .claude/), under the Claude memory directory @HOME@/.claude/projects/@PROJECT_SLUG@/memory, and under /tmp: cat, head, tail, sed -n, grep, rg, ls, find, wc, diff, stat, file, jq, awk/python3 that only print, git log/show/diff/status/blame/rev-parse/for-each-ref. This holds when the command first changes directory into one of those trees (cd /abs/dir && cmd, cd /abs/dir; cmd, or (cd /abs/dir && cmd)) and then names files relatively: resolve the relative names against the cd target, which is always an absolute path in this project.{% if use_entire %} The one read exclusion is any path containing .entire/metadata/ (session transcripts); a command naming that path is not covered.{% endif %}",
+{% if dev_in_worktrees %}
+      "Bash(systemctl --user start:*) Bash(systemctl --user stop:*) Bash(systemctl --user restart:*) Bash(systemctl --user status:*) for postgres{{ service_suffix }}.service and the session services odoo{{ service_suffix }}-wt@<slug>.service in this repo",
+      "Bash(psql:*) read/local-dev queries against the session databases (wt_*) on localhost:{{ postgres_port }}",
+{% else %}
+      "Bash(systemctl --user start:*) Bash(systemctl --user stop:*) Bash(systemctl --user restart:*) Bash(systemctl --user status:*) for odoo{{ service_suffix }}.service/postgres{{ service_suffix }}.service/nginx{{ service_suffix }}.service in this repo",
+      "Bash(psql:*) read/local-dev queries against the local `{{ db_name }}` database on localhost:{{ postgres_port }}",
+{% endif %}
+      "Bash(ruff:*) and Bash(uvx:*) invocations scoped to this repo (lint/format/doc generation)",
+      "Bash(nix run .#update-repos) in this repo"
     ]{% if custom_repo_name %},
     "environment": [
       "$defaults",
